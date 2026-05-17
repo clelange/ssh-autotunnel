@@ -126,6 +126,13 @@ final class AppState: ObservableObject {
         saveConfiguration()
     }
 
+    func importSSHAuto2FAPresets() {
+        let (updated, result) = SSHAuto2FAImporter.apply(to: configuration, account: NSUserName())
+        configuration = updated
+        saveConfiguration()
+        lastProxyMessage = "Imported ssh-auto2fa presets: \(result.createdProfiles) created, \(result.updatedProfiles) updated"
+    }
+
     func addGenericProfile() {
         let profile = TunnelProfile(name: "New tunnel", host: "example.org", localSocksPort: nextFreeSocksPort())
         configuration.profiles.append(profile)

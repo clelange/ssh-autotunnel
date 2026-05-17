@@ -360,6 +360,15 @@ struct AppPreferencesView: View {
                     appState.rotateAPIToken()
                 }
             }
+
+            Section("Migration") {
+                Button("Import ssh-auto2fa Presets") {
+                    appState.importSSHAuto2FAPresets()
+                }
+                Text("Creates or updates CERN lxplus and PSI Tier-3 profiles using the existing Keychain service names.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .formStyle(.grouped)
         .onChange(of: appState.configuration) { _ in
