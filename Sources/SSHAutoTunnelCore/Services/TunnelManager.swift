@@ -171,19 +171,26 @@ public final class TunnelManager {
     }
 
     private func respondIfNeeded(to buffer: Data, tunnel: ManagedTunnel) {
-        guard let text = String(data: buffer, encoding: .utf8)?.lowercased() else { return }
-        if text.contains("are you sure you want to continue connecting") {
-            write("yes\n", to: tunnel)
+        guard let text = String(data: buffer, encoding: .utf8),
+              let action = SSHPromptResponder.nextAction(for: text) else {
             return
         }
-        if text.contains("password:") || text.contains("password for") {
+
+        switch action {
+        case .confirmHostKey:
+            guard !tunnel.sentHostKeyConfirmation else { return }
+            tunnel.sentHostKeyConfirmation = true
+            write("yes\n", to: tunnel)
+        case .sendPassword:
+            guard !tunnel.sentPassword else { return }
             if let password = tunnel.credentials.password {
+                tunnel.sentPassword = true
                 write(password + "\n", to: tunnel)
             }
-            return
-        }
-        if text.contains("one-time code:") || text.contains("verification code") || text.contains("2nd factor") || text.contains("otp") {
+        case .sendTOTP:
+            guard !tunnel.sentTOTP else { return }
             if let totp = tunnel.credentials.totp {
+                tunnel.sentTOTP = true
                 write(totp + "\n", to: tunnel)
             }
         }
@@ -281,6 +288,9 @@ private final class ManagedTunnel {
     let process: Process
     let master: FileHandle
     let credentials: TunnelCredentials
+    var sentHostKeyConfirmation = false
+    var sentPassword = false
+    var sentTOTP = false
 
     init(profile: TunnelProfile, process: Process, master: FileHandle, credentials: TunnelCredentials) {
         self.profile = profile
