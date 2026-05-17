@@ -31,6 +31,7 @@
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
+- Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
@@ -44,7 +45,7 @@ swift test
 ./script/build_and_run.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 48 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 50 XCTest cases.
 
 ## Known Gaps
 
@@ -53,8 +54,9 @@ All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite cu
 - System PAC restoration command planning is unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents are present, but Shortcuts discovery and invocation need end-to-end validation from the Shortcuts app.
 - The local API token can be rotated from settings; client authentication and error handling have integration coverage.
+- `ssh-auto2fa` service detection is unit-tested with fake readers; real Keychain availability still depends on the user's local items and access prompts.
 
 ## Next Useful Milestones
 
 - Validate and tune CERN lxplus and PSI Tier-3 authentication prompts.
-- Add an onboarding flow for importing existing `ssh-auto2fa` Keychain services.
+- Add a lightweight release/package workflow once the app behavior is ready for manual validation.

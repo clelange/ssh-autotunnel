@@ -11,6 +11,7 @@ final class AppState: ObservableObject {
     @Published var networkDecision = NetworkPolicyDecision(shouldDisableProxy: false, matchedRule: nil)
     @Published var currentNetworkFingerprint = NetworkFingerprint()
     @Published var lastProxyMessage = "System PAC is not enabled"
+    @Published var sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus] = []
 
     private let configurationStore: ConfigurationStore
     private let tunnelManager = TunnelManager()
@@ -121,14 +122,18 @@ final class AppState: ObservableObject {
         guard let index = configuration.profiles.firstIndex(where: { $0.id == profileID }) else { return }
         switch configuration.profiles[index].name {
         case "CERN lxplus":
-            configuration.profiles[index].keychain.totpService = "cern-lxplus-otp-secret"
+            configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.cernLxplusTOTPService
         case "PSI Tier-3":
-            configuration.profiles[index].keychain.passwordService = "psit3-password"
-            configuration.profiles[index].keychain.totpService = "psit3-otp-secret"
+            configuration.profiles[index].keychain.passwordService = SSHAuto2FAPresets.psiTier3PasswordService
+            configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.psiTier3TOTPService
         default:
             break
         }
         saveConfiguration()
+    }
+
+    func refreshSSHAuto2FAServiceStatuses() {
+        sshAuto2FAServiceStatuses = SSHAuto2FAKeychainInspector.inspect(account: NSUserName(), reader: keychain)
     }
 
     @discardableResult

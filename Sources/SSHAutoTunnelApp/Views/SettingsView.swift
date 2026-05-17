@@ -363,8 +363,30 @@ struct AppPreferencesView: View {
             }
 
             Section("Migration") {
-                Button("Import ssh-auto2fa Presets") {
-                    appState.importSSHAuto2FAPresets()
+                HStack {
+                    Button("Check ssh-auto2fa Services") {
+                        appState.refreshSSHAuto2FAServiceStatuses()
+                    }
+                    Button("Import ssh-auto2fa Presets") {
+                        appState.importSSHAuto2FAPresets()
+                    }
+                }
+                if !appState.sshAuto2FAServiceStatuses.isEmpty {
+                    ForEach(appState.sshAuto2FAServiceStatuses) { status in
+                        HStack {
+                            Text(status.requirement.profileName)
+                            Text(status.requirement.kind.displayName)
+                                .foregroundStyle(.secondary)
+                            Text(status.requirement.service)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Spacer()
+                            Text(keychainStatusLabel(status.state))
+                                .foregroundStyle(.secondary)
+                        }
+                        .font(.caption)
+                    }
                 }
                 Text("Creates or updates CERN lxplus and PSI Tier-3 profiles using the existing Keychain service names.")
                     .font(.caption)
@@ -374,6 +396,14 @@ struct AppPreferencesView: View {
         .formStyle(.grouped)
         .onChange(of: appState.configuration) { _ in
             appState.saveConfiguration()
+        }
+    }
+
+    private func keychainStatusLabel(_ state: KeychainCredentialState) -> String {
+        switch state {
+        case .available: "Found"
+        case .missing: "Missing"
+        case .unreadable: "Unreadable"
         }
     }
 }

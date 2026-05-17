@@ -44,12 +44,11 @@ struct OnboardingView: View {
             Divider()
 
             VStack(alignment: .leading, spacing: 14) {
-                OnboardingActionRow(
-                    systemImage: "key",
-                    title: "ssh-auto2fa presets",
-                    detail: importMessage ?? "Use the existing CERN lxplus and PSI Tier-3 Keychain service names.",
-                    buttonTitle: "Import",
-                    action: importPresets
+                SSHAuto2FAImportPanel(
+                    statuses: appState.sshAuto2FAServiceStatuses,
+                    importMessage: importMessage,
+                    checkAction: appState.refreshSSHAuto2FAServiceStatuses,
+                    importAction: importPresets
                 )
 
                 OnboardingActionRow(
@@ -108,6 +107,87 @@ struct OnboardingView: View {
     private func importPresets() {
         let result = appState.importSSHAuto2FAPresets()
         importMessage = "\(result.createdProfiles) created, \(result.updatedProfiles) updated, \(result.createdPACRules) PAC rules added"
+    }
+}
+
+private struct SSHAuto2FAImportPanel: View {
+    var statuses: [SSHAuto2FAServiceStatus]
+    var importMessage: String?
+    var checkAction: () -> Void
+    var importAction: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Image(systemName: "key")
+                    .foregroundStyle(.secondary)
+                    .frame(width: 22)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("ssh-auto2fa presets")
+                        .font(.headline)
+                    Text(importMessage ?? "CERN lxplus and PSI Tier-3 Keychain service names")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer()
+
+                Button("Check", action: checkAction)
+                    .frame(width: 88)
+                Button("Import", action: importAction)
+                    .frame(width: 88)
+            }
+
+            if !statuses.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(statuses) { status in
+                        HStack(spacing: 8) {
+                            Image(systemName: symbol(for: status.state))
+                                .foregroundStyle(color(for: status.state))
+                                .frame(width: 16)
+                            Text(status.requirement.profileName)
+                            Text(status.requirement.kind.displayName)
+                                .foregroundStyle(.secondary)
+                            Text(status.requirement.service)
+                                .font(.caption.monospaced())
+                                .foregroundStyle(.secondary)
+                                .textSelection(.enabled)
+                            Spacer()
+                            Text(label(for: status.state))
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+                .font(.caption)
+                .padding(.leading, 34)
+            }
+        }
+    }
+
+    private func symbol(for state: KeychainCredentialState) -> String {
+        switch state {
+        case .available: "checkmark.circle.fill"
+        case .missing: "questionmark.circle"
+        case .unreadable: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private func color(for state: KeychainCredentialState) -> Color {
+        switch state {
+        case .available: .green
+        case .missing: .secondary
+        case .unreadable: .orange
+        }
+    }
+
+    private func label(for state: KeychainCredentialState) -> String {
+        switch state {
+        case .available: "Found"
+        case .missing: "Missing"
+        case .unreadable: "Unreadable"
+        }
     }
 }
 

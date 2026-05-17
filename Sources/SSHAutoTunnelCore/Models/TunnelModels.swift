@@ -241,7 +241,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
             host: "lxplus.cern.ch",
             localSocksPort: 1081,
             authMode: .kerberosAndTOTP,
-            keychain: KeychainReference(account: NSUserName(), totpService: "cern-lxplus-otp-secret"),
+            keychain: KeychainReference(account: NSUserName(), totpService: SSHAuto2FAPresets.cernLxplusTOTPService),
             healthProbe: HealthProbe(host: "lxplus.cern.ch", port: 22)
         )
 
@@ -251,7 +251,11 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
             localSocksPort: 1082,
             jumpHost: "t3hop01.psi.ch",
             authMode: .passwordAndTOTP,
-            keychain: KeychainReference(account: NSUserName(), passwordService: "psit3-password", totpService: "psit3-otp-secret"),
+            keychain: KeychainReference(
+                account: NSUserName(),
+                passwordService: SSHAuto2FAPresets.psiTier3PasswordService,
+                totpService: SSHAuto2FAPresets.psiTier3TOTPService
+            ),
             healthProbe: HealthProbe(host: "t3ui07.psi.ch", port: 22)
         )
 

@@ -9,6 +9,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Menu-bar controls for connecting and disconnecting tunnel profiles.
 - First-launch setup window with quick access to imports, settings, PAC URL, and diagnostics.
 - Native Keychain-backed password and TOTP support.
+- `ssh-auto2fa` Keychain service checks before importing preset profiles.
 - SSH SOCKS5 tunnels using `/usr/bin/ssh -N -D`.
 - Local PAC server with fail-closed routing when a tunnel is unhealthy.
 - Local blocking proxy that shows an explanatory page for HTTP requests when a PAC-matched tunnel is down.
@@ -63,7 +64,7 @@ Runtime configuration is stored in:
 ~/Library/Application Support/SSHAutoTunnel/config.json
 ```
 
-The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keychain service names can be imported from the profile settings:
+The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keychain service names can be checked and imported from setup or settings:
 
 - `cern-lxplus-otp-secret`
 - `psit3-password`

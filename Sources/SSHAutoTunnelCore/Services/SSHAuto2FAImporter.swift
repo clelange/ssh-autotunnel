@@ -18,7 +18,7 @@ public enum SSHAuto2FAImporter {
             host: "lxplus.cern.ch",
             preferredPort: 1081,
             authMode: .kerberosAndTOTP,
-            keychain: KeychainReference(account: account, totpService: "cern-lxplus-otp-secret")
+            keychain: KeychainReference(account: account, totpService: SSHAuto2FAPresets.cernLxplusTOTPService)
         )
         ensurePACRule(
             in: &configuration,
@@ -36,7 +36,11 @@ public enum SSHAuto2FAImporter {
             preferredPort: 1082,
             jumpHost: "t3hop01.psi.ch",
             authMode: .passwordAndTOTP,
-            keychain: KeychainReference(account: account, passwordService: "psit3-password", totpService: "psit3-otp-secret")
+            keychain: KeychainReference(
+                account: account,
+                passwordService: SSHAuto2FAPresets.psiTier3PasswordService,
+                totpService: SSHAuto2FAPresets.psiTier3TOTPService
+            )
         )
         ensurePACRule(
             in: &configuration,
