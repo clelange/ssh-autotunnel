@@ -18,6 +18,9 @@
 - Implemented native TOTP generation, Keychain access, SSH tunnel process management, health-aware PAC generation, network policy matching, local PAC/status/API servers, Shortcuts intents, and a CLI helper.
 - Seeded default CERN lxplus and PSI Tier-3 profiles and PAC rules.
 - Added unit tests for TOTP vectors, PAC generation, domain matching, and network policy matching.
+- Extracted SSH prompt detection into a tested pure core service and made tunnel prompt replies one-shot per prompt type.
+- Added integration tests for the local HTTP server, including PAC serving and complete POST body handling.
+- Added current-network fingerprint display and a “create disable rule from current network” flow.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
@@ -31,12 +34,12 @@ swift test
 ./script/build_and_run.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 18 XCTest cases.
 
 ## Known Gaps
 
 - Real CERN/PSI SSH login flows still need live validation with the user’s Keychain secrets and reachable networks.
-- The pseudo-terminal prompt matcher is intentionally broad and may need tightening after real server tests.
+- The pseudo-terminal prompt matcher is now unit-tested, but still needs live tuning after real CERN/PSI server tests.
 - System PAC restoration is implemented for active service changes, but needs more manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents are present, but Shortcuts discovery and invocation need end-to-end validation from the Shortcuts app.
 - The local API currently uses a static token stored in the app configuration; token rotation UI is minimal.
@@ -45,6 +48,5 @@ All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2.
 
 - Validate and tune CERN lxplus and PSI Tier-3 authentication prompts.
 - Add an onboarding flow for importing existing `ssh-auto2fa` Keychain services.
-- Add richer network fingerprint display and “create rule from current network.”
-- Add integration tests for the local HTTP API and PAC server.
+- Add richer integration tests for the authenticated local API.
 - Add user notifications for tunnel failures and recoveries.
