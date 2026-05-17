@@ -31,7 +31,18 @@ Useful checks:
 swift build
 swift test
 ./script/build_and_run.sh --verify
+./script/package_local.sh --verify
 ```
+
+## Local Package
+
+Create an unsigned/ad-hoc-signed local zip with the app bundle and CLI helper:
+
+```sh
+./script/package_local.sh
+```
+
+The archive is written to `dist/package/SSH-AutoTunnel-local.zip`.
 
 ## Local Endpoints
 
