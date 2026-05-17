@@ -17,6 +17,7 @@ final class AppState: ObservableObject {
     private let keychain = KeychainService()
     private let networkIdentity = NetworkIdentityService()
     private let proxyManager = SystemProxyManager()
+    private let notifications = AppNotificationService()
     private var pacServer: LocalHTTPServer?
     private var apiServer: LocalHTTPServer?
     private var pathMonitor: NWPathMonitor?
@@ -168,7 +169,12 @@ final class AppState: ObservableObject {
     private func setupTunnelCallbacks() {
         tunnelManager.onStatusChange = { [weak self] status in
             guard let self else { return }
+            let previous = self.statuses[status.profileID]
             self.statuses[status.profileID] = status
+            if let profile = self.configuration.profiles.first(where: { $0.id == status.profileID }),
+               let event = TunnelNotificationPolicy.event(previous: previous?.health, current: status.health) {
+                self.notifications.deliver(event: event, profileName: profile.name, message: status.message)
+            }
             self.writePACCopy()
             if self.configuration.proxyApplyMode == .activeNetworkServicePAC {
                 self.applySystemPAC()

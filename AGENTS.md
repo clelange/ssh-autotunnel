@@ -23,6 +23,7 @@
 - Added authenticated local API client integration tests.
 - Added current-network fingerprint display and a “create disable rule from current network” flow.
 - Added a local API token rotation action in settings.
+- Added tested notification policy and macOS notification delivery for tunnel failures/recoveries.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
@@ -50,4 +51,4 @@ All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite cu
 
 - Validate and tune CERN lxplus and PSI Tier-3 authentication prompts.
 - Add an onboarding flow for importing existing `ssh-auto2fa` Keychain services.
-- Add user notifications for tunnel failures and recoveries.
+- Add an onboarding flow for importing existing `ssh-auto2fa` Keychain services.
