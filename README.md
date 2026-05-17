@@ -10,6 +10,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Native Keychain-backed password and TOTP support.
 - SSH SOCKS5 tunnels using `/usr/bin/ssh -N -D`.
 - Local PAC server with fail-closed routing when a tunnel is unhealthy.
+- Local blocking proxy that shows an explanatory page for HTTP requests when a PAC-matched tunnel is down.
 - SOCKS5 handshake health checks so PAC only routes through working tunnels.
 - Optional macOS Automatic Proxy Configuration for the active network service.
 - Network fingerprint rules to disable proxy/PAC behavior on trusted networks.
@@ -37,8 +38,9 @@ When running, the app serves:
 - PAC: `http://127.0.0.1:18483/proxy.pac`
 - Status page: `http://127.0.0.1:18483/status`
 - Local API: `http://127.0.0.1:18484`
+- Blocking proxy: `127.0.0.1:18485`
 
-The PAC returns `SOCKS5 127.0.0.1:<profile-port>` for matching tunnels that pass the local SOCKS5 handshake probe, `DIRECT` for unmatched hosts, and a blocking local proxy for matched domains whose tunnel is down.
+The PAC returns `SOCKS5 127.0.0.1:<profile-port>` for matching tunnels that pass the local SOCKS5 handshake probe, `DIRECT` for unmatched hosts, and `PROXY 127.0.0.1:18485` for matched domains whose tunnel is down. The blocking proxy can show an explanatory HTML page for plain HTTP requests; HTTPS requests fail cleanly at the proxy because the app does not intercept TLS certificates.
 
 ## CLI
 
