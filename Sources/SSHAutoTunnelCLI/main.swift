@@ -5,8 +5,7 @@ import SSHAutoTunnelCore
 struct SSHAutoTunnelCLI {
     static func main() async {
         do {
-            let args = Array(CommandLine.arguments.dropFirst())
-            guard let command = args.first else {
+            guard let invocation = CLIArguments.parse(Array(CommandLine.arguments.dropFirst())) else {
                 printUsage()
                 return
             }
@@ -15,13 +14,13 @@ struct SSHAutoTunnelCLI {
             let client = ControlAPIClient(configuration: configuration)
             let response: ControlResponse
 
-            switch command {
+            switch invocation.command {
             case "connect":
-                response = try await client.send(ControlRequest(action: .connect, profileName: profileName(from: args)))
+                response = try await client.send(ControlRequest(action: .connect, profileName: invocation.profileName))
             case "disconnect":
-                response = try await client.send(ControlRequest(action: .disconnect, profileName: profileName(from: args)))
+                response = try await client.send(ControlRequest(action: .disconnect, profileName: invocation.profileName))
             case "reconnect":
-                response = try await client.send(ControlRequest(action: .reconnect, profileName: profileName(from: args)))
+                response = try await client.send(ControlRequest(action: .reconnect, profileName: invocation.profileName))
             case "status":
                 response = try await client.send(ControlRequest(action: .status))
             case "pac-url":
@@ -33,7 +32,7 @@ struct SSHAutoTunnelCLI {
                 return
             }
 
-            render(response)
+            render(response, outputJSON: invocation.outputJSON)
             exit(response.ok ? 0 : 1)
         } catch {
             fputs("ssh-autotunnelctl: \(error.localizedDescription)\n", stderr)
@@ -41,13 +40,16 @@ struct SSHAutoTunnelCLI {
         }
     }
 
-    private static func profileName(from args: [String]) -> String? {
-        let remainder = args.dropFirst()
-        guard !remainder.isEmpty else { return nil }
-        return remainder.joined(separator: " ")
-    }
+    private static func render(_ response: ControlResponse, outputJSON: Bool) {
+        if outputJSON {
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(response), let text = String(data: data, encoding: .utf8) {
+                print(text)
+            }
+            return
+        }
 
-    private static func render(_ response: ControlResponse) {
         print(response.message)
         guard let status = response.status else { return }
         print("PAC: \(status.pacURL)")
@@ -64,6 +66,7 @@ struct SSHAutoTunnelCLI {
         print("""
         Usage:
           ssh-autotunnelctl status
+          ssh-autotunnelctl status --json
           ssh-autotunnelctl pac-url
           ssh-autotunnelctl reload-pac
           ssh-autotunnelctl connect <profile name>

@@ -25,6 +25,7 @@
 - Added a local API token rotation action in settings.
 - Added tested notification policy and macOS notification delivery for tunnel failures/recoveries.
 - Added a tested `ssh-auto2fa` preset importer and Settings action.
+- Added tested CLI argument parsing and `--json` output for automation.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
