@@ -252,6 +252,13 @@ struct NetworkRulesView: View {
                 }
             }
 
+            Section("Current Network") {
+                NetworkFingerprintView(fingerprint: appState.currentNetworkFingerprint)
+                Button("Create Disable Rule From Current Network") {
+                    appState.addDisableRuleForCurrentNetwork()
+                }
+            }
+
             Section("Rules") {
                 ForEach($appState.configuration.networkRules) { $rule in
                     DisclosureGroup(rule.name) {
@@ -290,6 +297,35 @@ struct NetworkRulesView: View {
             value.wrappedValue ?? ""
         } set: { newValue in
             value.wrappedValue = newValue.isEmpty ? nil : newValue
+        }
+    }
+}
+
+private struct NetworkFingerprintView: View {
+    var fingerprint: NetworkFingerprint
+
+    var body: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
+            fingerprintRow("Service", fingerprint.serviceName)
+            fingerprintRow("Interface", fingerprint.interfaceName)
+            fingerprintRow("Wi-Fi SSID", fingerprint.wifiSSID)
+            fingerprintRow("Wi-Fi BSSID", fingerprint.wifiBSSID)
+            fingerprintRow("Gateway", fingerprint.gateway)
+            fingerprintRow("Search domains", fingerprint.searchDomains.joined(separator: ", "))
+            fingerprintRow("DNS servers", fingerprint.dnsServers.joined(separator: ", "))
+            fingerprintRow("IPv4", fingerprint.ipv4Addresses.joined(separator: ", "))
+            fingerprintRow("VPN interface", fingerprint.hasVPNInterface ? "yes" : "no")
+        }
+        .font(.caption)
+        .textSelection(.enabled)
+    }
+
+    @ViewBuilder
+    private func fingerprintRow(_ label: String, _ value: String?) -> some View {
+        GridRow {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Text(value?.isEmpty == false ? value! : "-")
         }
     }
 }

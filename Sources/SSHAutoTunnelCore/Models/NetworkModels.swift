@@ -100,6 +100,50 @@ public struct NetworkPolicyRule: Identifiable, Codable, Equatable, Sendable {
         self.match = match
         self.action = action
     }
+
+    public static func disableProxyRule(from fingerprint: NetworkFingerprint) -> NetworkPolicyRule? {
+        if let ssid = fingerprint.wifiSSID?.nonEmptyTrimmed {
+            return NetworkPolicyRule(
+                name: "Trusted Wi-Fi: \(ssid)",
+                match: NetworkMatch(wifiSSID: ssid),
+                action: .disableProxy
+            )
+        }
+
+        if let searchDomain = fingerprint.searchDomains.compactMap(\.nonEmptyTrimmed).first {
+            return NetworkPolicyRule(
+                name: "Trusted domain: \(searchDomain)",
+                match: NetworkMatch(searchDomainContains: searchDomain),
+                action: .disableProxy
+            )
+        }
+
+        if let serviceName = fingerprint.serviceName?.nonEmptyTrimmed {
+            return NetworkPolicyRule(
+                name: "Trusted service: \(serviceName)",
+                match: NetworkMatch(serviceNameContains: serviceName),
+                action: .disableProxy
+            )
+        }
+
+        if let gateway = fingerprint.gateway?.nonEmptyTrimmed {
+            return NetworkPolicyRule(
+                name: "Trusted gateway: \(gateway)",
+                match: NetworkMatch(gateway: gateway),
+                action: .disableProxy
+            )
+        }
+
+        if fingerprint.hasVPNInterface {
+            return NetworkPolicyRule(
+                name: "Trusted VPN",
+                match: NetworkMatch(vpnRequired: true),
+                action: .disableProxy
+            )
+        }
+
+        return nil
+    }
 }
 
 public struct NetworkPolicyDecision: Equatable, Sendable {
@@ -109,5 +153,12 @@ public struct NetworkPolicyDecision: Equatable, Sendable {
     public init(shouldDisableProxy: Bool, matchedRule: NetworkPolicyRule?) {
         self.shouldDisableProxy = shouldDisableProxy
         self.matchedRule = matchedRule
+    }
+}
+
+private extension String {
+    var nonEmptyTrimmed: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }

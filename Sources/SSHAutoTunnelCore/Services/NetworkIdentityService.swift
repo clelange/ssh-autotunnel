@@ -21,6 +21,10 @@ public final class NetworkIdentityService {
 
     public func evaluate(configuration: AppConfiguration) -> NetworkPolicyDecision {
         let fingerprint = currentFingerprint()
+        return evaluate(configuration: configuration, fingerprint: fingerprint)
+    }
+
+    public func evaluate(configuration: AppConfiguration, fingerprint: NetworkFingerprint) -> NetworkPolicyDecision {
         for rule in configuration.networkRules where rule.enabled {
             if rule.match.matches(fingerprint) {
                 return NetworkPolicyDecision(shouldDisableProxy: rule.action == .disableProxy, matchedRule: rule)

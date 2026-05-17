@@ -9,6 +9,7 @@ final class AppState: ObservableObject {
     @Published var statuses: [UUID: TunnelRuntimeStatus] = [:]
     @Published var logs: [UUID: String] = [:]
     @Published var networkDecision = NetworkPolicyDecision(shouldDisableProxy: false, matchedRule: nil)
+    @Published var currentNetworkFingerprint = NetworkFingerprint()
     @Published var lastProxyMessage = "System PAC is not enabled"
 
     private let configurationStore: ConfigurationStore
@@ -135,6 +136,17 @@ final class AppState: ObservableObject {
         saveConfiguration()
     }
 
+    func addDisableRuleForCurrentNetwork() {
+        refreshNetworkDecision()
+        guard let rule = NetworkPolicyRule.disableProxyRule(from: currentNetworkFingerprint) else {
+            lastProxyMessage = "Current network does not expose enough fingerprint data for a rule"
+            return
+        }
+        configuration.networkRules.append(rule)
+        saveConfiguration()
+        lastProxyMessage = "Added network rule \(rule.name)"
+    }
+
     func snapshot() -> AppStatusSnapshot {
         let profileStatuses = configuration.profiles.map { profile in
             ProfileStatusSnapshot(profile: profile, status: status(for: profile))
@@ -258,7 +270,8 @@ final class AppState: ObservableObject {
     }
 
     private func refreshNetworkDecision() {
-        networkDecision = networkIdentity.evaluate(configuration: configuration)
+        currentNetworkFingerprint = networkIdentity.currentFingerprint()
+        networkDecision = networkIdentity.evaluate(configuration: configuration, fingerprint: currentNetworkFingerprint)
     }
 
     private func startNetworkMonitoring() {
