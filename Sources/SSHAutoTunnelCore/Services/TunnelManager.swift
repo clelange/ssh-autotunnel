@@ -227,31 +227,13 @@ public final class TunnelManager {
                 continue
             }
 
-            if isPortOpen(port: managed.profile.localSocksPort) {
+            if SOCKS5Probe.probe(port: managed.profile.localSocksPort) {
                 let current = statuses[profileID]?.health
                 if current != .healthy {
-                    updateStatusLocked(profileID, .healthy, "SOCKS port is accepting connections", pid: managed.process.processIdentifier)
+                    updateStatusLocked(profileID, .healthy, "SOCKS5 handshake succeeded", pid: managed.process.processIdentifier)
                 }
             } else {
-                updateStatusLocked(profileID, .unhealthy, "SOCKS port is not reachable", pid: managed.process.processIdentifier)
-            }
-        }
-    }
-
-    private func isPortOpen(port: Int) -> Bool {
-        let fd = socket(AF_INET, SOCK_STREAM, 0)
-        guard fd >= 0 else { return false }
-        defer { close(fd) }
-
-        var addr = sockaddr_in()
-        addr.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-        addr.sin_family = sa_family_t(AF_INET)
-        addr.sin_port = in_port_t(port).bigEndian
-        inet_pton(AF_INET, "127.0.0.1", &addr.sin_addr)
-
-        return withUnsafePointer(to: &addr) {
-            $0.withMemoryRebound(to: sockaddr.self, capacity: 1) {
-                connect(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) == 0
+                updateStatusLocked(profileID, .unhealthy, "SOCKS5 probe failed", pid: managed.process.processIdentifier)
             }
         }
     }

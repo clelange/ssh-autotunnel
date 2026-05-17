@@ -27,6 +27,7 @@
 - Added a tested `ssh-auto2fa` preset importer and Settings action.
 - Added tested CLI argument parsing and `--json` output for automation.
 - Extracted SSH tunnel command construction into a tested builder.
+- Replaced local port-only health checks with a tested SOCKS5 handshake probe.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
