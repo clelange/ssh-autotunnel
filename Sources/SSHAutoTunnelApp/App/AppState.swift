@@ -82,6 +82,12 @@ final class AppState: ObservableObject {
         try keychain.writeGenericPassword(value, service: service, account: account)
     }
 
+    func rotateAPIToken() {
+        configuration.apiToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        saveConfiguration()
+        lastProxyMessage = "Local API token rotated"
+    }
+
     func applySystemPAC() {
         do {
             if networkDecision.shouldDisableProxy {

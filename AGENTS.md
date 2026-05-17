@@ -21,6 +21,7 @@
 - Extracted SSH prompt detection into a tested pure core service and made tunnel prompt replies one-shot per prompt type.
 - Added integration tests for the local HTTP server, including PAC serving and complete POST body handling.
 - Added current-network fingerprint display and a “create disable rule from current network” flow.
+- Added a local API token rotation action in settings.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
@@ -42,7 +43,7 @@ All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite cu
 - The pseudo-terminal prompt matcher is now unit-tested, but still needs live tuning after real CERN/PSI server tests.
 - System PAC restoration is implemented for active service changes, but needs more manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents are present, but Shortcuts discovery and invocation need end-to-end validation from the Shortcuts app.
-- The local API currently uses a static token stored in the app configuration; token rotation UI is minimal.
+- The local API token can be rotated from settings; broader API integration testing is still needed.
 
 ## Next Useful Milestones
 

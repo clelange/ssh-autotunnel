@@ -356,6 +356,9 @@ struct AppPreferencesView: View {
                     .textSelection(.enabled)
                 TextField("API HTTP port", value: $appState.configuration.apiHTTPPort, format: .number)
                 SecureField("API token", text: $appState.configuration.apiToken)
+                Button("Rotate API Token") {
+                    appState.rotateAPIToken()
+                }
             }
         }
         .formStyle(.grouped)
