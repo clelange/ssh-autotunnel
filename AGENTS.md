@@ -29,6 +29,7 @@
 - Extracted SSH tunnel command construction into a tested builder.
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
+- Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
@@ -42,13 +43,13 @@ swift test
 ./script/build_and_run.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 18 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 48 XCTest cases.
 
 ## Known Gaps
 
 - Real CERN/PSI SSH login flows still need live validation with the user’s Keychain secrets and reachable networks.
 - The pseudo-terminal prompt matcher is now unit-tested, but still needs live tuning after real CERN/PSI server tests.
-- System PAC restoration is implemented for active service changes, but needs more manual testing across Wi-Fi, Ethernet, and VPN transitions.
+- System PAC restoration command planning is unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents are present, but Shortcuts discovery and invocation need end-to-end validation from the Shortcuts app.
 - The local API token can be rotated from settings; client authentication and error handling have integration coverage.
 

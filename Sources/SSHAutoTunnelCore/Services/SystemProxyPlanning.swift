@@ -1,0 +1,75 @@
+import Foundation
+
+public struct NetworkSetupCommand: Equatable, Sendable {
+    public var executable: String
+    public var arguments: [String]
+
+    public init(executable: String = "/usr/sbin/networksetup", arguments: [String]) {
+        self.executable = executable
+        self.arguments = arguments
+    }
+}
+
+public enum NetworkSetupParser {
+    public static func autoProxySnapshot(serviceName: String, output: String) -> ProxySnapshot {
+        var enabled = false
+        var url: String?
+
+        for rawLine in output.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if let value = value(in: line, after: "URL:") {
+                url = value.isEmpty ? nil : value
+            } else if let value = value(in: line, after: "Enabled:") {
+                enabled = ["1", "yes", "on", "true"].contains(value.lowercased())
+            }
+        }
+
+        return ProxySnapshot(serviceName: serviceName, autoProxyEnabled: enabled, autoProxyURL: url)
+    }
+
+    public static func serviceName(forDevice device: String, hardwarePortsOutput: String) -> String? {
+        var currentHardwarePort: String?
+
+        for rawLine in hardwarePortsOutput.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if let hardwarePort = value(in: line, after: "Hardware Port:") {
+                currentHardwarePort = hardwarePort
+            } else if let currentDevice = value(in: line, after: "Device:"), currentDevice == device {
+                return currentHardwarePort
+            }
+        }
+
+        return nil
+    }
+
+    private static func value(in line: String, after prefix: String) -> String? {
+        guard line.hasPrefix(prefix) else { return nil }
+        return String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+    }
+}
+
+public enum SystemProxyPlanner {
+    public static func applyPACCommands(serviceName: String, pacURL: String) -> [NetworkSetupCommand] {
+        [
+            NetworkSetupCommand(arguments: ["-setautoproxyurl", serviceName, pacURL]),
+            NetworkSetupCommand(arguments: ["-setautoproxystate", serviceName, "on"])
+        ]
+    }
+
+    public static func restoreCommands(snapshot: ProxySnapshot) -> [NetworkSetupCommand] {
+        var commands: [NetworkSetupCommand] = []
+
+        if let autoProxyURL = snapshot.autoProxyURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+           !autoProxyURL.isEmpty {
+            commands.append(NetworkSetupCommand(arguments: ["-setautoproxyurl", snapshot.serviceName, autoProxyURL]))
+        }
+
+        commands.append(NetworkSetupCommand(arguments: [
+            "-setautoproxystate",
+            snapshot.serviceName,
+            snapshot.autoProxyEnabled ? "on" : "off"
+        ]))
+
+        return commands
+    }
+}

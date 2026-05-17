@@ -19,17 +19,17 @@ public final class SystemProxyManager {
         if snapshot == nil || snapshot?.serviceName != service {
             snapshot = currentAutoProxySnapshot(serviceName: service)
         }
-        _ = try ShellRunner.run("/usr/sbin/networksetup", ["-setautoproxyurl", service, url])
-        _ = try ShellRunner.run("/usr/sbin/networksetup", ["-setautoproxystate", service, "on"])
+        for command in SystemProxyPlanner.applyPACCommands(serviceName: service, pacURL: url) {
+            _ = try ShellRunner.run(command.executable, command.arguments)
+        }
         return service
     }
 
     public func restoreIfNeeded() throws {
         guard let snapshot else { return }
-        if let autoProxyURL = snapshot.autoProxyURL, !autoProxyURL.isEmpty {
-            _ = try ShellRunner.run("/usr/sbin/networksetup", ["-setautoproxyurl", snapshot.serviceName, autoProxyURL])
+        for command in SystemProxyPlanner.restoreCommands(snapshot: snapshot) {
+            _ = try ShellRunner.run(command.executable, command.arguments)
         }
-        _ = try ShellRunner.run("/usr/sbin/networksetup", ["-setautoproxystate", snapshot.serviceName, snapshot.autoProxyEnabled ? "on" : "off"])
         self.snapshot = nil
     }
 
@@ -38,17 +38,6 @@ public final class SystemProxyManager {
             return ProxySnapshot(serviceName: serviceName, autoProxyEnabled: false, autoProxyURL: nil)
         }
 
-        var enabled = false
-        var url: String?
-        for rawLine in result.stdout.split(separator: "\n") {
-            let line = String(rawLine)
-            if line.hasPrefix("URL:") {
-                url = line.replacingOccurrences(of: "URL:", with: "").trimmingCharacters(in: .whitespaces)
-            } else if line.hasPrefix("Enabled:") {
-                let value = line.replacingOccurrences(of: "Enabled:", with: "").trimmingCharacters(in: .whitespaces)
-                enabled = value == "Yes" || value == "1"
-            }
-        }
-        return ProxySnapshot(serviceName: serviceName, autoProxyEnabled: enabled, autoProxyURL: url)
+        return NetworkSetupParser.autoProxySnapshot(serviceName: serviceName, output: result.stdout)
     }
 }

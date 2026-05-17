@@ -73,19 +73,7 @@ public final class NetworkIdentityService {
         guard let result = try? ShellRunner.run("/usr/sbin/networksetup", ["-listallhardwareports"]), result.succeeded else {
             return nil
         }
-        var currentHardwarePort: String?
-        for rawLine in result.stdout.split(separator: "\n") {
-            let line = String(rawLine)
-            if line.hasPrefix("Hardware Port:") {
-                currentHardwarePort = line.replacingOccurrences(of: "Hardware Port:", with: "").trimmingCharacters(in: .whitespaces)
-            } else if line.hasPrefix("Device:") {
-                let currentDevice = line.replacingOccurrences(of: "Device:", with: "").trimmingCharacters(in: .whitespaces)
-                if currentDevice == device {
-                    return currentHardwarePort
-                }
-            }
-        }
-        return nil
+        return NetworkSetupParser.serviceName(forDevice: device, hardwarePortsOutput: result.stdout)
     }
 
     private func dnsServers() -> [String] {
