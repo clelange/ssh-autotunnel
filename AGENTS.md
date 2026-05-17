@@ -28,6 +28,7 @@
 - Added tested CLI argument parsing and `--json` output for automation.
 - Extracted SSH tunnel command construction into a tested builder.
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
+- Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 

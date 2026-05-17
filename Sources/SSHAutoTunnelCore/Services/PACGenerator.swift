@@ -13,7 +13,9 @@ public struct PACGenerationContext: Sendable {
 }
 
 public enum PACGenerator {
-    public static let blockingProxy = "SOCKS5 127.0.0.1:9"
+    public static func blockingProxy(port: Int) -> String {
+        "PROXY 127.0.0.1:\(port)"
+    }
 
     public static func generate(context: PACGenerationContext) -> String {
         var lines: [String] = []
@@ -37,7 +39,7 @@ public enum PACGenerator {
             if status.health.isUsableForPAC {
                 target = "SOCKS5 127.0.0.1:\(profile.localSocksPort)"
             } else {
-                target = rule.failureMode == .directFallback ? "DIRECT" : blockingProxy
+                target = rule.failureMode == .directFallback ? "DIRECT" : blockingProxy(port: context.configuration.blockingHTTPProxyPort)
             }
             lines.append("  if (\(DomainPattern.pacExpression(for: rule.domainPattern))) {")
             lines.append("    return \"\(target)\";")

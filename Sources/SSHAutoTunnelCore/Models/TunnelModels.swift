@@ -175,15 +175,28 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var pacRules: [PACRule]
     public var networkRules: [NetworkPolicyRule]
     public var pacHTTPPort: Int
+    public var blockingHTTPProxyPort: Int
     public var apiHTTPPort: Int
     public var apiToken: String
     public var proxyApplyMode: ProxyApplyMode
+
+    private enum CodingKeys: String, CodingKey {
+        case profiles
+        case pacRules
+        case networkRules
+        case pacHTTPPort
+        case blockingHTTPProxyPort
+        case apiHTTPPort
+        case apiToken
+        case proxyApplyMode
+    }
 
     public init(
         profiles: [TunnelProfile] = [],
         pacRules: [PACRule] = [],
         networkRules: [NetworkPolicyRule] = [],
         pacHTTPPort: Int = 18483,
+        blockingHTTPProxyPort: Int = 18485,
         apiHTTPPort: Int = 18484,
         apiToken: String = UUID().uuidString.replacingOccurrences(of: "-", with: ""),
         proxyApplyMode: ProxyApplyMode = .manual
@@ -192,9 +205,34 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         self.pacRules = pacRules
         self.networkRules = networkRules
         self.pacHTTPPort = pacHTTPPort
+        self.blockingHTTPProxyPort = blockingHTTPProxyPort
         self.apiHTTPPort = apiHTTPPort
         self.apiToken = apiToken
         self.proxyApplyMode = proxyApplyMode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        profiles = try container.decodeIfPresent([TunnelProfile].self, forKey: .profiles) ?? []
+        pacRules = try container.decodeIfPresent([PACRule].self, forKey: .pacRules) ?? []
+        networkRules = try container.decodeIfPresent([NetworkPolicyRule].self, forKey: .networkRules) ?? []
+        pacHTTPPort = try container.decodeIfPresent(Int.self, forKey: .pacHTTPPort) ?? 18483
+        blockingHTTPProxyPort = try container.decodeIfPresent(Int.self, forKey: .blockingHTTPProxyPort) ?? 18485
+        apiHTTPPort = try container.decodeIfPresent(Int.self, forKey: .apiHTTPPort) ?? 18484
+        apiToken = try container.decodeIfPresent(String.self, forKey: .apiToken) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
+        proxyApplyMode = try container.decodeIfPresent(ProxyApplyMode.self, forKey: .proxyApplyMode) ?? .manual
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(profiles, forKey: .profiles)
+        try container.encode(pacRules, forKey: .pacRules)
+        try container.encode(networkRules, forKey: .networkRules)
+        try container.encode(pacHTTPPort, forKey: .pacHTTPPort)
+        try container.encode(blockingHTTPProxyPort, forKey: .blockingHTTPProxyPort)
+        try container.encode(apiHTTPPort, forKey: .apiHTTPPort)
+        try container.encode(apiToken, forKey: .apiToken)
+        try container.encode(proxyApplyMode, forKey: .proxyApplyMode)
     }
 
     public static func defaultConfiguration() -> AppConfiguration {

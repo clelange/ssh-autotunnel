@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     private let proxyManager = SystemProxyManager()
     private let notifications = AppNotificationService()
     private var pacServer: LocalHTTPServer?
+    private var blockingProxyServer: LocalHTTPServer?
     private var apiServer: LocalHTTPServer?
     private var pathMonitor: NWPathMonitor?
     private let jsonEncoder = JSONEncoder()
@@ -42,6 +43,10 @@ final class AppState: ObservableObject {
 
     var pacURL: String {
         "http://127.0.0.1:\(configuration.pacHTTPPort)/proxy.pac?v=\(pacVersion)"
+    }
+
+    var statusURL: String {
+        "http://127.0.0.1:\(configuration.pacHTTPPort)/status"
     }
 
     private var pacVersion: Int {
@@ -204,12 +209,23 @@ final class AppState: ObservableObject {
             }
             try pacServer?.start()
 
+            blockingProxyServer = LocalHTTPServer(port: configuration.blockingHTTPProxyPort, label: "dev.clange.ssh-autotunnel.blocking-proxy") { [weak self] request in
+                self?.handleBlockingProxyRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
+            }
+            try blockingProxyServer?.start()
+
             apiServer = LocalHTTPServer(port: configuration.apiHTTPPort, label: "dev.clange.ssh-autotunnel.api") { [weak self] request in
                 self?.handleAPIRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
             }
             try apiServer?.start()
         } catch {
             lastProxyMessage = "Local server failed: \(error.localizedDescription)"
+        }
+    }
+
+    private nonisolated func handleBlockingProxyRequest(_ request: HTTPRequest) -> HTTPResponse {
+        DispatchQueue.main.sync {
+            BlockingProxyResponder.response(for: request, statusURL: statusURL)
         }
     }
 

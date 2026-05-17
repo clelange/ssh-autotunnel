@@ -339,6 +339,7 @@ struct AppPreferencesView: View {
                 Text(appState.pacURL)
                     .textSelection(.enabled)
                 TextField("PAC HTTP port", value: $appState.configuration.pacHTTPPort, format: .number)
+                TextField("Blocking proxy port", value: $appState.configuration.blockingHTTPProxyPort, format: .number)
                 Picker("System proxy", selection: $appState.configuration.proxyApplyMode) {
                     Text("Manual").tag(ProxyApplyMode.manual)
                     Text("Apply to active service").tag(ProxyApplyMode.activeNetworkServicePAC)

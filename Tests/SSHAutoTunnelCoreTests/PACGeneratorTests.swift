@@ -22,7 +22,7 @@ final class PACGeneratorTests: XCTestCase {
             configuration: config,
             statuses: [profile.id: TunnelRuntimeStatus(profileID: profile.id, health: .failed)]
         ))
-        XCTAssertTrue(pac.contains(PACGenerator.blockingProxy))
+        XCTAssertTrue(pac.contains(PACGenerator.blockingProxy(port: config.blockingHTTPProxyPort)))
     }
 
     func testNetworkPolicyDisablesProxy() {
