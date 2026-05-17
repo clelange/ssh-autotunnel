@@ -7,6 +7,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 ## Features
 
 - Menu-bar controls for connecting and disconnecting tunnel profiles.
+- First-launch setup window with quick access to imports, settings, PAC URL, and diagnostics.
 - Native Keychain-backed password and TOTP support.
 - SSH SOCKS5 tunnels using `/usr/bin/ssh -N -D`.
 - Local PAC server with fail-closed routing when a tunnel is unhealthy.

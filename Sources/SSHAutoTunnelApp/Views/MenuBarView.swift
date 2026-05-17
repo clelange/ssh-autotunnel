@@ -58,6 +58,13 @@ struct MenuBarView: View {
                 Label("Diagnostics", systemImage: "stethoscope")
             }
 
+            Button {
+                openWindow(id: "onboarding")
+                NSApp.activate(ignoringOtherApps: true)
+            } label: {
+                Label("Setup", systemImage: "sparkles")
+            }
+
             Divider()
 
             Text(appState.lastProxyMessage)

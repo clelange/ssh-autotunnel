@@ -12,8 +12,16 @@ struct SSHAutoTunnelApp: App {
                 .environmentObject(appState)
         } label: {
             Label("SSH AutoTunnel", systemImage: "point.3.connected.trianglepath.dotted")
+                .overlay {
+                    OnboardingPresenter()
+                }
         }
         .menuBarExtraStyle(.menu)
+
+        Window("SSH AutoTunnel Setup", id: "onboarding") {
+            OnboardingView()
+                .environmentObject(appState)
+        }
 
         Window("SSH AutoTunnel Settings", id: "settings") {
             SettingsView()

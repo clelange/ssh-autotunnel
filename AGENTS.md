@@ -30,6 +30,7 @@
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
+- Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
@@ -56,5 +57,4 @@ All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite cu
 ## Next Useful Milestones
 
 - Validate and tune CERN lxplus and PSI Tier-3 authentication prompts.
-- Add a first-launch onboarding window for new users.
 - Add an onboarding flow for importing existing `ssh-auto2fa` Keychain services.

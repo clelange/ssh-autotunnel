@@ -131,11 +131,13 @@ final class AppState: ObservableObject {
         saveConfiguration()
     }
 
-    func importSSHAuto2FAPresets() {
+    @discardableResult
+    func importSSHAuto2FAPresets() -> SSHAuto2FAImportResult {
         let (updated, result) = SSHAuto2FAImporter.apply(to: configuration, account: NSUserName())
         configuration = updated
         saveConfiguration()
         lastProxyMessage = "Imported ssh-auto2fa presets: \(result.createdProfiles) created, \(result.updatedProfiles) updated"
+        return result
     }
 
     func addGenericProfile() {
