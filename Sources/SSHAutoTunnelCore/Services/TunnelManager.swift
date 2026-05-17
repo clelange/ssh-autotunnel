@@ -108,8 +108,9 @@ public final class TunnelManager {
         }
 
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
-        process.arguments = sshArguments(for: profile)
+        let command = SSHCommandBuilder.tunnelCommand(for: profile)
+        process.executableURL = URL(fileURLWithPath: command.executable)
+        process.arguments = command.arguments
         process.standardInput = FileHandle(fileDescriptor: dup(slave), closeOnDealloc: true)
         process.standardOutput = FileHandle(fileDescriptor: dup(slave), closeOnDealloc: true)
         process.standardError = FileHandle(fileDescriptor: dup(slave), closeOnDealloc: true)
@@ -128,28 +129,6 @@ public final class TunnelManager {
         try process.run()
         readLoop(managed)
         return managed
-    }
-
-    private func sshArguments(for profile: TunnelProfile) -> [String] {
-        var arguments = [
-            "-N",
-            "-D", "127.0.0.1:\(profile.localSocksPort)",
-            "-p", "\(profile.sshPort)",
-            "-o", "ExitOnForwardFailure=yes",
-            "-o", "ServerAliveInterval=20",
-            "-o", "ServerAliveCountMax=2",
-            "-o", "StrictHostKeyChecking=accept-new"
-        ]
-
-        if profile.authMode == .password || profile.authMode == .passwordAndTOTP {
-            arguments += ["-o", "PreferredAuthentications=keyboard-interactive,password"]
-        }
-        if let jumpHost = profile.jumpHost, !jumpHost.isEmpty {
-            arguments += ["-J", jumpHost]
-        }
-        arguments += profile.extraSSHOptions
-        arguments.append(profile.sshDestination)
-        return arguments
     }
 
     private func readLoop(_ managed: ManagedTunnel) {

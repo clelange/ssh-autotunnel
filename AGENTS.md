@@ -26,6 +26,7 @@
 - Added tested notification policy and macOS notification delivery for tunnel failures/recoveries.
 - Added a tested `ssh-auto2fa` preset importer and Settings action.
 - Added tested CLI argument parsing and `--json` output for automation.
+- Extracted SSH tunnel command construction into a tested builder.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
