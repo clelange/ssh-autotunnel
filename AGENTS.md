@@ -33,6 +33,7 @@
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
 - Added tested tunnel lifecycle policy for intentional stops, unexpected SSH exits, repeated health failures, and automatic reconnect backoff.
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
+- Added tested port validation and restart logic for local PAC, API, and blocking proxy servers when valid listener ports change.
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
@@ -53,7 +54,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 61 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 65 XCTest cases.
 
 ## Known Gaps
 

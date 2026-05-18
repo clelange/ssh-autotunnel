@@ -21,6 +21,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Durable system PAC snapshots so the previous macOS proxy state can be restored after app restart or quit.
 - Network fingerprint rules to disable proxy/PAC behavior on trusted networks.
 - Settings and diagnostics windows.
+- Port validation for PAC/API/blocking/SOCKS settings, with local server restart when valid listener ports change.
 - Local API, CLI helper, and Shortcuts/App Intents hooks.
 - Automatic recovery from malformed configuration files by backing them up and recreating defaults.
 
