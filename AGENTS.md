@@ -36,6 +36,7 @@
 - Added tested configuration recovery for malformed config files with backup creation and default regeneration.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Added `script/package_local.sh` for release builds, local app/CLI archive creation, ad-hoc signing, and bundle verification.
+- Added GitHub Actions CI for Swift build, test, and local package verification on macOS runners.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status

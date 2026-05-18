@@ -1,5 +1,7 @@
 # SSH AutoTunnel
 
+[![CI](https://github.com/clelange/ssh-autotunnel/actions/workflows/ci.yml/badge.svg)](https://github.com/clelange/ssh-autotunnel/actions/workflows/ci.yml)
+
 SSH AutoTunnel is a macOS menu-bar app for starting SSH SOCKS5 tunnels with automatic password/TOTP handling, health-aware PAC routing, network-aware proxy policy, and local automation.
 
 The app is designed for SSH servers that require interactive 2FA, including CERN lxplus and PSI Tier-3 style workflows.
