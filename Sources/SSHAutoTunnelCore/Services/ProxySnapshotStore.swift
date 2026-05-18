@@ -14,13 +14,16 @@ public final class ProxySnapshotStore {
 
     public func save(_ snapshot: ProxySnapshot) throws {
         let directory = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileProtection.protectDirectory(directory)
         let data = try encoder.encode(snapshot)
         try data.write(to: url, options: [.atomic])
+        try FileProtection.protectFile(url)
     }
 
     public func load() throws -> ProxySnapshot? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        try FileProtection.protectDirectory(url.deletingLastPathComponent())
+        try FileProtection.protectFile(url)
         let data = try Data(contentsOf: url)
         return try decoder.decode(ProxySnapshot.self, from: data)
     }

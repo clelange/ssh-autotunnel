@@ -405,7 +405,9 @@ final class AppState: ObservableObject {
 
     private func writePACCopy() {
         do {
-            try currentPAC().write(to: try AppPaths.pacCopyURL(), atomically: true, encoding: .utf8)
+            let url = try AppPaths.pacCopyURL()
+            try currentPAC().write(to: url, atomically: true, encoding: .utf8)
+            try FileProtection.protectFile(url)
         } catch {
             lastProxyMessage = "Could not write PAC copy: \(error.localizedDescription)"
         }

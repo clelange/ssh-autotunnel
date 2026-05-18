@@ -16,6 +16,8 @@ final class ConfigurationStoreTests: XCTestCase {
         let backupURL = try XCTUnwrap(result.backupURL)
         XCTAssertTrue(FileManager.default.fileExists(atPath: backupURL.path))
         XCTAssertEqual(try String(contentsOf: backupURL, encoding: .utf8), "{ invalid json")
+        XCTAssertEqual(try posixPermissions(of: backupURL), FileProtection.privateFilePermissions)
+        XCTAssertEqual(try posixPermissions(of: url), FileProtection.privateFilePermissions)
         XCTAssertEqual(result.configuration.profiles.map(\.name), ["CERN lxplus", "PSI Tier-3"])
 
         let recovered = try store.load()
@@ -30,6 +32,8 @@ final class ConfigurationStoreTests: XCTestCase {
         ])
         let store = try ConfigurationStore(url: url)
         try store.save(expected)
+        XCTAssertEqual(try posixPermissions(of: directory), FileProtection.privateDirectoryPermissions)
+        XCTAssertEqual(try posixPermissions(of: url), FileProtection.privateFilePermissions)
 
         let result = try store.loadRecovering()
 
@@ -47,5 +51,10 @@ final class ConfigurationStoreTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func posixPermissions(of url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue & 0o777
     }
 }

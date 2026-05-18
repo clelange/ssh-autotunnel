@@ -42,6 +42,7 @@
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
 - Added tested configuration recovery for malformed config files with backup creation and default regeneration.
+- Added private file permission enforcement for the app support directory, configuration, generated PAC copy, and system PAC snapshot.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Added `script/package_local.sh` for release builds, local app/CLI archive creation, ad-hoc signing, and bundle verification.
 - Added GitHub Actions CI for Swift build, test, and local package verification on macOS runners.
@@ -58,7 +59,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 77 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 79 XCTest cases.
 
 ## Known Gaps
 
@@ -66,7 +67,7 @@ All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite cu
 - The pseudo-terminal process boundary and prompt matcher are now unit-tested with fakes, but still need live tuning after real CERN/PSI server tests.
 - System PAC restoration command planning, durable snapshot storage, and manager orchestration are unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents are present, but Shortcuts discovery and invocation need end-to-end validation from the Shortcuts app.
-- The local API token can be rotated from settings; client authentication and error handling have integration coverage.
+- The local API token can be rotated from settings and is stored in a user-private config file; client authentication and error handling have integration coverage.
 - `ssh-auto2fa` service detection is unit-tested with fake readers; real Keychain availability still depends on the user's local items and access prompts.
 - The package script creates a local ad-hoc-signed zip; Developer ID signing and notarization still need signing credentials and distribution decisions.
 

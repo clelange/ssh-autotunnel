@@ -16,6 +16,8 @@ final class ProxySnapshotStoreTests: XCTestCase {
 
         XCTAssertEqual(try store.load(), snapshot)
         XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertEqual(try posixPermissions(of: url.deletingLastPathComponent()), FileProtection.privateDirectoryPermissions)
+        XCTAssertEqual(try posixPermissions(of: url), FileProtection.privateFilePermissions)
 
         try store.clear()
 
@@ -29,5 +31,10 @@ final class ProxySnapshotStoreTests: XCTestCase {
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
+    }
+
+    private func posixPermissions(of url: URL) throws -> Int {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue & 0o777
     }
 }

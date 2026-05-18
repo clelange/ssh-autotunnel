@@ -32,6 +32,8 @@ public final class ConfigurationStore {
 
     public func load() throws -> AppConfiguration {
         if FileManager.default.fileExists(atPath: url.path) {
+            try FileProtection.protectDirectory(url.deletingLastPathComponent())
+            try FileProtection.protectFile(url)
             let data = try Data(contentsOf: url)
             return try decoder.decode(AppConfiguration.self, from: data)
         }
@@ -64,14 +66,15 @@ public final class ConfigurationStore {
 
     public func save(_ configuration: AppConfiguration) throws {
         let directory = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileProtection.protectDirectory(directory)
         let data = try encoder.encode(configuration)
         try data.write(to: url, options: [.atomic])
+        try FileProtection.protectFile(url)
     }
 
     private func backupInvalidConfiguration() throws -> URL {
         let directory = url.deletingLastPathComponent()
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileProtection.protectDirectory(directory)
 
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
@@ -82,6 +85,7 @@ public final class ConfigurationStore {
             try FileManager.default.removeItem(at: backupURL)
         }
         try FileManager.default.moveItem(at: url, to: backupURL)
+        try FileProtection.protectFile(backupURL)
         return backupURL
     }
 }

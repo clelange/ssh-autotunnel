@@ -86,6 +86,8 @@ Runtime configuration is stored in:
 ~/Library/Application Support/SSHAutoTunnel/config.json
 ```
 
+The app support directory is kept private to the current user, and `config.json` is written with user-only permissions because it contains the local API token.
+
 The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keychain service names can be checked and imported from setup or settings:
 
 - `cern-lxplus-otp-secret`

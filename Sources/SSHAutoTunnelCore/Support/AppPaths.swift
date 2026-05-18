@@ -11,7 +11,7 @@ public enum AppPaths {
             create: true
         )
         let directory = base.appendingPathComponent("SSHAutoTunnel", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileProtection.protectDirectory(directory)
         return directory
     }
 
