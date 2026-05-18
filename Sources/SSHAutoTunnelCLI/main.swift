@@ -27,6 +27,14 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .pacURL))
             case "reload-pac":
                 response = try await client.send(ControlRequest(action: .reloadPAC))
+            case "apply-system-pac":
+                response = try await client.send(ControlRequest(action: .applySystemPAC))
+            case "restore-system-proxy":
+                response = try await client.send(ControlRequest(action: .restoreSystemPAC))
+            case "import-ssh-auto2fa":
+                response = try await client.send(ControlRequest(action: .importSSHAuto2FA))
+            case "check-ssh-auto2fa":
+                response = try await client.send(ControlRequest(action: .checkSSHAuto2FA))
             default:
                 printUsage()
                 return
@@ -60,6 +68,20 @@ struct SSHAutoTunnelCLI {
             let pid = profile.pid.map { " pid=\($0)" } ?? ""
             print("- \(profile.name): \(profile.health.rawValue)\(pid) - \(profile.message)")
         }
+        if let serviceStatuses = response.sshAuto2FAServiceStatuses {
+            print("ssh-auto2fa Keychain services:")
+            for serviceStatus in serviceStatuses {
+                print("- \(serviceStatus.requirement.profileName) \(serviceStatus.requirement.kind.displayName): \(serviceStatus.requirement.service) - \(label(for: serviceStatus.state))")
+            }
+        }
+    }
+
+    private static func label(for state: KeychainCredentialState) -> String {
+        switch state {
+        case .available: "found"
+        case .missing: "missing"
+        case .unreadable(let message): "unreadable: \(message)"
+        }
     }
 
     private static func printUsage() {
@@ -69,6 +91,10 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl status --json
           ssh-autotunnelctl pac-url
           ssh-autotunnelctl reload-pac
+          ssh-autotunnelctl apply-system-pac
+          ssh-autotunnelctl restore-system-proxy
+          ssh-autotunnelctl import-ssh-auto2fa
+          ssh-autotunnelctl check-ssh-auto2fa
           ssh-autotunnelctl connect <profile name>
           ssh-autotunnelctl disconnect <profile name>
           ssh-autotunnelctl reconnect <profile name>

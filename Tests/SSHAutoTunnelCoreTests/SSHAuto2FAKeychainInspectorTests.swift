@@ -36,6 +36,23 @@ final class SSHAuto2FAKeychainInspectorTests: XCTestCase {
             .unreadable("Access denied")
         ])
     }
+
+    func testServiceStatusIsCodable() throws {
+        let status = SSHAuto2FAServiceStatus(
+            requirement: SSHAuto2FAServiceRequirement(
+                profileName: "PSI Tier-3",
+                kind: .password,
+                service: "psit3-password",
+                account: "lange_c"
+            ),
+            state: .unreadable("Access denied")
+        )
+
+        let data = try JSONEncoder().encode(status)
+        let decoded = try JSONDecoder().decode(SSHAuto2FAServiceStatus.self, from: data)
+
+        XCTAssertEqual(decoded, status)
+    }
 }
 
 private struct FakeGenericPasswordReader: GenericPasswordReading {

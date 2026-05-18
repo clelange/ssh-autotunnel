@@ -7,6 +7,10 @@ public enum ControlAction: String, Codable, Sendable {
     case status
     case pacURL
     case reloadPAC
+    case applySystemPAC
+    case restoreSystemPAC
+    case importSSHAuto2FA
+    case checkSSHAuto2FA
 }
 
 public struct ControlRequest: Codable, Sendable {
@@ -62,10 +66,17 @@ public struct ControlResponse: Codable, Sendable {
     public var ok: Bool
     public var message: String
     public var status: AppStatusSnapshot?
+    public var sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus]?
 
-    public init(ok: Bool, message: String, status: AppStatusSnapshot? = nil) {
+    public init(
+        ok: Bool,
+        message: String,
+        status: AppStatusSnapshot? = nil,
+        sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus]? = nil
+    ) {
         self.ok = ok
         self.message = message
         self.status = status
+        self.sshAuto2FAServiceStatuses = sshAuto2FAServiceStatuses
     }
 }

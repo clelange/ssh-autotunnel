@@ -26,6 +26,7 @@
 - Added tested notification policy and macOS notification delivery for tunnel failures/recoveries.
 - Added a tested `ssh-auto2fa` preset importer and Settings action.
 - Added tested CLI argument parsing and `--json` output for automation.
+- Added local API and CLI actions for system PAC apply/restore, PAC reload, `ssh-auto2fa` preset import, and `ssh-auto2fa` Keychain checks.
 - Extracted SSH tunnel command construction into a tested builder.
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
@@ -48,7 +49,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 52 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 55 XCTest cases.
 
 ## Known Gaps
 

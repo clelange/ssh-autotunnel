@@ -49,4 +49,55 @@ final class ControlAPIClientTests: XCTestCase {
             XCTAssertEqual(nsError.localizedDescription, "Missing or invalid API token")
         }
     }
+
+    func testDecodesKeychainServiceStatuses() async throws {
+        let port = try TestPortAllocator.freePort()
+        let expectedToken = "test-token"
+        let decoder = JSONDecoder()
+        let encoder = JSONEncoder()
+
+        let server = LocalHTTPServer(port: port, label: "test.api.keychain-status") { request in
+            XCTAssertEqual(request.headers["authorization"], "Bearer \(expectedToken)")
+            let control = try? decoder.decode(ControlRequest.self, from: request.body)
+            XCTAssertEqual(control?.action, .checkSSHAuto2FA)
+
+            return HTTPResponse.json(
+                ControlResponse(
+                    ok: true,
+                    message: "Checked",
+                    sshAuto2FAServiceStatuses: [
+                        SSHAuto2FAServiceStatus(
+                            requirement: SSHAuto2FAServiceRequirement(
+                                profileName: "CERN lxplus",
+                                kind: .totpSeed,
+                                service: "cern-lxplus-otp-secret",
+                                account: "lange_c"
+                            ),
+                            state: .available
+                        ),
+                        SSHAuto2FAServiceStatus(
+                            requirement: SSHAuto2FAServiceRequirement(
+                                profileName: "PSI Tier-3",
+                                kind: .password,
+                                service: "psit3-password",
+                                account: "lange_c"
+                            ),
+                            state: .unreadable("Access denied")
+                        )
+                    ]
+                ),
+                encoder: encoder
+            )
+        }
+        try server.start()
+        defer { server.stop() }
+
+        let client = ControlAPIClient(baseURL: URL(string: "http://127.0.0.1:\(port)")!, token: expectedToken)
+        let response = try await client.send(ControlRequest(action: .checkSSHAuto2FA))
+
+        XCTAssertEqual(response.sshAuto2FAServiceStatuses?.map(\.state), [
+            .available,
+            .unreadable("Access denied")
+        ])
+    }
 }

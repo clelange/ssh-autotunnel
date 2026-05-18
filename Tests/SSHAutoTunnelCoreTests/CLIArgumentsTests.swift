@@ -15,4 +15,9 @@ final class CLIArgumentsTests: XCTestCase {
     func testReturnsNilForEmptyArguments() {
         XCTAssertNil(CLIArguments.parse([]))
     }
+
+    func testParsesAutomationCommand() {
+        let invocation = CLIArguments.parse(["check-ssh-auto2fa", "--json"])
+        XCTAssertEqual(invocation, CLIInvocation(command: "check-ssh-auto2fa", outputJSON: true))
+    }
 }

@@ -12,7 +12,7 @@ public enum SSHAuto2FAPresets {
     public static let psiTier3TOTPService = "psit3-otp-secret"
 }
 
-public enum KeychainSecretKind: String, Equatable, Sendable {
+public enum KeychainSecretKind: String, Codable, Equatable, Sendable {
     case password
     case totpSeed
 
@@ -24,13 +24,13 @@ public enum KeychainSecretKind: String, Equatable, Sendable {
     }
 }
 
-public enum KeychainCredentialState: Equatable, Sendable {
+public enum KeychainCredentialState: Codable, Equatable, Sendable {
     case available
     case missing
     case unreadable(String)
 }
 
-public struct SSHAuto2FAServiceRequirement: Identifiable, Equatable, Sendable {
+public struct SSHAuto2FAServiceRequirement: Codable, Identifiable, Equatable, Sendable {
     public var profileName: String
     public var kind: KeychainSecretKind
     public var service: String
@@ -48,7 +48,7 @@ public struct SSHAuto2FAServiceRequirement: Identifiable, Equatable, Sendable {
     }
 }
 
-public struct SSHAuto2FAServiceStatus: Identifiable, Equatable, Sendable {
+public struct SSHAuto2FAServiceStatus: Codable, Identifiable, Equatable, Sendable {
     public var requirement: SSHAuto2FAServiceRequirement
     public var state: KeychainCredentialState
 

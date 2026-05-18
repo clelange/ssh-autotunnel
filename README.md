@@ -64,6 +64,11 @@ The CLI helper talks to the local API:
 swift run ssh-autotunnelctl status
 swift run ssh-autotunnelctl status --json
 swift run ssh-autotunnelctl pac-url
+swift run ssh-autotunnelctl reload-pac
+swift run ssh-autotunnelctl apply-system-pac
+swift run ssh-autotunnelctl restore-system-proxy
+swift run ssh-autotunnelctl import-ssh-auto2fa
+swift run ssh-autotunnelctl check-ssh-auto2fa --json
 swift run ssh-autotunnelctl connect "CERN lxplus"
 swift run ssh-autotunnelctl disconnect "CERN lxplus"
 ```

@@ -103,7 +103,8 @@ final class AppState: ObservableObject {
         lastProxyMessage = "Local API token rotated"
     }
 
-    func applySystemPAC() {
+    @discardableResult
+    func applySystemPAC() -> Bool {
         do {
             if networkDecision.shouldDisableProxy {
                 try proxyManager.restoreIfNeeded()
@@ -112,17 +113,22 @@ final class AppState: ObservableObject {
                 let service = try proxyManager.applyPAC(url: pacURL)
                 lastProxyMessage = "System PAC set on \(service)"
             }
+            return true
         } catch {
             lastProxyMessage = "System PAC failed: \(error.localizedDescription)"
+            return false
         }
     }
 
-    func restoreSystemPAC() {
+    @discardableResult
+    func restoreSystemPAC() -> Bool {
         do {
             try proxyManager.restoreIfNeeded()
             lastProxyMessage = "System PAC restored"
+            return true
         } catch {
             lastProxyMessage = "Could not restore proxy: \(error.localizedDescription)"
+            return false
         }
     }
 
@@ -306,6 +312,27 @@ final class AppState: ObservableObject {
             return ControlResponse(ok: true, message: pacURL, status: snapshot())
         case .status:
             return ControlResponse(ok: true, message: "OK", status: snapshot())
+        case .applySystemPAC:
+            let ok = applySystemPAC()
+            return ControlResponse(ok: ok, message: lastProxyMessage, status: snapshot())
+        case .restoreSystemPAC:
+            let ok = restoreSystemPAC()
+            return ControlResponse(ok: ok, message: lastProxyMessage, status: snapshot())
+        case .importSSHAuto2FA:
+            let result = importSSHAuto2FAPresets()
+            return ControlResponse(
+                ok: true,
+                message: "Imported ssh-auto2fa presets: \(result.createdProfiles) created, \(result.updatedProfiles) updated, \(result.createdPACRules) PAC rules added",
+                status: snapshot()
+            )
+        case .checkSSHAuto2FA:
+            refreshSSHAuto2FAServiceStatuses()
+            return ControlResponse(
+                ok: true,
+                message: "Checked \(sshAuto2FAServiceStatuses.count) ssh-auto2fa Keychain services",
+                status: snapshot(),
+                sshAuto2FAServiceStatuses: sshAuto2FAServiceStatuses
+            )
         }
     }
 
