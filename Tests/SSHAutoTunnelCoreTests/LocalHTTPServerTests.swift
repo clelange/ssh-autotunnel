@@ -10,7 +10,7 @@ final class LocalHTTPServerTests: XCTestCase {
             profiles: [profile],
             pacRules: [PACRule(name: "Example", domainPattern: "*.example.org", profileID: profile.id)]
         )
-        let server = LocalHTTPServer(port: port, label: "test.pac.server") { request in
+        let server = try LocalHTTPServer(port: port, label: "test.pac.server") { request in
             XCTAssertTrue(request.path.hasPrefix("/proxy.pac"))
             let pac = PACGenerator.generate(context: PACGenerationContext(
                 configuration: config,
@@ -37,7 +37,7 @@ final class LocalHTTPServerTests: XCTestCase {
 
     func testReceivesCompletePOSTBody() async throws {
         let port = try TestPortAllocator.freePort()
-        let server = LocalHTTPServer(port: port, label: "test.post.server") { request in
+        let server = try LocalHTTPServer(port: port, label: "test.post.server") { request in
             XCTAssertEqual(request.method, "POST")
             XCTAssertEqual(request.path, "/api")
             return HTTPResponse.text(String(data: request.body, encoding: .utf8) ?? "")
@@ -54,5 +54,14 @@ final class LocalHTTPServerTests: XCTestCase {
         let http = try XCTUnwrap(response as? HTTPURLResponse)
         XCTAssertEqual(http.statusCode, 200)
         XCTAssertEqual(String(data: data, encoding: .utf8), #"{"action":"status","profileName":"CERN lxplus"}"#)
+    }
+
+    func testRejectsInvalidPort() {
+        XCTAssertThrowsError(try LocalHTTPServer(port: 0, label: "test.invalid") { _ in .text("no") }) { error in
+            XCTAssertEqual(error as? LocalHTTPServerError, .invalidPort(0))
+        }
+        XCTAssertThrowsError(try LocalHTTPServer(port: 70_000, label: "test.invalid") { _ in .text("no") }) { error in
+            XCTAssertEqual(error as? LocalHTTPServerError, .invalidPort(70_000))
+        }
     }
 }

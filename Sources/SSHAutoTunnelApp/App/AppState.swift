@@ -266,12 +266,12 @@ final class AppState: ObservableObject {
     }
 
     private func startLocalServers(ports: LocalServerPorts) throws {
-        let nextPACServer = LocalHTTPServer(port: ports.pacHTTPPort, label: "dev.clange.ssh-autotunnel.pac") { [weak self] request in
+        let nextPACServer = try LocalHTTPServer(port: ports.pacHTTPPort, label: "dev.clange.ssh-autotunnel.pac") { [weak self] request in
             self?.handlePACRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
         }
         try nextPACServer.start()
 
-        let nextBlockingProxyServer = LocalHTTPServer(port: ports.blockingHTTPProxyPort, label: "dev.clange.ssh-autotunnel.blocking-proxy") { [weak self] request in
+        let nextBlockingProxyServer = try LocalHTTPServer(port: ports.blockingHTTPProxyPort, label: "dev.clange.ssh-autotunnel.blocking-proxy") { [weak self] request in
             self?.handleBlockingProxyRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
         }
         do {
@@ -281,7 +281,7 @@ final class AppState: ObservableObject {
             throw error
         }
 
-        let nextAPIServer = LocalHTTPServer(port: ports.apiHTTPPort, label: "dev.clange.ssh-autotunnel.api") { [weak self] request in
+        let nextAPIServer = try LocalHTTPServer(port: ports.apiHTTPPort, label: "dev.clange.ssh-autotunnel.api") { [weak self] request in
             self?.handleAPIRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
         }
         do {

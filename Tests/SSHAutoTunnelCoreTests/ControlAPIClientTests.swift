@@ -9,7 +9,7 @@ final class ControlAPIClientTests: XCTestCase {
         let decoder = JSONDecoder()
         let encoder = JSONEncoder()
 
-        let server = LocalHTTPServer(port: port, label: "test.api.client") { request in
+        let server = try LocalHTTPServer(port: port, label: "test.api.client") { request in
             XCTAssertEqual(request.headers["authorization"], "Bearer \(expectedToken)")
             XCTAssertEqual(request.path, "/api")
             let control = try? decoder.decode(ControlRequest.self, from: request.body)
@@ -31,7 +31,7 @@ final class ControlAPIClientTests: XCTestCase {
 
     func testThrowsForUnauthorizedResponse() async throws {
         let port = try TestPortAllocator.freePort()
-        let server = LocalHTTPServer(port: port, label: "test.api.unauthorized") { _ in
+        let server = try LocalHTTPServer(port: port, label: "test.api.unauthorized") { _ in
             HTTPResponse.error(401, "Unauthorized", "Missing or invalid API token")
         }
         try server.start()
@@ -56,7 +56,7 @@ final class ControlAPIClientTests: XCTestCase {
         let decoder = JSONDecoder()
         let encoder = JSONEncoder()
 
-        let server = LocalHTTPServer(port: port, label: "test.api.keychain-status") { request in
+        let server = try LocalHTTPServer(port: port, label: "test.api.keychain-status") { request in
             XCTAssertEqual(request.headers["authorization"], "Bearer \(expectedToken)")
             let control = try? decoder.decode(ControlRequest.self, from: request.body)
             XCTAssertEqual(control?.action, .checkSSHAuto2FA)

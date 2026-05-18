@@ -51,6 +51,17 @@ public struct HTTPResponse: Sendable {
     }
 }
 
+public enum LocalHTTPServerError: LocalizedError, Equatable, Sendable {
+    case invalidPort(Int)
+
+    public var errorDescription: String? {
+        switch self {
+        case .invalidPort(let port):
+            "Invalid local HTTP server port \(port). Expected a value between 1 and 65535."
+        }
+    }
+}
+
 public final class LocalHTTPServer {
     public typealias Handler = (HTTPRequest) -> HTTPResponse
 
@@ -65,15 +76,20 @@ public final class LocalHTTPServer {
     private let queue: DispatchQueue
     private var listener: NWListener?
 
-    public init(port: Int, label: String, bindAddress: BindAddress = .loopback, handler: @escaping Handler) {
-        self.port = UInt16(port)
+    public init(port: Int, label: String, bindAddress: BindAddress = .loopback, handler: @escaping Handler) throws {
+        guard (1...65_535).contains(port), let validatedPort = UInt16(exactly: port) else {
+            throw LocalHTTPServerError.invalidPort(port)
+        }
+        self.port = validatedPort
         self.bindAddress = bindAddress
         self.handler = handler
         self.queue = DispatchQueue(label: label)
     }
 
     public func start() throws {
-        let port = NWEndpoint.Port(rawValue: port)!
+        guard let port = NWEndpoint.Port(rawValue: port) else {
+            throw LocalHTTPServerError.invalidPort(Int(self.port))
+        }
         let parameters = NWParameters.tcp
         let listener: NWListener
         switch bindAddress {
