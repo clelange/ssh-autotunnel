@@ -18,6 +18,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Network fingerprint rules to disable proxy/PAC behavior on trusted networks.
 - Settings and diagnostics windows.
 - Local API, CLI helper, and Shortcuts/App Intents hooks.
+- Automatic recovery from malformed configuration files by backing them up and recreating defaults.
 
 ## Build and Run
 

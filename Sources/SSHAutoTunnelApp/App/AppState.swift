@@ -29,7 +29,15 @@ final class AppState: ObservableObject {
     init() {
         do {
             configurationStore = try ConfigurationStore()
-            configuration = try configurationStore.load()
+            let loadResult = try configurationStore.loadRecovering()
+            configuration = loadResult.configuration
+            if loadResult.didRecover {
+                if let backupPath = loadResult.backupURL?.path {
+                    lastProxyMessage = "Recovered defaults after invalid config. Backup: \(backupPath)"
+                } else {
+                    lastProxyMessage = "Recovered defaults after invalid config"
+                }
+            }
         } catch {
             fatalError("Could not load configuration: \(error)")
         }

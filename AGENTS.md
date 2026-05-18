@@ -32,6 +32,7 @@
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
+- Added tested configuration recovery for malformed config files with backup creation and default regeneration.
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Added `script/package_local.sh` for release builds, local app/CLI archive creation, ad-hoc signing, and bundle verification.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
@@ -47,7 +48,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 50 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 52 XCTest cases.
 
 ## Known Gaps
 
