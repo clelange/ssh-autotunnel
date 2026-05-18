@@ -6,18 +6,53 @@ public struct ProxySnapshot: Codable, Equatable, Sendable {
     public var autoProxyURL: String?
 }
 
+public enum SystemProxyManagerError: LocalizedError, Equatable {
+    case missingActiveNetworkService
+
+    public var errorDescription: String? {
+        switch self {
+        case .missingActiveNetworkService:
+            "Could not determine active network service"
+        }
+    }
+}
+
+protocol ProxySnapshotStoring: AnyObject {
+    func save(_ snapshot: ProxySnapshot) throws
+    func load() throws -> ProxySnapshot?
+    func clear() throws
+}
+
 public final class SystemProxyManager {
-    private let networkIdentity = NetworkIdentityService()
-    private let snapshotStore: ProxySnapshotStore?
+    private let snapshotStore: ProxySnapshotStoring?
+    private let currentServiceName: () -> String?
+    private let commandRunner: (NetworkSetupCommand) throws -> ShellResult
     private var snapshot: ProxySnapshot?
 
-    public init(snapshotStore: ProxySnapshotStore? = nil) {
-        self.snapshotStore = snapshotStore ?? (try? ProxySnapshotStore())
+    public convenience init(snapshotStore: ProxySnapshotStore? = nil) {
+        let networkIdentity = NetworkIdentityService()
+        self.init(
+            snapshotStore: snapshotStore ?? (try? ProxySnapshotStore()),
+            currentServiceName: { networkIdentity.currentFingerprint().serviceName },
+            commandRunner: { command in
+                try ShellRunner.run(command.executable, command.arguments)
+            }
+        )
+    }
+
+    init(
+        snapshotStore: ProxySnapshotStoring?,
+        currentServiceName: @escaping () -> String?,
+        commandRunner: @escaping (NetworkSetupCommand) throws -> ShellResult
+    ) {
+        self.snapshotStore = snapshotStore
+        self.currentServiceName = currentServiceName
+        self.commandRunner = commandRunner
     }
 
     public func applyPAC(url: String) throws -> String {
-        guard let service = networkIdentity.currentFingerprint().serviceName else {
-            throw NSError(domain: "SystemProxyManager", code: 1, userInfo: [NSLocalizedDescriptionKey: "Could not determine active network service"])
+        guard let service = currentServiceName() else {
+            throw SystemProxyManagerError.missingActiveNetworkService
         }
         if snapshot == nil || snapshot?.serviceName != service {
             let currentSnapshot = currentAutoProxySnapshot(serviceName: service)
@@ -25,7 +60,7 @@ public final class SystemProxyManager {
             snapshot = currentSnapshot
         }
         for command in SystemProxyPlanner.applyPACCommands(serviceName: service, pacURL: url) {
-            _ = try ShellRunner.run(command.executable, command.arguments)
+            _ = try commandRunner(command)
         }
         return service
     }
@@ -33,17 +68,20 @@ public final class SystemProxyManager {
     public func restoreIfNeeded() throws {
         guard let snapshot = snapshot ?? snapshotStore.flatMap({ try? $0.load() }) else { return }
         for command in SystemProxyPlanner.restoreCommands(snapshot: snapshot) {
-            _ = try ShellRunner.run(command.executable, command.arguments)
+            _ = try commandRunner(command)
         }
         self.snapshot = nil
         try snapshotStore?.clear()
     }
 
     private func currentAutoProxySnapshot(serviceName: String) -> ProxySnapshot {
-        guard let result = try? ShellRunner.run("/usr/sbin/networksetup", ["-getautoproxyurl", serviceName]), result.succeeded else {
+        let command = NetworkSetupCommand(arguments: ["-getautoproxyurl", serviceName])
+        guard let result = try? commandRunner(command), result.succeeded else {
             return ProxySnapshot(serviceName: serviceName, autoProxyEnabled: false, autoProxyURL: nil)
         }
 
         return NetworkSetupParser.autoProxySnapshot(serviceName: serviceName, output: result.stdout)
     }
 }
+
+extension ProxySnapshotStore: ProxySnapshotStoring {}

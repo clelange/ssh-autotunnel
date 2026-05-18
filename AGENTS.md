@@ -38,6 +38,7 @@
 - Made local HTTP server construction reject invalid ports with typed errors instead of crashing.
 - Extracted local server orchestration into a tested core coordinator with restart rollback coverage.
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
+- Made system proxy management injectable and added tests for apply, restore, missing service handling, and snapshot reuse.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
 - Added tested configuration recovery for malformed config files with backup creation and default regeneration.
@@ -57,13 +58,13 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 73 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 77 XCTest cases.
 
 ## Known Gaps
 
 - Real CERN/PSI SSH login flows still need live validation with the user’s Keychain secrets and reachable networks.
 - The pseudo-terminal process boundary and prompt matcher are now unit-tested with fakes, but still need live tuning after real CERN/PSI server tests.
-- System PAC restoration command planning and durable snapshot storage are unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
+- System PAC restoration command planning, durable snapshot storage, and manager orchestration are unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents are present, but Shortcuts discovery and invocation need end-to-end validation from the Shortcuts app.
 - The local API token can be rotated from settings; client authentication and error handling have integration coverage.
 - `ssh-auto2fa` service detection is unit-tested with fake readers; real Keychain availability still depends on the user's local items and access prompts.
