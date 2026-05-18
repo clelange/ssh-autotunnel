@@ -28,31 +28,52 @@ final class PTYSSHProcessLauncher: SSHProcessLaunching {
         var master: Int32 = -1
         var slave: Int32 = -1
         guard openpty(&master, &slave, nil, nil, nil) == 0 else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "Could not allocate pseudo-terminal"])
+            throw Self.posixError(message: "Could not allocate pseudo-terminal")
+        }
+        defer {
+            if master >= 0 {
+                close(master)
+            }
+            if slave >= 0 {
+                close(slave)
+            }
         }
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: command.executable)
         process.arguments = command.arguments
-        process.standardInput = FileHandle(fileDescriptor: dup(slave), closeOnDealloc: true)
-        process.standardOutput = FileHandle(fileDescriptor: dup(slave), closeOnDealloc: true)
-        process.standardError = FileHandle(fileDescriptor: dup(slave), closeOnDealloc: true)
+        process.standardInput = try Self.duplicatedFileHandle(slave)
+        process.standardOutput = try Self.duplicatedFileHandle(slave)
+        process.standardError = try Self.duplicatedFileHandle(slave)
         close(slave)
+        slave = -1
 
         let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
+        master = -1
         let session = PTYSSHProcessSession(process: process, master: masterHandle, onOutput: onOutput, onTermination: onTermination)
         process.terminationHandler = { [weak session] _ in
             session?.notifyTermination()
         }
 
-        do {
-            try process.run()
-        } catch {
-            close(master)
-            throw error
-        }
+        try process.run()
         session.startReadLoop()
         return session
+    }
+
+    private static func duplicatedFileHandle(_ fileDescriptor: Int32) throws -> FileHandle {
+        let duplicated = dup(fileDescriptor)
+        guard duplicated >= 0 else {
+            throw posixError(message: "Could not duplicate pseudo-terminal file descriptor")
+        }
+        return FileHandle(fileDescriptor: duplicated, closeOnDealloc: true)
+    }
+
+    private static func posixError(message: String) -> NSError {
+        NSError(
+            domain: NSPOSIXErrorDomain,
+            code: Int(errno),
+            userInfo: [NSLocalizedDescriptionKey: message]
+        )
     }
 }
 

@@ -34,6 +34,7 @@
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
 - Added tested tunnel lifecycle policy for intentional stops, unexpected SSH exits, repeated health failures, and automatic reconnect backoff.
 - Added an injectable SSH process launcher with manager-level tests for manual stops, unexpected exits, and health-failure restarts.
+- Hardened PTY SSH process launcher descriptor ownership and duplicate-file-descriptor error handling.
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
 - Added tested port validation and restart logic for local PAC, API, and blocking proxy servers when valid listener ports change.
 - Made local HTTP server construction reject invalid ports with typed errors instead of crashing.
