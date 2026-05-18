@@ -22,6 +22,7 @@
 - Added integration tests for the local HTTP server, including PAC serving and complete POST body handling.
 - Added authenticated local API client integration tests.
 - Added current-network fingerprint display and a “create disable rule from current network” flow.
+- Extracted current-network fingerprint parsing into tested helpers and made network identity command sources injectable.
 - Added a local API token rotation action in settings.
 - Added tested notification policy and macOS notification delivery for tunnel failures/recoveries.
 - Added a tested `ssh-auto2fa` preset importer and Settings action.
@@ -59,7 +60,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 79 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 83 XCTest cases.
 
 ## Known Gaps
 

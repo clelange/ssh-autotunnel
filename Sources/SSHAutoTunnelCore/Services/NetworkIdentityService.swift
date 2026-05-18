@@ -1,21 +1,99 @@
 import CoreWLAN
 import Foundation
 
+public enum NetworkIdentityParser {
+    public static func defaultInterface(routeOutput: String) -> String? {
+        value(in: routeOutput, after: "interface:")
+    }
+
+    public static func defaultGateway(routeOutput: String) -> String? {
+        value(in: routeOutput, after: "gateway:")
+    }
+
+    public static func dnsServers(scutilDNSOutput: String) -> [String] {
+        values(in: scutilDNSOutput) { line in
+            guard line.hasPrefix("nameserver[") else { return nil }
+            return line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    public static func searchDomains(scutilDNSOutput: String) -> [String] {
+        values(in: scutilDNSOutput) { line in
+            guard line.hasPrefix("search domain[") || line.hasPrefix("domain   :") else { return nil }
+            return line.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces)
+        }
+    }
+
+    public static func ipv4Addresses(ifconfigOutput: String) -> [String] {
+        values(in: ifconfigOutput) { line in
+            guard line.hasPrefix("inet ") else { return nil }
+            return line.split(separator: " ").dropFirst().first.map(String.init)
+        }
+    }
+
+    public static func hasVPNInterface(ifconfigOutput: String) -> Bool {
+        ifconfigOutput.split(separator: "\n").contains { rawLine in
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            return line.hasPrefix("utun") || line.hasPrefix("ppp") || line.hasPrefix("ipsec")
+        }
+    }
+
+    private static func value(in output: String, after prefix: String) -> String? {
+        values(in: output) { line in
+            guard line.hasPrefix(prefix) else { return nil }
+            return String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+        }.first
+    }
+
+    private static func values(in output: String, transform: (String) -> String?) -> [String] {
+        output
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .compactMap { rawLine -> String? in
+                let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+                return transform(trimmed)?.nonEmptyTrimmed
+            }
+    }
+}
+
 public final class NetworkIdentityService {
-    public init() {}
+    private let commandRunner: (String, [String]) throws -> ShellResult
+    private let wifiSSIDProvider: () -> String?
+    private let wifiBSSIDProvider: () -> String?
+
+    public convenience init() {
+        self.init(
+            commandRunner: ShellRunner.run,
+            wifiSSIDProvider: { CWWiFiClient.shared().interface()?.ssid() },
+            wifiBSSIDProvider: { CWWiFiClient.shared().interface()?.bssid() }
+        )
+    }
+
+    init(
+        commandRunner: @escaping (String, [String]) throws -> ShellResult,
+        wifiSSIDProvider: @escaping () -> String?,
+        wifiBSSIDProvider: @escaping () -> String?
+    ) {
+        self.commandRunner = commandRunner
+        self.wifiSSIDProvider = wifiSSIDProvider
+        self.wifiBSSIDProvider = wifiBSSIDProvider
+    }
 
     public func currentFingerprint() -> NetworkFingerprint {
-        let interfaceName = defaultInterface()
+        let routeOutput = successfulOutput("/usr/sbin/route", ["-n", "get", "default"])
+        let scutilDNSOutput = successfulOutput("/usr/sbin/scutil", ["--dns"])
+        let ifconfigOutput = successfulOutput("/sbin/ifconfig", [])
+        let interfaceName = routeOutput.flatMap { NetworkIdentityParser.defaultInterface(routeOutput: $0) }
+
         return NetworkFingerprint(
             interfaceName: interfaceName,
             serviceName: interfaceName.flatMap { serviceName(forDevice: $0) },
-            wifiSSID: currentWiFiSSID(),
-            wifiBSSID: currentWiFiBSSID(),
-            gateway: defaultGateway(),
-            dnsServers: dnsServers(),
-            searchDomains: searchDomains(),
-            ipv4Addresses: ipv4Addresses(),
-            hasVPNInterface: hasVPNInterface()
+            wifiSSID: wifiSSIDProvider(),
+            wifiBSSID: wifiBSSIDProvider(),
+            gateway: routeOutput.flatMap { NetworkIdentityParser.defaultGateway(routeOutput: $0) },
+            dnsServers: scutilDNSOutput.map { NetworkIdentityParser.dnsServers(scutilDNSOutput: $0) } ?? [],
+            searchDomains: scutilDNSOutput.map { NetworkIdentityParser.searchDomains(scutilDNSOutput: $0) } ?? [],
+            ipv4Addresses: ifconfigOutput.map { NetworkIdentityParser.ipv4Addresses(ifconfigOutput: $0) } ?? [],
+            hasVPNInterface: ifconfigOutput.map { NetworkIdentityParser.hasVPNInterface(ifconfigOutput: $0) } ?? false
         )
     }
 
@@ -33,94 +111,22 @@ public final class NetworkIdentityService {
         return NetworkPolicyDecision(shouldDisableProxy: false, matchedRule: nil)
     }
 
-    private func currentWiFiSSID() -> String? {
-        CWWiFiClient.shared().interface()?.ssid()
-    }
-
-    private func currentWiFiBSSID() -> String? {
-        CWWiFiClient.shared().interface()?.bssid()
-    }
-
-    private func defaultInterface() -> String? {
-        guard let result = try? ShellRunner.run("/usr/sbin/route", ["-n", "get", "default"]), result.succeeded else {
-            return nil
-        }
-        return result.stdout
-            .split(separator: "\n")
-            .compactMap { line -> String? in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                guard trimmed.hasPrefix("interface:") else { return nil }
-                return trimmed.replacingOccurrences(of: "interface:", with: "").trimmingCharacters(in: .whitespaces)
-            }
-            .first
-    }
-
-    private func defaultGateway() -> String? {
-        guard let result = try? ShellRunner.run("/usr/sbin/route", ["-n", "get", "default"]), result.succeeded else {
-            return nil
-        }
-        return result.stdout
-            .split(separator: "\n")
-            .compactMap { line -> String? in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                guard trimmed.hasPrefix("gateway:") else { return nil }
-                return trimmed.replacingOccurrences(of: "gateway:", with: "").trimmingCharacters(in: .whitespaces)
-            }
-            .first
-    }
-
     private func serviceName(forDevice device: String) -> String? {
-        guard let result = try? ShellRunner.run("/usr/sbin/networksetup", ["-listallhardwareports"]), result.succeeded else {
+        guard let output = successfulOutput("/usr/sbin/networksetup", ["-listallhardwareports"]) else {
             return nil
         }
-        return NetworkSetupParser.serviceName(forDevice: device, hardwarePortsOutput: result.stdout)
+        return NetworkSetupParser.serviceName(forDevice: device, hardwarePortsOutput: output)
     }
 
-    private func dnsServers() -> [String] {
-        guard let result = try? ShellRunner.run("/usr/sbin/scutil", ["--dns"]), result.succeeded else {
-            return []
-        }
+    private func successfulOutput(_ executable: String, _ arguments: [String]) -> String? {
+        guard let result = try? commandRunner(executable, arguments), result.succeeded else { return nil }
         return result.stdout
-            .split(separator: "\n")
-            .compactMap { line -> String? in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                guard trimmed.hasPrefix("nameserver[") else { return nil }
-                return trimmed.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces)
-            }
     }
+}
 
-    private func searchDomains() -> [String] {
-        guard let result = try? ShellRunner.run("/usr/sbin/scutil", ["--dns"]), result.succeeded else {
-            return []
-        }
-        return result.stdout
-            .split(separator: "\n")
-            .compactMap { line -> String? in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                guard trimmed.hasPrefix("search domain[") || trimmed.hasPrefix("domain   :") else { return nil }
-                return trimmed.components(separatedBy: ":").last?.trimmingCharacters(in: .whitespaces)
-            }
-    }
-
-    private func ipv4Addresses() -> [String] {
-        guard let result = try? ShellRunner.run("/sbin/ifconfig", []), result.succeeded else {
-            return []
-        }
-        return result.stdout
-            .split(separator: "\n")
-            .compactMap { line -> String? in
-                let trimmed = line.trimmingCharacters(in: .whitespaces)
-                guard trimmed.hasPrefix("inet ") else { return nil }
-                return trimmed.split(separator: " ").dropFirst().first.map(String.init)
-            }
-    }
-
-    private func hasVPNInterface() -> Bool {
-        guard let result = try? ShellRunner.run("/sbin/ifconfig", []), result.succeeded else {
-            return false
-        }
-        return result.stdout.split(separator: "\n").contains { line in
-            line.hasPrefix("utun") || line.hasPrefix("ppp") || line.hasPrefix("ipsec")
-        }
+private extension String {
+    var nonEmptyTrimmed: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
