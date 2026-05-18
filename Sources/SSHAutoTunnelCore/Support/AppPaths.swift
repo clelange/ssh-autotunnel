@@ -22,4 +22,8 @@ public enum AppPaths {
     public static func pacCopyURL() throws -> URL {
         try applicationSupportDirectory().appendingPathComponent("proxy.pac")
     }
+
+    public static func proxySnapshotURL() throws -> URL {
+        try applicationSupportDirectory().appendingPathComponent("system-proxy-snapshot.json")
+    }
 }

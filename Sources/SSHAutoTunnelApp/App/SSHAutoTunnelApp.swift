@@ -1,4 +1,5 @@
 import AppKit
+import SSHAutoTunnelCore
 import SwiftUI
 
 @main
@@ -43,6 +44,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        // System proxy restoration is also available explicitly from the menu.
+        try? SystemProxyManager().restoreIfNeeded()
     }
 }

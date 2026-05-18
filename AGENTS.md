@@ -28,6 +28,7 @@
 - Added tested CLI argument parsing and `--json` output for automation.
 - Added local API and CLI actions for system PAC apply/restore, PAC reload, `ssh-auto2fa` preset import, and `ssh-auto2fa` Keychain checks.
 - Bound local PAC, status, API, and blocking proxy servers to the loopback interface by default.
+- Persisted system PAC snapshots for restore across app restarts and app termination.
 - Extracted SSH tunnel command construction into a tested builder.
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
@@ -51,13 +52,13 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 55 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 56 XCTest cases.
 
 ## Known Gaps
 
 - Real CERN/PSI SSH login flows still need live validation with the user’s Keychain secrets and reachable networks.
 - The pseudo-terminal prompt matcher is now unit-tested, but still needs live tuning after real CERN/PSI server tests.
-- System PAC restoration command planning is unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
+- System PAC restoration command planning and durable snapshot storage are unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents are present, but Shortcuts discovery and invocation need end-to-end validation from the Shortcuts app.
 - The local API token can be rotated from settings; client authentication and error handling have integration coverage.
 - `ssh-auto2fa` service detection is unit-tested with fake readers; real Keychain availability still depends on the user's local items and access prompts.
