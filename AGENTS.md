@@ -31,6 +31,7 @@
 - Persisted system PAC snapshots for restore across app restarts and app termination.
 - Extracted SSH tunnel command construction into a tested builder.
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
+- Added tested tunnel lifecycle policy for intentional stops, unexpected SSH exits, repeated health failures, and automatic reconnect backoff.
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
@@ -52,7 +53,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 56 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 61 XCTest cases.
 
 ## Known Gaps
 

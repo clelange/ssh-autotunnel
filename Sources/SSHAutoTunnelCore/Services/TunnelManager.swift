@@ -9,6 +9,8 @@ public final class TunnelManager {
     private let queue = DispatchQueue(label: "dev.clange.ssh-autotunnel.tunnels")
     private var processes: [UUID: ManagedTunnel] = [:]
     private var statuses: [UUID: TunnelRuntimeStatus] = [:]
+    private var reconnectTokens: [UUID: UUID] = [:]
+    private var reconnectAttempts: [UUID: Int] = [:]
     private var healthTimer: DispatchSourceTimer?
 
     public init(keychain: KeychainService = KeychainService()) {
@@ -32,41 +34,50 @@ public final class TunnelManager {
 
     public func start(profile: TunnelProfile) {
         queue.async {
-            self.stopLocked(profileID: profile.id, updateStatus: false)
-            self.updateStatusLocked(profile.id, .connecting, "Starting tunnel", pid: nil)
-            do {
-                let credentials = try self.credentials(for: profile)
-                try self.runKerberosSwitchIfNeeded(profile: profile)
-                let managed = try self.launch(profile: profile, credentials: credentials)
-                self.processes[profile.id] = managed
-                self.updateStatusLocked(profile.id, .connecting, "SSH process started", pid: managed.process.processIdentifier)
-            } catch {
-                self.updateStatusLocked(profile.id, .failed, error.localizedDescription, pid: nil)
-            }
+            self.reconnectTokens[profile.id] = nil
+            self.reconnectAttempts[profile.id] = 0
+            self.startLocked(profile: profile, message: "Starting tunnel")
         }
     }
 
     public func stop(profileID: UUID) {
         queue.async {
-            self.stopLocked(profileID: profileID, updateStatus: true)
+            self.reconnectTokens[profileID] = nil
+            self.reconnectAttempts[profileID] = nil
+            self.stopLocked(profileID: profileID, updateStatus: true, reason: .user)
         }
     }
 
     public func stopAll() {
         queue.sync {
-            for profileID in processes.keys {
-                stopLocked(profileID: profileID, updateStatus: true)
+            reconnectTokens.removeAll()
+            reconnectAttempts.removeAll()
+            for profileID in Array(processes.keys) {
+                stopLocked(profileID: profileID, updateStatus: true, reason: .user)
             }
         }
     }
 
     public func reconnect(profile: TunnelProfile) {
         queue.async {
-            self.stopLocked(profileID: profile.id, updateStatus: false)
-            self.updateStatusLocked(profile.id, .reconnecting, "Reconnecting", pid: nil)
-            DispatchQueue.global().asyncAfter(deadline: .now() + 1.0) {
-                self.start(profile: profile)
-            }
+            self.reconnectTokens[profile.id] = nil
+            self.reconnectAttempts[profile.id] = 0
+            self.stopLocked(profileID: profile.id, updateStatus: false, reason: .restart)
+            self.scheduleReconnectLocked(profile: profile, message: "Reconnecting", delay: 1.0)
+        }
+    }
+
+    private func startLocked(profile: TunnelProfile, message: String) {
+        stopLocked(profileID: profile.id, updateStatus: false, reason: .replacement)
+        updateStatusLocked(profile.id, .connecting, message, pid: nil)
+        do {
+            let credentials = try credentials(for: profile)
+            try runKerberosSwitchIfNeeded(profile: profile)
+            let managed = try launch(profile: profile, credentials: credentials)
+            processes[profile.id] = managed
+            updateStatusLocked(profile.id, .connecting, "SSH process started", pid: managed.process.processIdentifier)
+        } catch {
+            updateStatusLocked(profile.id, .failed, error.localizedDescription, pid: nil)
         }
     }
 
@@ -118,11 +129,18 @@ public final class TunnelManager {
 
         let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
         let managed = ManagedTunnel(profile: profile, process: process, master: masterHandle, credentials: credentials)
-        process.terminationHandler = { [weak self] process in
+        process.terminationHandler = { [weak self, weak managed] process in
             self?.queue.async {
-                self?.processes[profile.id] = nil
-                let health: TunnelHealth = process.terminationStatus == 0 ? .stopped : .failed
-                self?.updateStatusLocked(profile.id, health, "SSH exited with status \(process.terminationStatus)", pid: nil)
+                guard let self, let managed else { return }
+                guard self.processes[profile.id] === managed else { return }
+                self.processes[profile.id] = nil
+
+                let decision = TunnelLifecyclePolicy.processExitDecision(
+                    terminationStatus: process.terminationStatus,
+                    wasIntentionalStop: managed.stopReason != nil,
+                    autoReconnect: profile.autoReconnect
+                )
+                self.applyProcessExitDecisionLocked(decision, profile: profile, terminationStatus: process.terminationStatus)
             }
         }
 
@@ -181,13 +199,14 @@ public final class TunnelManager {
         }
     }
 
-    private func stopLocked(profileID: UUID, updateStatus: Bool) {
+    private func stopLocked(profileID: UUID, updateStatus: Bool, reason: ManagedTunnel.StopReason) {
         guard let managed = processes.removeValue(forKey: profileID) else {
             if updateStatus {
                 updateStatusLocked(profileID, .stopped, "Stopped", pid: nil)
             }
             return
         }
+        managed.stopReason = reason
         if managed.process.isRunning {
             managed.process.terminate()
             DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
@@ -198,6 +217,37 @@ public final class TunnelManager {
         }
         if updateStatus {
             updateStatusLocked(profileID, .stopped, "Stopped", pid: nil)
+        }
+    }
+
+    private func applyProcessExitDecisionLocked(_ decision: TunnelLifecyclePolicy.ProcessExitDecision, profile: TunnelProfile, terminationStatus: Int32) {
+        switch decision {
+        case .ignore:
+            return
+        case .markStopped:
+            reconnectTokens[profile.id] = nil
+            reconnectAttempts[profile.id] = nil
+            updateStatusLocked(profile.id, .stopped, "SSH exited with status \(terminationStatus)", pid: nil)
+        case .markFailed:
+            reconnectTokens[profile.id] = nil
+            updateStatusLocked(profile.id, .failed, "SSH exited with status \(terminationStatus)", pid: nil)
+        case .reconnect:
+            scheduleReconnectLocked(profile: profile, message: "SSH exited with status \(terminationStatus); reconnecting")
+        }
+    }
+
+    private func scheduleReconnectLocked(profile: TunnelProfile, message: String, delay explicitDelay: TimeInterval? = nil) {
+        let attempt = (reconnectAttempts[profile.id] ?? 0) + 1
+        reconnectAttempts[profile.id] = attempt
+        let delay = explicitDelay ?? TunnelLifecyclePolicy.reconnectDelay(forAttempt: attempt)
+        let token = UUID()
+        reconnectTokens[profile.id] = token
+        updateStatusLocked(profile.id, .reconnecting, message, pid: nil)
+
+        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
+            guard let self, self.reconnectTokens[profile.id] == token else { return }
+            self.reconnectTokens[profile.id] = nil
+            self.startLocked(profile: profile, message: "Reconnecting")
         }
     }
 
@@ -220,10 +270,15 @@ public final class TunnelManager {
     }
 
     private func checkHealthLocked() {
-        for (profileID, managed) in processes {
+        for (profileID, managed) in Array(processes) {
             guard managed.process.isRunning else {
-                updateStatusLocked(profileID, .failed, "SSH process is not running", pid: nil)
                 processes[profileID] = nil
+                let decision = TunnelLifecyclePolicy.processExitDecision(
+                    terminationStatus: managed.process.terminationStatus,
+                    wasIntentionalStop: managed.stopReason != nil,
+                    autoReconnect: managed.profile.autoReconnect
+                )
+                applyProcessExitDecisionLocked(decision, profile: managed.profile, terminationStatus: managed.process.terminationStatus)
                 continue
             }
 
@@ -232,8 +287,19 @@ public final class TunnelManager {
                 if current != .healthy {
                     updateStatusLocked(profileID, .healthy, "SOCKS5 handshake succeeded", pid: managed.process.processIdentifier)
                 }
+                reconnectAttempts[profileID] = 0
             } else {
-                updateStatusLocked(profileID, .unhealthy, "SOCKS5 probe failed", pid: managed.process.processIdentifier)
+                let decision = TunnelLifecyclePolicy.healthProbeFailureDecision(
+                    previousHealth: statuses[profileID]?.health,
+                    autoReconnect: managed.profile.autoReconnect
+                )
+                switch decision {
+                case .markUnhealthy:
+                    updateStatusLocked(profileID, .unhealthy, "SOCKS5 probe failed", pid: managed.process.processIdentifier)
+                case .reconnect:
+                    stopLocked(profileID: profileID, updateStatus: false, reason: .restart)
+                    scheduleReconnectLocked(profile: managed.profile, message: "SOCKS5 probe failed; reconnecting")
+                }
             }
         }
     }
@@ -245,10 +311,17 @@ private struct TunnelCredentials {
 }
 
 private final class ManagedTunnel {
+    enum StopReason {
+        case user
+        case restart
+        case replacement
+    }
+
     let profile: TunnelProfile
     let process: Process
     let master: FileHandle
     let credentials: TunnelCredentials
+    var stopReason: StopReason?
     var sentHostKeyConfirmation = false
     var sentPassword = false
     var sentTOTP = false

@@ -16,6 +16,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Local PAC server with fail-closed routing when a tunnel is unhealthy.
 - Local blocking proxy that shows an explanatory page for HTTP requests when a PAC-matched tunnel is down.
 - SOCKS5 handshake health checks so PAC only routes through working tunnels.
+- Automatic reconnect for unexpected SSH exits and repeated SOCKS5 health-check failures.
 - Optional macOS Automatic Proxy Configuration for the active network service.
 - Durable system PAC snapshots so the previous macOS proxy state can be restored after app restart or quit.
 - Network fingerprint rules to disable proxy/PAC behavior on trusted networks.
