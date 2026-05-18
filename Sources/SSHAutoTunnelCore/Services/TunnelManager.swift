@@ -1,4 +1,3 @@
-import Darwin
 import Foundation
 
 public final class TunnelManager {
@@ -6,6 +5,9 @@ public final class TunnelManager {
     public var onLog: ((UUID, String) -> Void)?
 
     private let keychain: KeychainService
+    private let processLauncher: SSHProcessLaunching
+    private let socks5Probe: (Int) -> Bool
+    private let reconnectDelay: (Int) -> TimeInterval
     private let queue = DispatchQueue(label: "dev.clange.ssh-autotunnel.tunnels")
     private var processes: [UUID: ManagedTunnel] = [:]
     private var statuses: [UUID: TunnelRuntimeStatus] = [:]
@@ -13,13 +15,44 @@ public final class TunnelManager {
     private var reconnectAttempts: [UUID: Int] = [:]
     private var healthTimer: DispatchSourceTimer?
 
-    public init(keychain: KeychainService = KeychainService()) {
+    public convenience init(keychain: KeychainService = KeychainService()) {
+        self.init(
+            keychain: keychain,
+            processLauncher: PTYSSHProcessLauncher(),
+            socks5Probe: { SOCKS5Probe.probe(port: $0) },
+            reconnectDelay: { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
+            startsHealthTimer: true
+        )
+    }
+
+    init(
+        keychain: KeychainService = KeychainService(),
+        processLauncher: SSHProcessLaunching,
+        socks5Probe: @escaping (Int) -> Bool = { SOCKS5Probe.probe(port: $0) },
+        reconnectDelay: @escaping (Int) -> TimeInterval = { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
+        startsHealthTimer: Bool = true
+    ) {
         self.keychain = keychain
-        startHealthTimer()
+        self.processLauncher = processLauncher
+        self.socks5Probe = socks5Probe
+        self.reconnectDelay = reconnectDelay
+        if startsHealthTimer {
+            startHealthTimer()
+        }
     }
 
     deinit {
-        stopAll()
+        healthTimer?.cancel()
+        reconnectTokens.removeAll()
+        reconnectAttempts.removeAll()
+        for managed in processes.values {
+            managed.stopReason = .user
+            if managed.session?.isRunning == true {
+                managed.session.terminate()
+                managed.session.forceKill()
+            }
+        }
+        processes.removeAll()
     }
 
     public func status(for profileID: UUID) -> TunnelRuntimeStatus {
@@ -75,7 +108,7 @@ public final class TunnelManager {
             try runKerberosSwitchIfNeeded(profile: profile)
             let managed = try launch(profile: profile, credentials: credentials)
             processes[profile.id] = managed
-            updateStatusLocked(profile.id, .connecting, "SSH process started", pid: managed.process.processIdentifier)
+            updateStatusLocked(profile.id, .connecting, "SSH process started", pid: managed.session.processIdentifier)
         } catch {
             updateStatusLocked(profile.id, .failed, error.localizedDescription, pid: nil)
         }
@@ -112,58 +145,41 @@ public final class TunnelManager {
     }
 
     private func launch(profile: TunnelProfile, credentials: TunnelCredentials) throws -> ManagedTunnel {
-        var master: Int32 = -1
-        var slave: Int32 = -1
-        guard openpty(&master, &slave, nil, nil, nil) == 0 else {
-            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno), userInfo: [NSLocalizedDescriptionKey: "Could not allocate pseudo-terminal"])
-        }
-
-        let process = Process()
         let command = SSHCommandBuilder.tunnelCommand(for: profile)
-        process.executableURL = URL(fileURLWithPath: command.executable)
-        process.arguments = command.arguments
-        process.standardInput = FileHandle(fileDescriptor: dup(slave), closeOnDealloc: true)
-        process.standardOutput = FileHandle(fileDescriptor: dup(slave), closeOnDealloc: true)
-        process.standardError = FileHandle(fileDescriptor: dup(slave), closeOnDealloc: true)
-        close(slave)
+        let managed = ManagedTunnel(profile: profile, credentials: credentials)
+        managed.session = try processLauncher.launch(
+            command: command,
+            onOutput: { [weak self, weak managed] data in
+                guard let managed else { return }
+                self?.queue.async {
+                    self?.handleOutput(data, tunnel: managed)
+                }
+            },
+            onTermination: { [weak self, weak managed] session in
+                self?.queue.async {
+                    guard let self, let managed else { return }
+                    guard self.processes[profile.id] === managed else { return }
+                    self.processes[profile.id] = nil
 
-        let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
-        let managed = ManagedTunnel(profile: profile, process: process, master: masterHandle, credentials: credentials)
-        process.terminationHandler = { [weak self, weak managed] process in
-            self?.queue.async {
-                guard let self, let managed else { return }
-                guard self.processes[profile.id] === managed else { return }
-                self.processes[profile.id] = nil
-
-                let decision = TunnelLifecyclePolicy.processExitDecision(
-                    terminationStatus: process.terminationStatus,
-                    wasIntentionalStop: managed.stopReason != nil,
-                    autoReconnect: profile.autoReconnect
-                )
-                self.applyProcessExitDecisionLocked(decision, profile: profile, terminationStatus: process.terminationStatus)
+                    let decision = TunnelLifecyclePolicy.processExitDecision(
+                        terminationStatus: session.terminationStatus,
+                        wasIntentionalStop: managed.stopReason != nil,
+                        autoReconnect: profile.autoReconnect
+                    )
+                    self.applyProcessExitDecisionLocked(decision, profile: profile, terminationStatus: session.terminationStatus)
+                }
             }
-        }
-
-        try process.run()
-        readLoop(managed)
+        )
         return managed
     }
 
-    private func readLoop(_ managed: ManagedTunnel) {
-        DispatchQueue.global(qos: .utility).async { [weak self, weak managed] in
-            guard let managed else { return }
-            var buffer = Data()
-            while managed.process.isRunning {
-                let data = managed.master.availableData
-                if data.isEmpty { break }
-                buffer.append(data)
-                let text = String(data: data, encoding: .utf8) ?? ""
-                self?.onLog?(managed.profile.id, text)
-                self?.respondIfNeeded(to: buffer, tunnel: managed)
-                if buffer.count > 4096 {
-                    buffer.removeFirst(buffer.count - 2048)
-                }
-            }
+    private func handleOutput(_ data: Data, tunnel: ManagedTunnel) {
+        tunnel.outputBuffer.append(data)
+        let text = String(data: data, encoding: .utf8) ?? ""
+        onLog?(tunnel.profile.id, text)
+        respondIfNeeded(to: tunnel.outputBuffer, tunnel: tunnel)
+        if tunnel.outputBuffer.count > 4096 {
+            tunnel.outputBuffer.removeFirst(tunnel.outputBuffer.count - 2048)
         }
     }
 
@@ -195,7 +211,7 @@ public final class TunnelManager {
 
     private func write(_ string: String, to tunnel: ManagedTunnel) {
         if let data = string.data(using: .utf8) {
-            tunnel.master.write(data)
+            tunnel.session.write(data)
         }
     }
 
@@ -207,12 +223,10 @@ public final class TunnelManager {
             return
         }
         managed.stopReason = reason
-        if managed.process.isRunning {
-            managed.process.terminate()
+        if managed.session.isRunning {
+            managed.session.terminate()
             DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
-                if managed.process.isRunning {
-                    kill(managed.process.processIdentifier, SIGKILL)
-                }
+                managed.session.forceKill()
             }
         }
         if updateStatus {
@@ -239,7 +253,7 @@ public final class TunnelManager {
     private func scheduleReconnectLocked(profile: TunnelProfile, message: String, delay explicitDelay: TimeInterval? = nil) {
         let attempt = (reconnectAttempts[profile.id] ?? 0) + 1
         reconnectAttempts[profile.id] = attempt
-        let delay = explicitDelay ?? TunnelLifecyclePolicy.reconnectDelay(forAttempt: attempt)
+        let delay = explicitDelay ?? reconnectDelay(attempt)
         let token = UUID()
         reconnectTokens[profile.id] = token
         updateStatusLocked(profile.id, .reconnecting, message, pid: nil)
@@ -271,21 +285,21 @@ public final class TunnelManager {
 
     private func checkHealthLocked() {
         for (profileID, managed) in Array(processes) {
-            guard managed.process.isRunning else {
+            guard managed.session.isRunning else {
                 processes[profileID] = nil
                 let decision = TunnelLifecyclePolicy.processExitDecision(
-                    terminationStatus: managed.process.terminationStatus,
+                    terminationStatus: managed.session.terminationStatus,
                     wasIntentionalStop: managed.stopReason != nil,
                     autoReconnect: managed.profile.autoReconnect
                 )
-                applyProcessExitDecisionLocked(decision, profile: managed.profile, terminationStatus: managed.process.terminationStatus)
+                applyProcessExitDecisionLocked(decision, profile: managed.profile, terminationStatus: managed.session.terminationStatus)
                 continue
             }
 
-            if SOCKS5Probe.probe(port: managed.profile.localSocksPort) {
+            if socks5Probe(managed.profile.localSocksPort) {
                 let current = statuses[profileID]?.health
                 if current != .healthy {
-                    updateStatusLocked(profileID, .healthy, "SOCKS5 handshake succeeded", pid: managed.process.processIdentifier)
+                    updateStatusLocked(profileID, .healthy, "SOCKS5 handshake succeeded", pid: managed.session.processIdentifier)
                 }
                 reconnectAttempts[profileID] = 0
             } else {
@@ -295,12 +309,18 @@ public final class TunnelManager {
                 )
                 switch decision {
                 case .markUnhealthy:
-                    updateStatusLocked(profileID, .unhealthy, "SOCKS5 probe failed", pid: managed.process.processIdentifier)
+                    updateStatusLocked(profileID, .unhealthy, "SOCKS5 probe failed", pid: managed.session.processIdentifier)
                 case .reconnect:
                     stopLocked(profileID: profileID, updateStatus: false, reason: .restart)
                     scheduleReconnectLocked(profile: managed.profile, message: "SOCKS5 probe failed; reconnecting")
                 }
             }
+        }
+    }
+
+    func runHealthCheckForTesting() {
+        queue.sync {
+            checkHealthLocked()
         }
     }
 }
@@ -318,18 +338,16 @@ private final class ManagedTunnel {
     }
 
     let profile: TunnelProfile
-    let process: Process
-    let master: FileHandle
     let credentials: TunnelCredentials
+    var session: SSHProcessSession!
+    var outputBuffer = Data()
     var stopReason: StopReason?
     var sentHostKeyConfirmation = false
     var sentPassword = false
     var sentTOTP = false
 
-    init(profile: TunnelProfile, process: Process, master: FileHandle, credentials: TunnelCredentials) {
+    init(profile: TunnelProfile, credentials: TunnelCredentials) {
         self.profile = profile
-        self.process = process
-        self.master = master
         self.credentials = credentials
     }
 }
