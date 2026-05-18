@@ -27,6 +27,7 @@
 - Added a tested `ssh-auto2fa` preset importer and Settings action.
 - Added tested CLI argument parsing and `--json` output for automation.
 - Added local API and CLI actions for system PAC apply/restore, PAC reload, `ssh-auto2fa` preset import, and `ssh-auto2fa` Keychain checks.
+- Bound local PAC, status, API, and blocking proxy servers to the loopback interface by default.
 - Extracted SSH tunnel command construction into a tested builder.
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.

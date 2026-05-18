@@ -54,19 +54,35 @@ public struct HTTPResponse: Sendable {
 public final class LocalHTTPServer {
     public typealias Handler = (HTTPRequest) -> HTTPResponse
 
+    public enum BindAddress: Sendable {
+        case loopback
+        case any
+    }
+
     private let port: UInt16
+    private let bindAddress: BindAddress
     private let handler: Handler
     private let queue: DispatchQueue
     private var listener: NWListener?
 
-    public init(port: Int, label: String, handler: @escaping Handler) {
+    public init(port: Int, label: String, bindAddress: BindAddress = .loopback, handler: @escaping Handler) {
         self.port = UInt16(port)
+        self.bindAddress = bindAddress
         self.handler = handler
         self.queue = DispatchQueue(label: label)
     }
 
     public func start() throws {
-        let listener = try NWListener(using: .tcp, on: NWEndpoint.Port(rawValue: port)!)
+        let port = NWEndpoint.Port(rawValue: port)!
+        let parameters = NWParameters.tcp
+        let listener: NWListener
+        switch bindAddress {
+        case .loopback:
+            parameters.requiredLocalEndpoint = .hostPort(host: .ipv4(IPv4Address("127.0.0.1")!), port: port)
+            listener = try NWListener(using: parameters)
+        case .any:
+            listener = try NWListener(using: parameters, on: port)
+        }
         listener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection)
         }

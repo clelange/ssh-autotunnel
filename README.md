@@ -49,7 +49,7 @@ The archive is written to `dist/package/SSH-AutoTunnel-local.zip`.
 
 ## Local Endpoints
 
-When running, the app serves:
+When running, the app serves loopback-only endpoints:
 
 - PAC: `http://127.0.0.1:18483/proxy.pac`
 - Status page: `http://127.0.0.1:18483/status`
