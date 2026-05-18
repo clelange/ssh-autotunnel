@@ -35,6 +35,7 @@
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
 - Added tested port validation and restart logic for local PAC, API, and blocking proxy servers when valid listener ports change.
 - Made local HTTP server construction reject invalid ports with typed errors instead of crashing.
+- Extracted local server orchestration into a tested core coordinator with restart rollback coverage.
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
@@ -55,7 +56,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 66 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 70 XCTest cases.
 
 ## Known Gaps
 

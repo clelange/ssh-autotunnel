@@ -20,13 +20,15 @@ final class AppState: ObservableObject {
     private let networkIdentity = NetworkIdentityService()
     private let proxyManager = SystemProxyManager()
     private let notifications = AppNotificationService()
-    private var pacServer: LocalHTTPServer?
-    private var blockingProxyServer: LocalHTTPServer?
-    private var apiServer: LocalHTTPServer?
-    private var activeServerPorts: LocalServerPorts?
     private var pathMonitor: NWPathMonitor?
     private let jsonEncoder = JSONEncoder()
     private let jsonDecoder = JSONDecoder()
+    private lazy var localServers = LocalServerCoordinator<LocalHTTPServer> { [weak self] role, port in
+        guard let self else {
+            throw NSError(domain: "AppState", code: 1, userInfo: [NSLocalizedDescriptionKey: "App state is unavailable"])
+        }
+        return try self.makeLocalServer(role: role, port: port)
+    }
 
     init() {
         do {
@@ -53,11 +55,11 @@ final class AppState: ObservableObject {
     }
 
     var pacURL: String {
-        "http://127.0.0.1:\(activeServerPorts?.pacHTTPPort ?? configuration.pacHTTPPort)/proxy.pac?v=\(pacVersion)"
+        "http://127.0.0.1:\(localServers.activePorts?.pacHTTPPort ?? configuration.pacHTTPPort)/proxy.pac?v=\(pacVersion)"
     }
 
     var statusURL: String {
-        "http://127.0.0.1:\(activeServerPorts?.pacHTTPPort ?? configuration.pacHTTPPort)/status"
+        "http://127.0.0.1:\(localServers.activePorts?.pacHTTPPort ?? configuration.pacHTTPPort)/status"
     }
 
     private var pacVersion: Int {
@@ -93,7 +95,7 @@ final class AppState: ObservableObject {
             configurationValidationMessage = nil
             refreshNetworkDecision()
             writePACCopy()
-            if didRestartServers, let activeServerPorts {
+            if didRestartServers, let activeServerPorts = localServers.activePorts {
                 lastProxyMessage = "Local servers restarted: PAC \(activeServerPorts.pacHTTPPort), API \(activeServerPorts.apiHTTPPort), blocking proxy \(activeServerPorts.blockingHTTPProxyPort)"
             }
         } catch let error as PortConfigurationError {
@@ -237,7 +239,7 @@ final class AppState: ObservableObject {
     private func startServers() {
         do {
             try PortConfigurationValidator.validate(configuration)
-            try startLocalServers(ports: LocalServerPorts(configuration: configuration))
+            try localServers.start(ports: LocalServerPorts(configuration: configuration))
         } catch let error as PortConfigurationError {
             configurationValidationMessage = error.localizedDescription
             lastProxyMessage = error.localizedDescription
@@ -249,63 +251,24 @@ final class AppState: ObservableObject {
     @discardableResult
     private func restartLocalServersIfNeeded() throws -> Bool {
         let ports = LocalServerPorts(configuration: configuration)
-        guard activeServerPorts != ports else { return false }
-        let previousPorts = activeServerPorts
-        stopLocalServers()
+        return try localServers.restartIfNeeded(ports: ports)
+    }
 
-        do {
-            try startLocalServers(ports: ports)
-            return true
-        } catch {
-            stopLocalServers()
-            if let previousPorts {
-                try? startLocalServers(ports: previousPorts)
+    private func makeLocalServer(role: LocalServerRole, port: Int) throws -> LocalHTTPServer {
+        switch role {
+        case .pac:
+            try LocalHTTPServer(port: port, label: "dev.clange.ssh-autotunnel.pac") { [weak self] request in
+                self?.handlePACRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
             }
-            throw error
+        case .blockingProxy:
+            try LocalHTTPServer(port: port, label: "dev.clange.ssh-autotunnel.blocking-proxy") { [weak self] request in
+                self?.handleBlockingProxyRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
+            }
+        case .api:
+            try LocalHTTPServer(port: port, label: "dev.clange.ssh-autotunnel.api") { [weak self] request in
+                self?.handleAPIRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
+            }
         }
-    }
-
-    private func startLocalServers(ports: LocalServerPorts) throws {
-        let nextPACServer = try LocalHTTPServer(port: ports.pacHTTPPort, label: "dev.clange.ssh-autotunnel.pac") { [weak self] request in
-            self?.handlePACRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
-        }
-        try nextPACServer.start()
-
-        let nextBlockingProxyServer = try LocalHTTPServer(port: ports.blockingHTTPProxyPort, label: "dev.clange.ssh-autotunnel.blocking-proxy") { [weak self] request in
-            self?.handleBlockingProxyRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
-        }
-        do {
-            try nextBlockingProxyServer.start()
-        } catch {
-            nextPACServer.stop()
-            throw error
-        }
-
-        let nextAPIServer = try LocalHTTPServer(port: ports.apiHTTPPort, label: "dev.clange.ssh-autotunnel.api") { [weak self] request in
-            self?.handleAPIRequest(request) ?? .error(503, "Unavailable", "App state is unavailable")
-        }
-        do {
-            try nextAPIServer.start()
-        } catch {
-            nextPACServer.stop()
-            nextBlockingProxyServer.stop()
-            throw error
-        }
-
-        pacServer = nextPACServer
-        blockingProxyServer = nextBlockingProxyServer
-        apiServer = nextAPIServer
-        activeServerPorts = ports
-    }
-
-    private func stopLocalServers() {
-        pacServer?.stop()
-        blockingProxyServer?.stop()
-        apiServer?.stop()
-        pacServer = nil
-        blockingProxyServer = nil
-        apiServer = nil
-        activeServerPorts = nil
     }
 
     private nonisolated func handleBlockingProxyRequest(_ request: HTTPRequest) -> HTTPResponse {
@@ -485,17 +448,5 @@ final class AppState: ObservableObject {
             port += 1
         }
         return port
-    }
-}
-
-private struct LocalServerPorts: Equatable {
-    var pacHTTPPort: Int
-    var blockingHTTPProxyPort: Int
-    var apiHTTPPort: Int
-
-    init(configuration: AppConfiguration) {
-        pacHTTPPort = configuration.pacHTTPPort
-        blockingHTTPProxyPort = configuration.blockingHTTPProxyPort
-        apiHTTPPort = configuration.apiHTTPPort
     }
 }
