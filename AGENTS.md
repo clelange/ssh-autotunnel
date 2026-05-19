@@ -37,6 +37,7 @@
 - Added local API and CLI actions for system PAC apply/restore, PAC reload, `ssh-auto2fa` preset import, and `ssh-auto2fa` Keychain checks.
 - Added tested profile configuration create/update/delete logic with local API and CLI actions for external automation.
 - Added a tested CLI profile JSON template command for create/update automation.
+- Added tested PAC rule create/update/delete logic with local API and CLI actions plus a PAC rule JSON template.
 - Reused profile configuration deletion logic from Settings so profile removal also clears scoped network rules.
 - Expanded Shortcuts/App Intents coverage to include reconnect, profile create/update/delete, PAC reload, system PAC apply/restore, and import/check actions.
 - Added a diagnostics control action with CLI and Shortcuts coverage for structured state, network, port, and file-permission snapshots.
@@ -78,7 +79,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 124 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 132 XCTest cases.
 
 ## Known Gaps
 

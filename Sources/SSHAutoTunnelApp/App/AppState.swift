@@ -455,6 +455,45 @@ final class AppState: ObservableObject {
             } catch {
                 return ControlResponse(ok: false, message: "Could not delete profile: \(error.localizedDescription)", status: snapshot())
             }
+        case .createPACRule:
+            guard let requestRule = request.pacRule else {
+                return ControlResponse(ok: false, message: PACRuleConfigurationEditorError.missingRulePayload.localizedDescription, status: snapshot())
+            }
+            do {
+                configuration = try PACRuleConfigurationEditor.create(rule: requestRule, in: configuration)
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Created PAC rule \(requestRule.name)", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not create PAC rule: \(error.localizedDescription)", status: snapshot())
+            }
+        case .updatePACRule:
+            guard let requestRule = request.pacRule else {
+                return ControlResponse(ok: false, message: PACRuleConfigurationEditorError.missingRulePayload.localizedDescription, status: snapshot())
+            }
+            do {
+                configuration = try PACRuleConfigurationEditor.update(
+                    rule: requestRule,
+                    matchingID: request.pacRuleID,
+                    matchingName: request.pacRuleName,
+                    in: configuration
+                )
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Updated PAC rule \(requestRule.name)", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not update PAC rule: \(error.localizedDescription)", status: snapshot())
+            }
+        case .deletePACRule:
+            do {
+                configuration = try PACRuleConfigurationEditor.delete(
+                    ruleID: request.pacRuleID,
+                    ruleName: request.pacRuleName,
+                    in: configuration
+                )
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Deleted PAC rule", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not delete PAC rule: \(error.localizedDescription)", status: snapshot())
+            }
         case .diagnostics:
             return ControlResponse(
                 ok: true,

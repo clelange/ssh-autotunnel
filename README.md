@@ -83,6 +83,10 @@ swift run ssh-autotunnelctl profile-template > profile.json
 swift run ssh-autotunnelctl create-profile ./profile.json
 swift run ssh-autotunnelctl update-profile ./profile.json
 swift run ssh-autotunnelctl delete-profile "Old tunnel"
+swift run ssh-autotunnelctl pac-rule-template > pac-rule.json
+swift run ssh-autotunnelctl create-pac-rule ./pac-rule.json
+swift run ssh-autotunnelctl update-pac-rule ./pac-rule.json
+swift run ssh-autotunnelctl delete-pac-rule "Old routing"
 swift run ssh-autotunnelctl connect "CERN lxplus"
 swift run ssh-autotunnelctl disconnect "CERN lxplus"
 ```
@@ -106,6 +110,8 @@ The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keycha
 Settings, Shortcuts, and the CLI can also import literal `Host` entries from `~/.ssh/config`. Wildcard and negated host patterns are skipped because they do not map to one concrete tunnel profile.
 
 For external automation, generate a profile JSON template with `ssh-autotunnelctl profile-template`, edit it, then pass it to `create-profile` or `update-profile`. The template command does not require the app to be running.
+
+PAC routing rules can be managed the same way with `ssh-autotunnelctl pac-rule-template`, `create-pac-rule`, `update-pac-rule`, and `delete-pac-rule`.
 
 ## Development Notes
 

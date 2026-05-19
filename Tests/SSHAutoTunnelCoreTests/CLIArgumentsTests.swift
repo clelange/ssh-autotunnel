@@ -46,4 +46,19 @@ final class CLIArgumentsTests: XCTestCase {
         let invocation = CLIArguments.parse(["profile-template"])
         XCTAssertEqual(invocation, CLIInvocation(command: "profile-template"))
     }
+
+    func testParsesPACRuleManagementCommands() {
+        XCTAssertEqual(
+            CLIArguments.parse(["pac-rule-template"]),
+            CLIInvocation(command: "pac-rule-template")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["create-pac-rule", "~/pac-rule.json"]),
+            CLIInvocation(command: "create-pac-rule", profileName: "~/pac-rule.json")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["delete-pac-rule", "CERN"]),
+            CLIInvocation(command: "delete-pac-rule", profileName: "CERN")
+        )
+    }
 }

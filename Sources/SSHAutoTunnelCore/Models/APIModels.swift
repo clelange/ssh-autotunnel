@@ -15,6 +15,9 @@ public enum ControlAction: String, Codable, Sendable {
     case createProfile
     case updateProfile
     case deleteProfile
+    case createPACRule
+    case updatePACRule
+    case deletePACRule
     case diagnostics
 }
 
@@ -23,12 +26,26 @@ public struct ControlRequest: Codable, Sendable {
     public var profileName: String?
     public var profileID: UUID?
     public var profile: TunnelProfile?
+    public var pacRuleName: String?
+    public var pacRuleID: UUID?
+    public var pacRule: PACRule?
 
-    public init(action: ControlAction, profileName: String? = nil, profileID: UUID? = nil, profile: TunnelProfile? = nil) {
+    public init(
+        action: ControlAction,
+        profileName: String? = nil,
+        profileID: UUID? = nil,
+        profile: TunnelProfile? = nil,
+        pacRuleName: String? = nil,
+        pacRuleID: UUID? = nil,
+        pacRule: PACRule? = nil
+    ) {
         self.action = action
         self.profileName = profileName
         self.profileID = profileID
         self.profile = profile
+        self.pacRuleName = pacRuleName
+        self.pacRuleID = pacRuleID
+        self.pacRule = pacRule
     }
 }
 

@@ -23,4 +23,18 @@ final class ProfileTemplateTests: XCTestCase {
         let decoded = try JSONDecoder().decode(TunnelProfile.self, from: data)
         XCTAssertEqual(decoded, profile)
     }
+
+    func testPACRuleTemplateReferencesProfileTemplate() throws {
+        let rule = PACRuleTemplate.example()
+
+        XCTAssertEqual(rule.name, "Example routing")
+        XCTAssertEqual(rule.domainPattern, "*.example.org")
+        XCTAssertEqual(rule.profileID, ProfileTemplate.exampleProfileID)
+        XCTAssertTrue(rule.enabled)
+        XCTAssertEqual(rule.failureMode, .failClosed)
+
+        let data = try JSONEncoder().encode(rule)
+        let decoded = try JSONDecoder().decode(PACRule.self, from: data)
+        XCTAssertEqual(decoded, rule)
+    }
 }

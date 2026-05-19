@@ -14,6 +14,10 @@ struct SSHAutoTunnelCLI {
                 printProfileTemplate()
                 return
             }
+            if invocation.command == "pac-rule-template" {
+                printPACRuleTemplate()
+                return
+            }
 
             let configuration = try ConfigurationStore().load()
             let client = ControlAPIClient(configuration: configuration)
@@ -50,6 +54,14 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .updateProfile, profileName: profile.name, profileID: profile.id, profile: profile))
             case "delete-profile":
                 response = try await client.send(ControlRequest(action: .deleteProfile, profileName: invocation.profileName))
+            case "create-pac-rule":
+                let rule = try readPACRule(from: invocation.profileName)
+                response = try await client.send(ControlRequest(action: .createPACRule, pacRule: rule))
+            case "update-pac-rule":
+                let rule = try readPACRule(from: invocation.profileName)
+                response = try await client.send(ControlRequest(action: .updatePACRule, pacRuleName: rule.name, pacRuleID: rule.id, pacRule: rule))
+            case "delete-pac-rule":
+                response = try await client.send(ControlRequest(action: .deletePACRule, pacRuleName: invocation.profileName))
             case "diagnostics":
                 response = try await client.send(ControlRequest(action: .diagnostics))
             default:
@@ -135,8 +147,16 @@ struct SSHAutoTunnelCLI {
     }
 
     private static func readProfile(from argument: String?) throws -> TunnelProfile {
+        try readJSON(from: argument, missingMessage: "Profile JSON path is required")
+    }
+
+    private static func readPACRule(from argument: String?) throws -> PACRule {
+        try readJSON(from: argument, missingMessage: "PAC rule JSON path is required")
+    }
+
+    private static func readJSON<T: Decodable>(from argument: String?, missingMessage: String) throws -> T {
         guard let argument, !argument.isEmpty else {
-            throw NSError(domain: "ssh-autotunnelctl", code: 2, userInfo: [NSLocalizedDescriptionKey: "Profile JSON path is required"])
+            throw NSError(domain: "ssh-autotunnelctl", code: 2, userInfo: [NSLocalizedDescriptionKey: missingMessage])
         }
 
         let data: Data
@@ -146,13 +166,21 @@ struct SSHAutoTunnelCLI {
             let path = NSString(string: argument).expandingTildeInPath
             data = try Data(contentsOf: URL(fileURLWithPath: path))
         }
-        return try JSONDecoder().decode(TunnelProfile.self, from: data)
+        return try JSONDecoder().decode(T.self, from: data)
     }
 
     private static func printProfileTemplate() {
+        printJSON(ProfileTemplate.example())
+    }
+
+    private static func printPACRuleTemplate() {
+        printJSON(PACRuleTemplate.example())
+    }
+
+    private static func printJSON<T: Encodable>(_ value: T) {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(ProfileTemplate.example()), let text = String(data: data, encoding: .utf8) {
+        if let data = try? encoder.encode(value), let text = String(data: data, encoding: .utf8) {
             print(text)
         }
     }
@@ -174,6 +202,10 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl create-profile <profile.json|->
           ssh-autotunnelctl update-profile <profile.json|->
           ssh-autotunnelctl delete-profile <profile name>
+          ssh-autotunnelctl pac-rule-template
+          ssh-autotunnelctl create-pac-rule <pac-rule.json|->
+          ssh-autotunnelctl update-pac-rule <pac-rule.json|->
+          ssh-autotunnelctl delete-pac-rule <PAC rule name>
           ssh-autotunnelctl connect <profile name>
           ssh-autotunnelctl disconnect <profile name>
           ssh-autotunnelctl reconnect <profile name>
