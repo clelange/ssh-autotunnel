@@ -297,7 +297,10 @@ final class AppState: ObservableObject {
                 from: export,
                 preservingLocalValuesFrom: configuration
             )
-            let backupURL = try configurationStore.backupCurrentConfiguration(label: "pre-import")
+            let backupURL = try configurationStore.backupCurrentConfiguration(
+                label: "pre-import",
+                retaining: ConfigurationStore.defaultPreImportBackupRetentionCount
+            )
             let importedProfileIDs = Set(imported.profiles.map(\.id))
             for profile in configuration.profiles where !importedProfileIDs.contains(profile.id) {
                 tunnelManager.stop(profileID: profile.id)

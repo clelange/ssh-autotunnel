@@ -72,6 +72,69 @@ final class ConfigurationStoreTests: XCTestCase {
         XCTAssertNil(try store.backupCurrentConfiguration(label: "pre-import"))
     }
 
+    func testPruneBackupsKeepsNewestMatchingBackupsOnly() throws {
+        let directory = try temporaryDirectory()
+        let url = directory.appendingPathComponent("config.json")
+        let store = try ConfigurationStore(url: url)
+
+        for index in 0..<12 {
+            try writeBackup(
+                named: String(format: "config.json.pre-import-2026-01-01T00-00-%02d.000Z", index),
+                in: directory
+            )
+        }
+        try writeBackup(named: "config.json.invalid-2026-01-01T00-00-00.000Z", in: directory)
+
+        let removed = try store.pruneBackups(label: "pre-import", keeping: 10)
+
+        XCTAssertEqual(
+            removed.map(\.lastPathComponent),
+            [
+                "config.json.pre-import-2026-01-01T00-00-00.000Z",
+                "config.json.pre-import-2026-01-01T00-00-01.000Z"
+            ]
+        )
+        XCTAssertEqual(try matchingBackups(in: directory, label: "pre-import").count, 10)
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("config.json.invalid-2026-01-01T00-00-00.000Z").path
+            )
+        )
+    }
+
+    func testBackupCurrentConfigurationCanPruneOldPreImportBackups() throws {
+        let directory = try temporaryDirectory()
+        let url = directory.appendingPathComponent("config.json")
+        let expected = AppConfiguration(profiles: [
+            TunnelProfile(name: "Custom", host: "ssh.example.org", localSocksPort: 1200)
+        ])
+        let store = try ConfigurationStore(url: url)
+        try store.save(expected)
+
+        for index in 0..<10 {
+            try writeBackup(
+                named: String(format: "config.json.pre-import-2000-01-01T00-00-%02d.000Z", index),
+                in: directory
+            )
+        }
+
+        let backupURL = try XCTUnwrap(store.backupCurrentConfiguration(label: "pre-import", retaining: 3))
+        let remainingBackups = try matchingBackups(in: directory, label: "pre-import")
+
+        XCTAssertEqual(remainingBackups.count, 3)
+        XCTAssertTrue(remainingBackups.contains(backupURL.lastPathComponent))
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("config.json.pre-import-2000-01-01T00-00-00.000Z").path
+            )
+        )
+        XCTAssertTrue(
+            FileManager.default.fileExists(
+                atPath: directory.appendingPathComponent("config.json.pre-import-2000-01-01T00-00-09.000Z").path
+            )
+        )
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ssh-autotunnel-tests")
@@ -83,5 +146,15 @@ final class ConfigurationStoreTests: XCTestCase {
     private func posixPermissions(of url: URL) throws -> Int {
         let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
         return try XCTUnwrap(attributes[.posixPermissions] as? NSNumber).intValue & 0o777
+    }
+
+    private func writeBackup(named fileName: String, in directory: URL) throws {
+        try Data("{}".utf8).write(to: directory.appendingPathComponent(fileName))
+    }
+
+    private func matchingBackups(in directory: URL, label: String) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter { $0.hasPrefix("config.json.\(label)-") }
+            .sorted()
     }
 }

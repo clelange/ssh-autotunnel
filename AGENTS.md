@@ -75,6 +75,7 @@
 - Made configuration import and validation accept raw `config.json` backups by converting them to redacted exports before local API submission.
 - Applied user-only file permissions to CLI-written configuration exports and support bundles.
 - Added Settings file-panel actions for configuration export, validation, import, and support-bundle generation.
+- Added tested pruning for old pre-import configuration backups while preserving malformed-config recovery backups.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -88,7 +89,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 157 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 159 XCTest cases.
 
 ## Known Gaps
 

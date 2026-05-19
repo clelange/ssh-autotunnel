@@ -17,6 +17,8 @@ public struct ConfigurationLoadResult: Sendable {
 }
 
 public final class ConfigurationStore {
+    public static let defaultPreImportBackupRetentionCount = 10
+
     public let url: URL
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
@@ -72,7 +74,7 @@ public final class ConfigurationStore {
         try FileProtection.protectFile(url)
     }
 
-    public func backupCurrentConfiguration(label: String = "backup") throws -> URL? {
+    public func backupCurrentConfiguration(label: String = "backup", retaining retainedBackupCount: Int? = nil) throws -> URL? {
         guard FileManager.default.fileExists(atPath: url.path) else { return nil }
 
         let directory = url.deletingLastPathComponent()
@@ -85,7 +87,33 @@ public final class ConfigurationStore {
         }
         try FileManager.default.copyItem(at: url, to: backupURL)
         try FileProtection.protectFile(backupURL)
+        if let retainedBackupCount {
+            _ = try pruneBackups(label: label, keeping: retainedBackupCount)
+        }
         return backupURL
+    }
+
+    @discardableResult
+    public func pruneBackups(label: String, keeping retainedBackupCount: Int) throws -> [URL] {
+        let directory = url.deletingLastPathComponent()
+        guard FileManager.default.fileExists(atPath: directory.path) else { return [] }
+
+        let prefix = backupPrefix(label: label)
+        let retainedBackupCount = max(0, retainedBackupCount)
+        let backups = try FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: nil
+        )
+        .filter { $0.lastPathComponent.hasPrefix(prefix) }
+        .sorted { $0.lastPathComponent < $1.lastPathComponent }
+
+        guard backups.count > retainedBackupCount else { return [] }
+
+        let removedBackups = Array(backups.dropLast(retainedBackupCount))
+        for backup in removedBackups {
+            try FileManager.default.removeItem(at: backup)
+        }
+        return removedBackups
     }
 
     private func backupInvalidConfiguration() throws -> URL {
@@ -106,10 +134,14 @@ public final class ConfigurationStore {
         let formatter = ISO8601DateFormatter()
         formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
         let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        return url.deletingLastPathComponent().appendingPathComponent("\(backupPrefix(label: label))\(stamp)")
+    }
+
+    private func backupPrefix(label: String) -> String {
         let safeLabel = label
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "/", with: "-")
         let suffix = safeLabel.isEmpty ? "backup" : safeLabel
-        return url.deletingLastPathComponent().appendingPathComponent("\(url.lastPathComponent).\(suffix)-\(stamp)")
+        return "\(url.lastPathComponent).\(suffix)-"
     }
 }
