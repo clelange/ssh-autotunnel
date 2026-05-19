@@ -143,7 +143,7 @@ struct SSHAutoTunnelCLI {
         if let serviceStatuses = response.sshAuto2FAServiceStatuses {
             print("ssh-auto2fa Keychain services:")
             for serviceStatus in serviceStatuses {
-                print("- \(serviceStatus.requirement.profileName) \(serviceStatus.requirement.kind.displayName): \(serviceStatus.requirement.service) - \(label(for: serviceStatus.state))")
+                print("- \(serviceStatus.requirement.profileName) \(serviceStatus.requirement.kind.displayName): \(serviceStatus.requirement.service) account=\(serviceStatus.requirement.account) - \(label(for: serviceStatus.state))")
             }
         }
         if let diagnostics = response.diagnostics {

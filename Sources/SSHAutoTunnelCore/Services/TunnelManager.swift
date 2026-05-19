@@ -3,6 +3,7 @@ import Foundation
 public final class TunnelManager {
     public var onStatusChange: ((TunnelRuntimeStatus) -> Void)?
     public var onLog: ((UUID, String) -> Void)?
+    public var onKeychainAccessCompleted: (() -> Void)?
 
     private let keychain: GenericPasswordReading
     private let processLauncher: SSHProcessLaunching
@@ -126,7 +127,7 @@ public final class TunnelManager {
             guard let service = profile.keychain.passwordService else {
                 throw NSError(domain: "TunnelManager", code: 2, userInfo: [NSLocalizedDescriptionKey: "Password service is not configured"])
             }
-            password = try keychain.readGenericPassword(service: service, account: profile.keychain.account)
+            password = try readGenericPassword(service: service, account: profile.keychain.account)
         }
 
         if profile.authMode == .totp || profile.authMode == .passwordAndTOTP || profile.authMode == .kerberosAndTOTP {
@@ -218,7 +219,7 @@ public final class TunnelManager {
             guard !tunnel.sentTOTP else { return }
             if let totpReference = tunnel.credentials.totp {
                 do {
-                    let seed = try keychain.readGenericPassword(service: totpReference.service, account: totpReference.account)
+                    let seed = try readGenericPassword(service: totpReference.service, account: totpReference.account)
                     let totp = try totpGenerator(seed)
                     tunnel.sentTOTP = true
                     write(totp + "\n", to: tunnel)
@@ -233,6 +234,13 @@ public final class TunnelManager {
                 }
             }
         }
+    }
+
+    private func readGenericPassword(service: String, account: String) throws -> String {
+        defer {
+            onKeychainAccessCompleted?()
+        }
+        return try keychain.readGenericPassword(service: service, account: account)
     }
 
     private func write(_ string: String, to tunnel: ManagedTunnel) {

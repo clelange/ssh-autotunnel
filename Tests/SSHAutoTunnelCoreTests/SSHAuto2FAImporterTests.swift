@@ -43,4 +43,22 @@ final class SSHAuto2FAImporterTests: XCTestCase {
         XCTAssertEqual(lxplus.host, "lxplus.cern.ch")
         XCTAssertEqual(lxplus.keychain.totpService, "cern-lxplus-otp-secret")
     }
+
+    func testUsesDiscoveredPresetAccounts() throws {
+        let (configuration, _) = SSHAuto2FAImporter.apply(
+            to: AppConfiguration(),
+            account: "clange",
+            accountByService: [
+                "cern-lxplus-otp-secret": "clange",
+                "psit3-password": "lange_c",
+                "psit3-otp-secret": "lange_c"
+            ]
+        )
+
+        let lxplus = try XCTUnwrap(configuration.profiles.first { $0.name == "CERN lxplus" })
+        let tier3 = try XCTUnwrap(configuration.profiles.first { $0.name == "PSI Tier-3" })
+
+        XCTAssertEqual(lxplus.keychain.account, "clange")
+        XCTAssertEqual(tier3.keychain.account, "lange_c")
+    }
 }

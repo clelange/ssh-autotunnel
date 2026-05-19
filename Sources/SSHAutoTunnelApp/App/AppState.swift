@@ -1,3 +1,4 @@
+import AppKit
 import Foundation
 import Network
 import SSHAutoTunnelCore
@@ -121,7 +122,9 @@ final class AppState: ObservableObject {
     }
 
     func writeSecret(_ value: String, service: String, account: String) throws {
-        try keychain.writeGenericPassword(value, service: service, account: account)
+        try restoringWindowFocus {
+            try keychain.writeGenericPassword(value, service: service, account: account)
+        }
     }
 
     func rotateAPIToken() {
@@ -161,10 +164,16 @@ final class AppState: ObservableObject {
 
     func importExistingKeychainServices(for profileID: UUID) {
         guard let index = configuration.profiles.firstIndex(where: { $0.id == profileID }) else { return }
+        let accountByService = sshAuto2FAPresetAccounts()
         switch configuration.profiles[index].name {
         case "CERN lxplus":
+            configuration.profiles[index].keychain.account = accountByService[SSHAuto2FAPresets.cernLxplusTOTPService] ?? NSUserName()
             configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.cernLxplusTOTPService
         case "PSI Tier-3":
+            configuration.profiles[index].keychain.account = sharedPresetAccount(
+                services: [SSHAuto2FAPresets.psiTier3PasswordService, SSHAuto2FAPresets.psiTier3TOTPService],
+                accountByService: accountByService
+            )
             configuration.profiles[index].keychain.passwordService = SSHAuto2FAPresets.psiTier3PasswordService
             configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.psiTier3TOTPService
         default:
@@ -174,12 +183,24 @@ final class AppState: ObservableObject {
     }
 
     func refreshSSHAuto2FAServiceStatuses() {
-        sshAuto2FAServiceStatuses = SSHAuto2FAKeychainInspector.inspect(account: NSUserName(), reader: keychain)
+        restoringWindowFocus {
+            sshAuto2FAServiceStatuses = SSHAuto2FAKeychainInspector.inspect(
+                account: NSUserName(),
+                reader: keychain,
+                accountLookup: keychain
+            )
+        }
     }
 
     @discardableResult
     func importSSHAuto2FAPresets() -> SSHAuto2FAImportResult {
-        let (updated, result) = SSHAuto2FAImporter.apply(to: configuration, account: NSUserName())
+        let (updated, result) = restoringWindowFocus {
+            SSHAuto2FAImporter.apply(
+                to: configuration,
+                account: NSUserName(),
+                accountByService: sshAuto2FAPresetAccounts()
+            )
+        }
         configuration = updated
         saveConfiguration()
         lastProxyMessage = "Imported ssh-auto2fa presets: \(result.createdProfiles) created, \(result.updatedProfiles) updated"
@@ -291,6 +312,26 @@ final class AppState: ObservableObject {
         )
     }
 
+    private func sshAuto2FAPresetAccounts() -> [String: String] {
+        SSHAuto2FAKeychainInspector.discoveredAccounts(account: NSUserName(), accountLookup: keychain)
+    }
+
+    private func sharedPresetAccount(services: [String], accountByService: [String: String]) -> String {
+        let accounts = services.compactMap { accountByService[$0] }
+        guard Set(accounts).count == 1, let account = accounts.first else {
+            return NSUserName()
+        }
+        return account
+    }
+
+    private func restoringWindowFocus<T>(_ operation: () throws -> T) rethrows -> T {
+        let restorer = AppWindowFocusRestorer.capture()
+        defer {
+            restorer.restore()
+        }
+        return try operation()
+    }
+
     func importConfigurationExport(_ export: ConfigurationExport) -> ControlResponse {
         do {
             let imported = try ConfigurationExportService.importConfiguration(
@@ -324,6 +365,11 @@ final class AppState: ObservableObject {
     }
 
     private func setupTunnelCallbacks() {
+        tunnelManager.onKeychainAccessCompleted = {
+            Task { @MainActor in
+                AppWindowFocusRestorer.restoreVisibleWindows()
+            }
+        }
         tunnelManager.onStatusChange = { [weak self] status in
             guard let self else { return }
             let previous = self.statuses[status.profileID]

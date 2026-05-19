@@ -37,6 +37,34 @@ final class SSHAuto2FAKeychainInspectorTests: XCTestCase {
         ])
     }
 
+    func testInspectorDiscoversUniqueServiceAccounts() {
+        let accountLookup = FakeGenericPasswordAccountLookup(accounts: [
+            "cern-lxplus-otp-secret": ["clange"],
+            "psit3-password": ["lange_c"],
+            "psit3-otp-secret": ["lange_c"]
+        ])
+        let statuses = SSHAuto2FAKeychainInspector.inspect(
+            account: "clange",
+            reader: FakeGenericPasswordReader(results: [
+                "cern-lxplus-otp-secret|clange": .success("cern-secret"),
+                "psit3-password|lange_c": .success("psi-password"),
+                "psit3-otp-secret|lange_c": .success("psi-secret")
+            ]),
+            accountLookup: accountLookup
+        )
+
+        XCTAssertEqual(statuses.map(\.requirement.account), ["clange", "lange_c", "lange_c"])
+        XCTAssertEqual(statuses.map(\.state), [.available, .available, .available])
+        XCTAssertEqual(
+            SSHAuto2FAKeychainInspector.discoveredAccounts(account: "clange", accountLookup: accountLookup),
+            [
+                "cern-lxplus-otp-secret": "clange",
+                "psit3-password": "lange_c",
+                "psit3-otp-secret": "lange_c"
+            ]
+        )
+    }
+
     func testServiceStatusIsCodable() throws {
         let status = SSHAuto2FAServiceStatus(
             requirement: SSHAuto2FAServiceRequirement(
@@ -60,6 +88,14 @@ private struct FakeGenericPasswordReader: GenericPasswordReading {
 
     func readGenericPassword(service: String, account: String) throws -> String {
         try results["\(service)|\(account)", default: .failure(KeychainServiceError.itemNotFound(service: service, account: account))].get()
+    }
+}
+
+private struct FakeGenericPasswordAccountLookup: GenericPasswordAccountDiscovering {
+    var accounts: [String: [String]]
+
+    func genericPasswordAccounts(service: String) throws -> [String] {
+        accounts[service, default: []]
     }
 }
 

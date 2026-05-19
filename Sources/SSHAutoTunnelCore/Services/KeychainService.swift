@@ -21,6 +21,36 @@ public enum KeychainServiceError: Error, LocalizedError {
 public final class KeychainService {
     public init() {}
 
+    public func genericPasswordAccounts(service: String) throws -> [String] {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecReturnAttributes as String: true,
+            kSecMatchLimit as String: kSecMatchLimitAll
+        ]
+
+        var item: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &item)
+        if status == errSecItemNotFound {
+            return []
+        }
+        guard status == errSecSuccess else {
+            throw KeychainServiceError.unexpectedStatus(status)
+        }
+
+        let attributes: [[String: Any]]
+        if let matches = item as? [[String: Any]] {
+            attributes = matches
+        } else if let match = item as? [String: Any] {
+            attributes = [match]
+        } else {
+            attributes = []
+        }
+
+        let accountKey = kSecAttrAccount as String
+        return Array(Set(attributes.compactMap { $0[accountKey] as? String })).sorted()
+    }
+
     public func readGenericPassword(service: String, account: String) throws -> String {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,

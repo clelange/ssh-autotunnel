@@ -7,9 +7,23 @@ public struct SSHAuto2FAImportResult: Equatable, Sendable {
 }
 
 public enum SSHAuto2FAImporter {
-    public static func apply(to configuration: AppConfiguration, account: String = NSUserName()) -> (AppConfiguration, SSHAuto2FAImportResult) {
+    public static func apply(
+        to configuration: AppConfiguration,
+        account: String = NSUserName(),
+        accountByService: [String: String] = [:]
+    ) -> (AppConfiguration, SSHAuto2FAImportResult) {
         var configuration = configuration
         var result = SSHAuto2FAImportResult(createdProfiles: 0, updatedProfiles: 0, createdPACRules: 0)
+
+        let cernAccount = accountByService[SSHAuto2FAPresets.cernLxplusTOTPService] ?? account
+        let psiAccount = sharedAccount(
+            services: [
+                SSHAuto2FAPresets.psiTier3PasswordService,
+                SSHAuto2FAPresets.psiTier3TOTPService
+            ],
+            fallback: account,
+            accountByService: accountByService
+        )
 
         let lxplusID = upsertProfile(
             in: &configuration,
@@ -18,7 +32,7 @@ public enum SSHAuto2FAImporter {
             host: "lxplus.cern.ch",
             preferredPort: 1081,
             authMode: .kerberosAndTOTP,
-            keychain: KeychainReference(account: account, totpService: SSHAuto2FAPresets.cernLxplusTOTPService)
+            keychain: KeychainReference(account: cernAccount, totpService: SSHAuto2FAPresets.cernLxplusTOTPService)
         )
         ensurePACRule(
             in: &configuration,
@@ -37,7 +51,7 @@ public enum SSHAuto2FAImporter {
             jumpHost: "t3hop01.psi.ch",
             authMode: .passwordAndTOTP,
             keychain: KeychainReference(
-                account: account,
+                account: psiAccount,
                 passwordService: SSHAuto2FAPresets.psiTier3PasswordService,
                 totpService: SSHAuto2FAPresets.psiTier3TOTPService
             )
@@ -111,5 +125,16 @@ public enum SSHAuto2FAImporter {
             port += 1
         }
         return port
+    }
+
+    private static func sharedAccount(
+        services: [String],
+        fallback: String,
+        accountByService: [String: String]
+    ) -> String {
+        let discovered = services.compactMap { accountByService[$0] }
+        guard !discovered.isEmpty else { return fallback }
+        let unique = Set(discovered)
+        return unique.count == 1 ? discovered[0] : fallback
     }
 }

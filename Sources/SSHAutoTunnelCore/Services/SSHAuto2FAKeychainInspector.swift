@@ -4,7 +4,12 @@ public protocol GenericPasswordReading {
     func readGenericPassword(service: String, account: String) throws -> String
 }
 
+public protocol GenericPasswordAccountDiscovering {
+    func genericPasswordAccounts(service: String) throws -> [String]
+}
+
 extension KeychainService: GenericPasswordReading {}
+extension KeychainService: GenericPasswordAccountDiscovering {}
 
 public enum SSHAuto2FAPresets {
     public static let cernLxplusTOTPService = "cern-lxplus-otp-secret"
@@ -100,7 +105,58 @@ public enum SSHAuto2FAKeychainInspector {
         }
     }
 
+    public static func inspect(
+        account: String = NSUserName(),
+        reader: GenericPasswordReading,
+        accountLookup: GenericPasswordAccountDiscovering
+    ) -> [SSHAuto2FAServiceStatus] {
+        let requirements = resolvedRequirements(account: account, accountLookup: accountLookup)
+        return inspect(requirements: requirements, reader: reader)
+    }
+
     public static func inspect(account: String = NSUserName(), reader: GenericPasswordReading) -> [SSHAuto2FAServiceStatus] {
         inspect(requirements: defaultRequirements(account: account), reader: reader)
+    }
+
+    public static func resolvedRequirements(
+        account: String = NSUserName(),
+        accountLookup: GenericPasswordAccountDiscovering
+    ) -> [SSHAuto2FAServiceRequirement] {
+        defaultRequirements(account: account).map { requirement in
+            var requirement = requirement
+            if let discoveredAccount = uniqueAccount(for: requirement.service, preferredAccount: account, accountLookup: accountLookup) {
+                requirement.account = discoveredAccount
+            }
+            return requirement
+        }
+    }
+
+    public static func discoveredAccounts(
+        account: String = NSUserName(),
+        accountLookup: GenericPasswordAccountDiscovering
+    ) -> [String: String] {
+        defaultRequirements(account: account).reduce(into: [:]) { accounts, requirement in
+            if let discoveredAccount = uniqueAccount(
+                for: requirement.service,
+                preferredAccount: account,
+                accountLookup: accountLookup
+            ) {
+                accounts[requirement.service] = discoveredAccount
+            }
+        }
+    }
+
+    private static func uniqueAccount(
+        for service: String,
+        preferredAccount: String,
+        accountLookup: GenericPasswordAccountDiscovering
+    ) -> String? {
+        guard let accounts = try? accountLookup.genericPasswordAccounts(service: service), !accounts.isEmpty else {
+            return nil
+        }
+        if accounts.contains(preferredAccount) {
+            return preferredAccount
+        }
+        return accounts.count == 1 ? accounts[0] : nil
     }
 }
