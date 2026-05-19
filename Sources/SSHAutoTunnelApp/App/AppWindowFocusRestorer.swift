@@ -9,11 +9,11 @@ struct AppWindowFocusRestorer {
     }
 
     static func restoreVisibleWindows() {
-        restore(windows: frontableWindows())
+        restoreAfterSystemPrompt(windows: frontableWindows())
     }
 
     func restore() {
-        Self.restore(windows: windows)
+        Self.restoreAfterSystemPrompt(windows: windows)
     }
 
     private static func frontableWindows() -> [NSWindow] {
@@ -28,10 +28,28 @@ struct AppWindowFocusRestorer {
         }
         guard let frontWindow = visibleWindows.first else { return }
 
+        NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
         NSApp.activate(ignoringOtherApps: true)
+        NSApp.unhide(nil)
+
+        for window in visibleWindows.reversed() {
+            window.orderFrontRegardless()
+        }
         frontWindow.makeKeyAndOrderFront(nil)
-        for window in visibleWindows.dropFirst() {
-            window.orderFront(nil)
+        frontWindow.orderFrontRegardless()
+    }
+
+    private static func restoreAfterSystemPrompt(windows: [NSWindow]) {
+        restore(windows: windows)
+        for delay in [0.1, 0.35, 0.8] {
+            scheduleRestore(windows: windows, delay: delay)
+        }
+    }
+
+    private static func scheduleRestore(windows: [NSWindow], delay: TimeInterval) {
+        Task { @MainActor in
+            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            restore(windows: windows)
         }
     }
 }
