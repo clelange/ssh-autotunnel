@@ -69,10 +69,10 @@ struct TunnelStatusIntent: AppIntent {
     static var title: LocalizedStringResource = "Get SSH AutoTunnel Status"
     static var description = IntentDescription("Get the current SSH AutoTunnel status.")
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let response = try await api().send(ControlRequest(action: .status))
         let summary = response.status?.profiles.map { "\($0.name): \($0.health.rawValue)" }.joined(separator: ", ") ?? response.message
-        return .result(dialog: IntentDialog(stringLiteral: summary))
+        return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))
     }
 }
 
@@ -80,9 +80,9 @@ struct PACURLIntent: AppIntent {
     static var title: LocalizedStringResource = "Get SSH AutoTunnel PAC URL"
     static var description = IntentDescription("Get the local PAC URL for SSH AutoTunnel.")
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let response = try await api().send(ControlRequest(action: .pacURL))
-        return .result(dialog: IntentDialog(stringLiteral: response.message))
+        return .result(value: response.message, dialog: IntentDialog(stringLiteral: response.message))
     }
 }
 
@@ -563,14 +563,14 @@ struct DiagnosticsIntent: AppIntent {
     static var title: LocalizedStringResource = "Get SSH AutoTunnel Diagnostics"
     static var description = IntentDescription("Get a structured SSH AutoTunnel diagnostics summary.")
 
-    func perform() async throws -> some IntentResult & ProvidesDialog {
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let response = try await api().send(ControlRequest(action: .diagnostics))
         let diagnostics = response.diagnostics
         let activePorts = diagnostics?.activePorts.map {
             "PAC \($0.pacHTTPPort), API \($0.apiHTTPPort), blocking proxy \($0.blockingHTTPProxyPort)"
         } ?? "none"
         let summary = "Diagnostics: \(response.status?.profiles.count ?? 0) profiles, active ports \(activePorts)"
-        return .result(dialog: IntentDialog(stringLiteral: summary))
+        return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))
     }
 }
 
@@ -599,6 +599,30 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             phrases: ["Check \(.applicationName) status"],
             shortTitle: "Tunnel Status",
             systemImageName: "stethoscope"
+        )
+        AppShortcut(
+            intent: ListProfilesIntent(),
+            phrases: ["List \(.applicationName) profiles"],
+            shortTitle: "List Profiles",
+            systemImageName: "list.bullet.rectangle"
+        )
+        AppShortcut(
+            intent: ListPACRulesIntent(),
+            phrases: ["List \(.applicationName) PAC rules"],
+            shortTitle: "List PAC Rules",
+            systemImageName: "point.topleft.down.curvedto.point.bottomright.up"
+        )
+        AppShortcut(
+            intent: ListNetworkRulesIntent(),
+            phrases: ["List \(.applicationName) network rules"],
+            shortTitle: "List Network Rules",
+            systemImageName: "network"
+        )
+        AppShortcut(
+            intent: CurrentNetworkFingerprintIntent(),
+            phrases: ["Get current \(.applicationName) network"],
+            shortTitle: "Current Network",
+            systemImageName: "wifi"
         )
         AppShortcut(
             intent: PACURLIntent(),
@@ -659,6 +683,24 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             phrases: ["Delete \(.applicationName) profile"],
             shortTitle: "Delete Profile",
             systemImageName: "trash"
+        )
+        AppShortcut(
+            intent: ConnectSelectedTunnelIntent(),
+            phrases: ["Connect selected \(.applicationName) tunnel"],
+            shortTitle: "Connect Selected",
+            systemImageName: "server.rack"
+        )
+        AppShortcut(
+            intent: DisconnectSelectedTunnelIntent(),
+            phrases: ["Disconnect selected \(.applicationName) tunnel"],
+            shortTitle: "Disconnect Selected",
+            systemImageName: "xmark.circle"
+        )
+        AppShortcut(
+            intent: ReconnectSelectedTunnelIntent(),
+            phrases: ["Reconnect selected \(.applicationName) tunnel"],
+            shortTitle: "Reconnect Selected",
+            systemImageName: "arrow.clockwise"
         )
         AppShortcut(
             intent: CreatePACRuleIntent(),

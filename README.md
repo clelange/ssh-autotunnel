@@ -114,7 +114,7 @@ The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keycha
 
 Settings, Shortcuts, and the CLI can also import literal `Host` entries from `~/.ssh/config`. Wildcard and negated host patterns are skipped because they do not map to one concrete tunnel profile.
 
-Shortcuts/App Intents expose tunnel connect/disconnect/reconnect, status, diagnostics, imports, system PAC apply/restore, and profile/PAC/network rule management.
+Shortcuts/App Intents expose tunnel connect/disconnect/reconnect, status, diagnostics, imports, system PAC apply/restore, and profile/PAC/network rule management. Shortcuts can also list configured profiles, PAC rules, and network rules as typed results, use picker-based profile/rule parameters for selected-item actions, and return the current PAC URL, diagnostics summary, and network fingerprint as automation values.
 
 For external automation, generate a profile JSON template with `ssh-autotunnelctl profile-template`, edit it, then pass it to `create-profile` or `update-profile`. The template command does not require the app to be running.
 
