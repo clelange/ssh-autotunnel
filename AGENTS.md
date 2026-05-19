@@ -73,6 +73,7 @@
 - Added dry-run configuration export validation through local API, CLI, Shortcuts, and core tests.
 - Redacted home-directory paths from support-bundle diagnostics.
 - Made configuration import and validation accept raw `config.json` backups by converting them to redacted exports before local API submission.
+- Applied user-only file permissions to CLI-written configuration exports and support bundles.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status

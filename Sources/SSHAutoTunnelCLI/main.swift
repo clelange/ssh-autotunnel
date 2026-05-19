@@ -221,7 +221,9 @@ struct SSHAutoTunnelCLI {
         }
 
         let path = NSString(string: argument).expandingTildeInPath
-        try data.write(to: URL(fileURLWithPath: path), options: [.atomic])
+        let url = URL(fileURLWithPath: path)
+        try data.write(to: url, options: [.atomic])
+        try FileProtection.protectFile(url)
         print("Wrote \(path)")
     }
 
