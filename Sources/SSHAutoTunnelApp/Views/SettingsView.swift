@@ -122,7 +122,7 @@ struct ProfileEditorView: View {
             }
             .formStyle(.grouped)
             .onChange(of: appState.configuration) { _ in
-                appState.saveConfiguration()
+                appState.scheduleConfigurationSave()
             }
         } else {
             PlaceholderView(title: "Profile Not Found", systemImage: "questionmark.folder")
@@ -238,7 +238,7 @@ struct PACRulesView: View {
                 }
             }
             .onChange(of: appState.configuration.pacRules) { _ in
-                appState.saveConfiguration()
+                appState.scheduleConfigurationSave()
             }
         }
     }
@@ -303,7 +303,7 @@ struct NetworkRulesView: View {
         }
         .formStyle(.grouped)
         .onChange(of: appState.configuration.networkRules) { _ in
-            appState.saveConfiguration()
+            appState.scheduleConfigurationSave()
         }
     }
 
@@ -429,7 +429,7 @@ struct AppPreferencesView: View {
         }
         .formStyle(.grouped)
         .onChange(of: appState.configuration) { _ in
-            appState.saveConfiguration()
+            appState.scheduleConfigurationSave()
         }
     }
 

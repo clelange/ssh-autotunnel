@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
     private let proxyManager = SystemProxyManager()
     private let notifications = AppNotificationService()
     private var pathMonitor: NWPathMonitor?
+    private var pendingConfigurationSaveTask: Task<Void, Never>?
     private let jsonEncoder = JSONEncoder()
     private lazy var localServers = LocalServerCoordinator<LocalHTTPServer> { [weak self] role, port in
         guard let self else {
@@ -87,6 +88,8 @@ final class AppState: ObservableObject {
     }
 
     func saveConfiguration() {
+        pendingConfigurationSaveTask?.cancel()
+        pendingConfigurationSaveTask = nil
         do {
             try PortConfigurationValidator.validate(configuration)
             let didRestartServers = try restartLocalServersIfNeeded()
@@ -102,6 +105,18 @@ final class AppState: ObservableObject {
             lastProxyMessage = error.localizedDescription
         } catch {
             lastProxyMessage = "Could not save configuration: \(error.localizedDescription)"
+        }
+    }
+
+    func scheduleConfigurationSave(delaySeconds: TimeInterval = 0.5) {
+        pendingConfigurationSaveTask?.cancel()
+        pendingConfigurationSaveTask = Task { [weak self] in
+            let nanoseconds = UInt64(max(0, delaySeconds) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled else { return }
+            await MainActor.run {
+                self?.saveConfiguration()
+            }
         }
     }
 

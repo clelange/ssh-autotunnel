@@ -57,6 +57,7 @@
 - Changed persisted system PAC snapshots to a backward-compatible per-network-service archive so Wi-Fi, Ethernet, and VPN service restores do not overwrite each other.
 - Added explicit unified logging for system PAC restore failures during app termination.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
+- Debounced SwiftUI edit-driven configuration saves while keeping explicit actions immediate.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
 - Added tested configuration recovery for malformed config files with backup creation and default regeneration.
 - Added private file permission enforcement for the app support directory, configuration, generated PAC copy, and system PAC snapshot.
