@@ -9,6 +9,7 @@ public enum TunnelLifecyclePolicy {
     }
 
     public enum HealthProbeFailureDecision: Equatable, Sendable {
+        case waitForInitialReadiness
         case markUnhealthy
         case reconnect
     }
@@ -27,7 +28,14 @@ public enum TunnelLifecyclePolicy {
         return terminationStatus == 0 ? .markStopped : .markFailed
     }
 
-    public static func healthProbeFailureDecision(previousHealth: TunnelHealth?, autoReconnect: Bool) -> HealthProbeFailureDecision {
+    public static func healthProbeFailureDecision(
+        previousHealth: TunnelHealth?,
+        autoReconnect: Bool,
+        hasInitialReadinessGraceExpired: Bool = true
+    ) -> HealthProbeFailureDecision {
+        if (previousHealth == .connecting || previousHealth == .reconnecting) && !hasInitialReadinessGraceExpired {
+            return .waitForInitialReadiness
+        }
         if previousHealth == .unhealthy, autoReconnect {
             return .reconnect
         }

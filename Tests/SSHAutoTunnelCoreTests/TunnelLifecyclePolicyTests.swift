@@ -59,6 +59,25 @@ final class TunnelLifecyclePolicyTests: XCTestCase {
         )
     }
 
+    func testInitialHealthProbeFailureWaitsDuringReadinessGrace() {
+        XCTAssertEqual(
+            TunnelLifecyclePolicy.healthProbeFailureDecision(
+                previousHealth: .connecting,
+                autoReconnect: true,
+                hasInitialReadinessGraceExpired: false
+            ),
+            .waitForInitialReadiness
+        )
+        XCTAssertEqual(
+            TunnelLifecyclePolicy.healthProbeFailureDecision(
+                previousHealth: .connecting,
+                autoReconnect: true,
+                hasInitialReadinessGraceExpired: true
+            ),
+            .markUnhealthy
+        )
+    }
+
     func testReconnectDelayBacksOffAndCaps() {
         XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 1), 1)
         XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 3), 4)

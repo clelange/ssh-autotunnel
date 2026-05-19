@@ -72,6 +72,7 @@ final class TunnelManagerProcessTests: XCTestCase {
             processLauncher: launcher,
             socks5Probe: { _ in false },
             reconnectDelay: { _ in 0.01 },
+            initialReadinessGracePeriod: 0,
             startsHealthTimer: false
         )
         let firstStart = expectation(description: "first start")
@@ -98,6 +99,33 @@ final class TunnelManagerProcessTests: XCTestCase {
 
         XCTAssertEqual(launcher.sessions.count, 2)
         XCTAssertEqual(launcher.sessions.first?.terminateCallCount, 1)
+    }
+
+    func testInitialHealthFailureWaitsForReadinessGrace() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socks5Probe: { _ in false },
+            initialReadinessGracePeriod: 60,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        manager.runHealthCheckForTesting()
+
+        let status = manager.status(for: profile.id)
+        XCTAssertEqual(status.health, .connecting)
+        XCTAssertEqual(status.message, "Waiting for SSH authentication and SOCKS5 listener")
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertEqual(launcher.sessions.first?.terminateCallCount, 0)
     }
 
     func testTOTPIsGeneratedWhenPromptArrivesNotAtLaunch() throws {

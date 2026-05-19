@@ -10,6 +10,8 @@ public final class TunnelManager {
     private let socks5Probe: (Int) -> Bool
     private let reconnectDelay: (Int) -> TimeInterval
     private let totpGenerator: (String) throws -> String
+    private let initialReadinessGracePeriod: TimeInterval
+    private let now: () -> Date
     private let queue = DispatchQueue(label: "dev.clange.ssh-autotunnel.tunnels")
     private var processes: [UUID: ManagedTunnel] = [:]
     private var statuses: [UUID: TunnelRuntimeStatus] = [:]
@@ -34,6 +36,8 @@ public final class TunnelManager {
         socks5Probe: @escaping (Int) -> Bool = { SOCKS5Probe.probe(port: $0) },
         reconnectDelay: @escaping (Int) -> TimeInterval = { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
+        initialReadinessGracePeriod: TimeInterval = 60,
+        now: @escaping () -> Date = Date.init,
         startsHealthTimer: Bool = true
     ) {
         self.keychain = keychain
@@ -41,6 +45,8 @@ public final class TunnelManager {
         self.socks5Probe = socks5Probe
         self.reconnectDelay = reconnectDelay
         self.totpGenerator = totpGenerator
+        self.initialReadinessGracePeriod = initialReadinessGracePeriod
+        self.now = now
         if startsHealthTimer {
             startHealthTimer()
         }
@@ -150,7 +156,7 @@ public final class TunnelManager {
 
     private func launch(profile: TunnelProfile, credentials: TunnelCredentials) throws -> ManagedTunnel {
         let command = SSHCommandBuilder.tunnelCommand(for: profile)
-        let managed = ManagedTunnel(profile: profile, credentials: credentials)
+        let managed = ManagedTunnel(profile: profile, credentials: credentials, startedAt: now())
         managed.session = try processLauncher.launch(
             command: command,
             onOutput: { [weak self, weak managed] data in
@@ -337,11 +343,20 @@ public final class TunnelManager {
                 }
                 reconnectAttempts[profileID] = 0
             } else {
+                let hasInitialReadinessGraceExpired = now().timeIntervalSince(managed.startedAt) >= initialReadinessGracePeriod
                 let decision = TunnelLifecyclePolicy.healthProbeFailureDecision(
                     previousHealth: statuses[profileID]?.health,
-                    autoReconnect: managed.profile.autoReconnect
+                    autoReconnect: managed.profile.autoReconnect,
+                    hasInitialReadinessGraceExpired: hasInitialReadinessGraceExpired
                 )
                 switch decision {
+                case .waitForInitialReadiness:
+                    updateStatusLocked(
+                        profileID,
+                        statuses[profileID]?.health == .reconnecting ? .reconnecting : .connecting,
+                        "Waiting for SSH authentication and SOCKS5 listener",
+                        pid: managed.session.processIdentifier
+                    )
                 case .markUnhealthy:
                     updateStatusLocked(profileID, .unhealthy, "SOCKS5 probe failed", pid: managed.session.processIdentifier)
                 case .reconnect:
@@ -378,6 +393,7 @@ private final class ManagedTunnel {
 
     let profile: TunnelProfile
     let credentials: TunnelCredentials
+    let startedAt: Date
     var session: SSHProcessSession!
     var outputBuffer = Data()
     var stopReason: StopReason?
@@ -385,8 +401,9 @@ private final class ManagedTunnel {
     var sentPassword = false
     var sentTOTP = false
 
-    init(profile: TunnelProfile, credentials: TunnelCredentials) {
+    init(profile: TunnelProfile, credentials: TunnelCredentials, startedAt: Date) {
         self.profile = profile
         self.credentials = credentials
+        self.startedAt = startedAt
     }
 }
