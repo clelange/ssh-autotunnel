@@ -77,14 +77,19 @@ final class AppState: ObservableObject {
     }
 
     func connect(_ profile: TunnelProfile) {
+        statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: "Starting tunnel")
+        lastProxyMessage = "\(profile.name): Starting tunnel"
         tunnelManager.start(profile: profile)
     }
 
     func disconnect(_ profile: TunnelProfile) {
+        lastProxyMessage = "\(profile.name): Disconnect requested"
         tunnelManager.stop(profileID: profile.id)
     }
 
     func reconnect(_ profile: TunnelProfile) {
+        statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .reconnecting, message: "Reconnect requested")
+        lastProxyMessage = "\(profile.name): Reconnect requested"
         tunnelManager.reconnect(profile: profile)
     }
 
@@ -379,9 +384,11 @@ final class AppState: ObservableObject {
             guard let self else { return }
             let previous = self.statuses[status.profileID]
             self.statuses[status.profileID] = status
-            if let profile = self.configuration.profiles.first(where: { $0.id == status.profileID }),
-               let event = TunnelNotificationPolicy.event(previous: previous?.health, current: status.health) {
-                self.notifications.deliver(event: event, profileName: profile.name, message: status.message)
+            if let profile = self.configuration.profiles.first(where: { $0.id == status.profileID }) {
+                self.lastProxyMessage = "\(profile.name): \(status.message)"
+                if let event = TunnelNotificationPolicy.event(previous: previous?.health, current: status.health) {
+                    self.notifications.deliver(event: event, profileName: profile.name, message: status.message)
+                }
             }
             self.writePACCopy()
             if self.configuration.proxyApplyMode == .activeNetworkServicePAC {

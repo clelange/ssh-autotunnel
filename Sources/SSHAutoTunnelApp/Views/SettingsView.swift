@@ -69,6 +69,8 @@ struct ProfileEditorView: View {
 
     var body: some View {
         if let index {
+            let profile = appState.configuration.profiles[index]
+            let status = appState.status(for: profile)
             Form {
                 Section("SSH") {
                     TextField("Name", text: binding(index, \.name))
@@ -115,10 +117,29 @@ struct ProfileEditorView: View {
                 }
 
                 Section("Actions") {
-                    HStack {
-                        Button("Connect") { appState.connect(appState.configuration.profiles[index]) }
-                        Button("Disconnect") { appState.disconnect(appState.configuration.profiles[index]) }
-                        Button("Reconnect") { appState.reconnect(appState.configuration.profiles[index]) }
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack {
+                            Button("Connect") { appState.connect(profile) }
+                            Button("Disconnect") { appState.disconnect(profile) }
+                            Button("Reconnect") { appState.reconnect(profile) }
+                        }
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(status.health.rawValue.capitalized)
+                                Text(status.message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                                if let pid = status.pid {
+                                    Text("PID \(pid)")
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
+                                }
+                            }
+                        } icon: {
+                            Image(systemName: symbol(for: status.health))
+                                .foregroundStyle(color(for: status.health))
+                        }
                     }
                 }
             }
@@ -174,6 +195,25 @@ struct ProfileEditorView: View {
             secretMessage = "Saved to Keychain service \(service)"
         } catch {
             secretMessage = error.localizedDescription
+        }
+    }
+
+    private func symbol(for health: TunnelHealth) -> String {
+        switch health {
+        case .healthy: "checkmark.circle.fill"
+        case .degraded: "exclamationmark.triangle.fill"
+        case .connecting, .reconnecting: "arrow.triangle.2.circlepath"
+        case .unhealthy, .failed: "xmark.octagon.fill"
+        case .stopped: "circle"
+        }
+    }
+
+    private func color(for health: TunnelHealth) -> Color {
+        switch health {
+        case .healthy: .green
+        case .degraded, .connecting, .reconnecting: .orange
+        case .unhealthy, .failed: .red
+        case .stopped: .secondary
         }
     }
 }
