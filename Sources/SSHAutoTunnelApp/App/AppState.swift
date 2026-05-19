@@ -193,9 +193,16 @@ final class AppState: ObservableObject {
         for id in ids {
             tunnelManager.stop(profileID: id)
         }
-        configuration.profiles.remove(atOffsets: offsets)
-        configuration.pacRules.removeAll { ids.contains($0.profileID) }
-        saveConfiguration()
+        do {
+            var updated = configuration
+            for id in ids {
+                updated = try ProfileConfigurationEditor.delete(profileID: id, in: updated)
+            }
+            configuration = updated
+            saveConfiguration()
+        } catch {
+            lastProxyMessage = "Could not delete profile: \(error.localizedDescription)"
+        }
     }
 
     func addDisableRuleForCurrentNetwork() {
