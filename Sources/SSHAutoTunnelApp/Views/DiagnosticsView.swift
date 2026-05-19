@@ -1,3 +1,4 @@
+import AppKit
 import SSHAutoTunnelCore
 import SwiftUI
 
@@ -38,8 +39,37 @@ struct DiagnosticsView: View {
                         .textSelection(.enabled)
                 }
                 Divider()
-                Text("SSH Log")
-                    .font(.headline)
+                HStack {
+                    Text("SSH Log")
+                        .font(.headline)
+                    Spacer()
+                    if let selectedProfileID {
+                        Button {
+                            appState.connectWithVerboseSSHLogging(profileID: selectedProfileID)
+                        } label: {
+                            Label("Verbose Connect", systemImage: "terminal")
+                        }
+                        Button {
+                            copy(appState.fullSSHLog(for: selectedProfileID))
+                        } label: {
+                            Label("Copy Full Log", systemImage: "doc.on.doc")
+                        }
+                        Button {
+                            revealLogFile(profileID: selectedProfileID)
+                        } label: {
+                            Label("Reveal File", systemImage: "folder")
+                        }
+                        Button(role: .destructive) {
+                            appState.clearSSHLog(for: selectedProfileID)
+                        } label: {
+                            Label("Clear", systemImage: "trash")
+                        }
+                    }
+                }
+                Text(logDetail())
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
                 ScrollView {
                     Text(logPreview())
                         .font(.system(.caption, design: .monospaced))
@@ -66,6 +96,29 @@ struct DiagnosticsView: View {
 
     private func logPreview() -> String {
         guard let selectedProfileID else { return "Select a profile." }
-        return appState.logs[selectedProfileID] ?? "No log output yet."
+        guard let preview = appState.logs[selectedProfileID], !preview.isEmpty else {
+            return "No log output yet. Use Verbose Connect to run SSH with -vvv and capture detailed diagnostics."
+        }
+        return preview
+    }
+
+    private func logDetail() -> String {
+        guard let selectedProfileID else {
+            return "Select a profile to inspect SSH output."
+        }
+        guard let url = appState.sshLogURL(for: selectedProfileID) else {
+            return "Full SSH log file is unavailable."
+        }
+        return "Preview shows the in-window tail. The full captured SSH transcript is written to \(url.path)."
+    }
+
+    private func copy(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func revealLogFile(profileID: UUID) {
+        guard let url = appState.sshLogURL(for: profileID) else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 }

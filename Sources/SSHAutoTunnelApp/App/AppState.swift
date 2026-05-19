@@ -21,6 +21,7 @@ final class AppState: ObservableObject {
     private let networkIdentity = NetworkIdentityService()
     private let proxyManager = SystemProxyManager()
     private let notifications = AppNotificationService()
+    private let sshLogStore = SSHLogStore()
     private var pathMonitor: NWPathMonitor?
     private var pendingConfigurationSaveTask: Task<Void, Never>?
     private let jsonEncoder = JSONEncoder()
@@ -77,6 +78,7 @@ final class AppState: ObservableObject {
     }
 
     func connect(_ profile: TunnelProfile) {
+        startSSHLogSession(for: profile, verbose: false)
         statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: "Starting tunnel")
         lastProxyMessage = "\(profile.name): Starting tunnel"
         tunnelManager.start(profile: profile)
@@ -88,9 +90,34 @@ final class AppState: ObservableObject {
     }
 
     func reconnect(_ profile: TunnelProfile) {
+        startSSHLogSession(for: profile, verbose: false)
         statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .reconnecting, message: "Reconnect requested")
         lastProxyMessage = "\(profile.name): Reconnect requested"
         tunnelManager.reconnect(profile: profile)
+    }
+
+    func connectWithVerboseSSHLogging(profileID: UUID) {
+        guard var profile = configuration.profiles.first(where: { $0.id == profileID }) else { return }
+        if !profile.extraSSHOptions.contains("-vvv") {
+            profile.extraSSHOptions.append("-vvv")
+        }
+        startSSHLogSession(for: profile, verbose: true)
+        statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: "Starting verbose SSH tunnel")
+        lastProxyMessage = "\(profile.name): Starting verbose SSH tunnel"
+        tunnelManager.start(profile: profile)
+    }
+
+    func fullSSHLog(for profileID: UUID) -> String {
+        (try? sshLogStore.readLog(profileID: profileID)) ?? logs[profileID] ?? ""
+    }
+
+    func sshLogURL(for profileID: UUID) -> URL? {
+        try? sshLogStore.logURL(profileID: profileID)
+    }
+
+    func clearSSHLog(for profileID: UUID) {
+        logs[profileID] = ""
+        try? sshLogStore.clearLog(profileID: profileID)
     }
 
     func saveConfiguration() {
@@ -400,9 +427,23 @@ final class AppState: ObservableObject {
                 guard let self else { return }
                 let current = self.logs[profileID] ?? ""
                 let combined = current + text
-                self.logs[profileID] = String(combined.suffix(12_000))
+                self.logs[profileID] = String(combined.suffix(120_000))
+                try? self.sshLogStore.append(text, profileID: profileID)
             }
         }
+    }
+
+    private func startSSHLogSession(for profile: TunnelProfile, verbose: Bool) {
+        let timestamp = ISO8601DateFormatter().string(from: Date())
+        let mode = verbose ? "verbose SSH diagnostics (-vvv)" : "standard SSH"
+        let header = """
+        === \(profile.name) \(mode) started at \(timestamp) ===
+        Host: \(profile.sshDestination)
+        Local SOCKS port: \(profile.localSocksPort)
+
+        """
+        logs[profile.id] = header
+        try? sshLogStore.replaceLog(profileID: profile.id, with: header)
     }
 
     private func startServers() {
@@ -707,7 +748,7 @@ final class AppState: ObservableObject {
     }
 
     private func diagnosticFileStatuses() -> [DiagnosticFileStatus] {
-        [
+        let coreFiles = [
             diagnosticFileStatus(
                 label: "Application Support",
                 urlProvider: AppPaths.applicationSupportDirectory,
@@ -729,6 +770,14 @@ final class AppState: ObservableObject {
                 expectedPermissions: FileProtection.privateFilePermissions
             )
         ]
+        let sshLogs = configuration.profiles.map { profile in
+            diagnosticFileStatus(
+                label: "SSH log: \(profile.name)",
+                urlProvider: { try sshLogStore.logURL(profileID: profile.id) },
+                expectedPermissions: FileProtection.privateFilePermissions
+            )
+        }
+        return coreFiles + sshLogs
     }
 
     private func diagnosticFileStatus(
