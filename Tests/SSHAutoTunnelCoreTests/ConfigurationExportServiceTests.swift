@@ -23,6 +23,25 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertEqual(export.networkRules, configuration.networkRules)
     }
 
+    func testDecodeExportDocumentAcceptsRawAppConfigurationBackups() throws {
+        let configuration = sampleConfiguration(apiToken: "secret-local-token")
+        let data = try JSONEncoder().encode(configuration)
+
+        let export = try ConfigurationExportService.decodeExportDocument(
+            from: data,
+            exportedAt: Date(timeIntervalSince1970: 1_700_000_004),
+            appIdentifier: "test.app"
+        )
+        let exportedData = try JSONEncoder().encode(export)
+        let exportedJSON = try XCTUnwrap(String(data: exportedData, encoding: .utf8))
+
+        XCTAssertEqual(export.profiles, configuration.profiles)
+        XCTAssertEqual(export.pacRules, configuration.pacRules)
+        XCTAssertEqual(export.networkRules, configuration.networkRules)
+        XCTAssertEqual(export.apiHTTPPort, configuration.apiHTTPPort)
+        XCTAssertFalse(exportedJSON.contains("secret-local-token"))
+    }
+
     func testImportPreservesLocalAPIToken() throws {
         let current = AppConfiguration(apiToken: "local-token")
         let source = sampleConfiguration(apiToken: "source-token")

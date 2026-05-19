@@ -115,6 +115,8 @@ Use `ssh-autotunnelctl export-config` to write a portable configuration export. 
 
 Use `ssh-autotunnelctl validate-config` to dry-run a configuration export through the same schema, profile-reference, and port-conflict checks without changing the current configuration.
 
+Both `validate-config` and `import-config` also accept a raw `config.json` backup file, including the private `config.json.pre-import-*` backups created before imports. Raw backups are converted to the redacted export format before they are sent to the local API, so the current machine's local API token is still preserved.
+
 Use `ssh-autotunnelctl support-bundle` to write a redacted JSON bundle containing the portable configuration export plus diagnostics such as active ports, network fingerprint, runtime profile status, and file permission checks. Home-directory paths in diagnostics are shortened to `~`.
 
 The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keychain service names can be checked and imported from setup or settings:

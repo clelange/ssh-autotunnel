@@ -30,6 +30,23 @@ public enum ConfigurationExportService {
     public static let schemaVersion = 1
     public static let bundleVersion = 1
 
+    public static func decodeExportDocument(
+        from data: Data,
+        decoder: JSONDecoder = JSONDecoder(),
+        exportedAt: Date = Date(),
+        appIdentifier: String = AppPaths.appIdentifier
+    ) throws -> ConfigurationExport {
+        if let export = try? decoder.decode(ConfigurationExport.self, from: data) {
+            return export
+        }
+        let configuration = try decoder.decode(AppConfiguration.self, from: data)
+        return makeExport(
+            from: configuration,
+            exportedAt: exportedAt,
+            appIdentifier: appIdentifier
+        )
+    }
+
     public static func makeExport(
         from configuration: AppConfiguration,
         exportedAt: Date = Date(),

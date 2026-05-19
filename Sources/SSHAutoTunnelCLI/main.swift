@@ -90,13 +90,13 @@ struct SSHAutoTunnelCLI {
             case "diagnostics":
                 response = try await client.send(ControlRequest(action: .diagnostics))
             case "import-config":
-                let export: ConfigurationExport = try readJSON(
+                let export = try readConfigurationExport(
                     from: invocation.profileName,
                     missingMessage: "Configuration export JSON path is required"
                 )
                 response = try await client.send(ControlRequest(action: .importConfiguration, configurationExport: export))
             case "validate-config":
-                let export: ConfigurationExport = try readJSON(
+                let export = try readConfigurationExport(
                     from: invocation.profileName,
                     missingMessage: "Configuration export JSON path is required"
                 )
@@ -204,6 +204,11 @@ struct SSHAutoTunnelCLI {
         try readJSON(from: argument, missingMessage: "Network rule JSON path is required")
     }
 
+    private static func readConfigurationExport(from argument: String?, missingMessage: String) throws -> ConfigurationExport {
+        let data = try readData(from: argument, missingMessage: missingMessage)
+        return try ConfigurationExportService.decodeExportDocument(from: data)
+    }
+
     private static func writePayload<T: Encodable>(_ payload: T?, from response: ControlResponse, to argument: String?) throws {
         guard response.ok, let payload else {
             throw NSError(domain: "ssh-autotunnelctl", code: 3, userInfo: [NSLocalizedDescriptionKey: response.message])
@@ -221,18 +226,19 @@ struct SSHAutoTunnelCLI {
     }
 
     private static func readJSON<T: Decodable>(from argument: String?, missingMessage: String) throws -> T {
+        try JSONDecoder().decode(T.self, from: readData(from: argument, missingMessage: missingMessage))
+    }
+
+    private static func readData(from argument: String?, missingMessage: String) throws -> Data {
         guard let argument, !argument.isEmpty else {
             throw NSError(domain: "ssh-autotunnelctl", code: 2, userInfo: [NSLocalizedDescriptionKey: missingMessage])
         }
 
-        let data: Data
         if argument == "-" {
-            data = FileHandle.standardInput.readDataToEndOfFile()
-        } else {
-            let path = NSString(string: argument).expandingTildeInPath
-            data = try Data(contentsOf: URL(fileURLWithPath: path))
+            return FileHandle.standardInput.readDataToEndOfFile()
         }
-        return try JSONDecoder().decode(T.self, from: data)
+        let path = NSString(string: argument).expandingTildeInPath
+        return try Data(contentsOf: URL(fileURLWithPath: path))
     }
 
     private static func printProfileTemplate() {
