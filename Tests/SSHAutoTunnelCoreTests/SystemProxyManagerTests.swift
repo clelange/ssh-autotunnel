@@ -112,15 +112,40 @@ final class SystemProxyManagerTests: XCTestCase {
         ])
         XCTAssertTrue(store.didClear)
     }
+
+    func testRestorePropagatesPersistedSnapshotLoadError() {
+        let store = FakeProxySnapshotStore(loadError: .loadFailed)
+        var commands: [NetworkSetupCommand] = []
+        let manager = SystemProxyManager(
+            snapshotStore: store,
+            currentServiceName: { nil },
+            commandRunner: { command in
+                commands.append(command)
+                return ShellResult(exitCode: 0, stdout: "", stderr: "")
+            }
+        )
+
+        XCTAssertThrowsError(try manager.restoreIfNeeded()) { error in
+            XCTAssertEqual(error as? FakeProxySnapshotStore.StoreError, .loadFailed)
+        }
+        XCTAssertTrue(commands.isEmpty)
+        XCTAssertFalse(store.didClear)
+    }
 }
 
 private final class FakeProxySnapshotStore: ProxySnapshotStoring {
+    enum StoreError: Error, Equatable {
+        case loadFailed
+    }
+
     private var snapshot: ProxySnapshot?
+    private var loadError: StoreError?
     private(set) var savedSnapshots: [ProxySnapshot] = []
     private(set) var didClear = false
 
-    init(snapshot: ProxySnapshot? = nil) {
+    init(snapshot: ProxySnapshot? = nil, loadError: StoreError? = nil) {
         self.snapshot = snapshot
+        self.loadError = loadError
     }
 
     func save(_ snapshot: ProxySnapshot) throws {
@@ -129,7 +154,10 @@ private final class FakeProxySnapshotStore: ProxySnapshotStoring {
     }
 
     func load() throws -> ProxySnapshot? {
-        snapshot
+        if let loadError {
+            throw loadError
+        }
+        return snapshot
     }
 
     func clear() throws {

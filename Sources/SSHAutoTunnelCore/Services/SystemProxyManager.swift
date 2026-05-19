@@ -66,7 +66,13 @@ public final class SystemProxyManager {
     }
 
     public func restoreIfNeeded() throws {
-        guard let snapshot = snapshot ?? snapshotStore.flatMap({ try? $0.load() }) else { return }
+        let snapshotToRestore: ProxySnapshot?
+        if let snapshot {
+            snapshotToRestore = snapshot
+        } else {
+            snapshotToRestore = try snapshotStore?.load()
+        }
+        guard let snapshot = snapshotToRestore else { return }
         for command in SystemProxyPlanner.restoreCommands(snapshot: snapshot) {
             _ = try commandRunner(command)
         }

@@ -42,6 +42,7 @@
 - Extracted local server orchestration into a tested core coordinator with restart rollback coverage.
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
 - Made system proxy management injectable and added tests for apply, restore, missing service handling, and snapshot reuse.
+- Made persisted system PAC snapshot load errors explicit during restore instead of silently ignoring them.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
 - Added tested configuration recovery for malformed config files with backup creation and default regeneration.
@@ -62,7 +63,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 87 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 88 XCTest cases.
 
 ## Known Gaps
 
