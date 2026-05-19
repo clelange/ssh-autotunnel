@@ -87,6 +87,11 @@ swift run ssh-autotunnelctl pac-rule-template > pac-rule.json
 swift run ssh-autotunnelctl create-pac-rule ./pac-rule.json
 swift run ssh-autotunnelctl update-pac-rule ./pac-rule.json
 swift run ssh-autotunnelctl delete-pac-rule "Old routing"
+swift run ssh-autotunnelctl network-rule-template > network-rule.json
+swift run ssh-autotunnelctl create-network-rule ./network-rule.json
+swift run ssh-autotunnelctl update-network-rule ./network-rule.json
+swift run ssh-autotunnelctl delete-network-rule "Old trusted network"
+swift run ssh-autotunnelctl trust-current-network "CERN lxplus"
 swift run ssh-autotunnelctl connect "CERN lxplus"
 swift run ssh-autotunnelctl disconnect "CERN lxplus"
 ```
@@ -112,6 +117,8 @@ Settings, Shortcuts, and the CLI can also import literal `Host` entries from `~/
 For external automation, generate a profile JSON template with `ssh-autotunnelctl profile-template`, edit it, then pass it to `create-profile` or `update-profile`. The template command does not require the app to be running.
 
 PAC routing rules can be managed the same way with `ssh-autotunnelctl pac-rule-template`, `create-pac-rule`, `update-pac-rule`, and `delete-pac-rule`.
+
+Trusted-network rules can be managed with `ssh-autotunnelctl network-rule-template`, `create-network-rule`, `update-network-rule`, and `delete-network-rule`. `trust-current-network` asks the running app to create a disable rule from the current network fingerprint; pass a profile name to scope that rule to one tunnel.
 
 ## Development Notes
 

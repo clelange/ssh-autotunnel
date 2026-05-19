@@ -37,4 +37,18 @@ final class ProfileTemplateTests: XCTestCase {
         let decoded = try JSONDecoder().decode(PACRule.self, from: data)
         XCTAssertEqual(decoded, rule)
     }
+
+    func testNetworkRuleTemplateContainsTrustedNetworkFields() throws {
+        let rule = NetworkRuleTemplate.example(profileID: ProfileTemplate.exampleProfileID)
+
+        XCTAssertEqual(rule.name, "Example trusted network")
+        XCTAssertEqual(rule.match.searchDomainContains, "example.org")
+        XCTAssertEqual(rule.action, .disableProxy)
+        XCTAssertEqual(rule.profileID, ProfileTemplate.exampleProfileID)
+        XCTAssertTrue(rule.enabled)
+
+        let data = try JSONEncoder().encode(rule)
+        let decoded = try JSONDecoder().decode(NetworkPolicyRule.self, from: data)
+        XCTAssertEqual(decoded, rule)
+    }
 }

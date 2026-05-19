@@ -18,6 +18,10 @@ public enum ControlAction: String, Codable, Sendable {
     case createPACRule
     case updatePACRule
     case deletePACRule
+    case createNetworkRule
+    case updateNetworkRule
+    case deleteNetworkRule
+    case createNetworkRuleFromCurrentNetwork
     case diagnostics
 }
 
@@ -29,6 +33,9 @@ public struct ControlRequest: Codable, Sendable {
     public var pacRuleName: String?
     public var pacRuleID: UUID?
     public var pacRule: PACRule?
+    public var networkRuleName: String?
+    public var networkRuleID: UUID?
+    public var networkRule: NetworkPolicyRule?
 
     public init(
         action: ControlAction,
@@ -37,7 +44,10 @@ public struct ControlRequest: Codable, Sendable {
         profile: TunnelProfile? = nil,
         pacRuleName: String? = nil,
         pacRuleID: UUID? = nil,
-        pacRule: PACRule? = nil
+        pacRule: PACRule? = nil,
+        networkRuleName: String? = nil,
+        networkRuleID: UUID? = nil,
+        networkRule: NetworkPolicyRule? = nil
     ) {
         self.action = action
         self.profileName = profileName
@@ -46,6 +56,9 @@ public struct ControlRequest: Codable, Sendable {
         self.pacRuleName = pacRuleName
         self.pacRuleID = pacRuleID
         self.pacRule = pacRule
+        self.networkRuleName = networkRuleName
+        self.networkRuleID = networkRuleID
+        self.networkRule = networkRule
     }
 }
 

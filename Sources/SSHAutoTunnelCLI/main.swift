@@ -18,6 +18,10 @@ struct SSHAutoTunnelCLI {
                 printPACRuleTemplate()
                 return
             }
+            if invocation.command == "network-rule-template" {
+                printNetworkRuleTemplate()
+                return
+            }
 
             let configuration = try ConfigurationStore().load()
             let client = ControlAPIClient(configuration: configuration)
@@ -62,6 +66,16 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .updatePACRule, pacRuleName: rule.name, pacRuleID: rule.id, pacRule: rule))
             case "delete-pac-rule":
                 response = try await client.send(ControlRequest(action: .deletePACRule, pacRuleName: invocation.profileName))
+            case "create-network-rule":
+                let rule = try readNetworkRule(from: invocation.profileName)
+                response = try await client.send(ControlRequest(action: .createNetworkRule, networkRule: rule))
+            case "update-network-rule":
+                let rule = try readNetworkRule(from: invocation.profileName)
+                response = try await client.send(ControlRequest(action: .updateNetworkRule, networkRuleName: rule.name, networkRuleID: rule.id, networkRule: rule))
+            case "delete-network-rule":
+                response = try await client.send(ControlRequest(action: .deleteNetworkRule, networkRuleName: invocation.profileName))
+            case "trust-current-network":
+                response = try await client.send(ControlRequest(action: .createNetworkRuleFromCurrentNetwork, profileName: invocation.profileName))
             case "diagnostics":
                 response = try await client.send(ControlRequest(action: .diagnostics))
             default:
@@ -154,6 +168,10 @@ struct SSHAutoTunnelCLI {
         try readJSON(from: argument, missingMessage: "PAC rule JSON path is required")
     }
 
+    private static func readNetworkRule(from argument: String?) throws -> NetworkPolicyRule {
+        try readJSON(from: argument, missingMessage: "Network rule JSON path is required")
+    }
+
     private static func readJSON<T: Decodable>(from argument: String?, missingMessage: String) throws -> T {
         guard let argument, !argument.isEmpty else {
             throw NSError(domain: "ssh-autotunnelctl", code: 2, userInfo: [NSLocalizedDescriptionKey: missingMessage])
@@ -175,6 +193,10 @@ struct SSHAutoTunnelCLI {
 
     private static func printPACRuleTemplate() {
         printJSON(PACRuleTemplate.example())
+    }
+
+    private static func printNetworkRuleTemplate() {
+        printJSON(NetworkRuleTemplate.example())
     }
 
     private static func printJSON<T: Encodable>(_ value: T) {
@@ -206,6 +228,11 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl create-pac-rule <pac-rule.json|->
           ssh-autotunnelctl update-pac-rule <pac-rule.json|->
           ssh-autotunnelctl delete-pac-rule <PAC rule name>
+          ssh-autotunnelctl network-rule-template
+          ssh-autotunnelctl create-network-rule <network-rule.json|->
+          ssh-autotunnelctl update-network-rule <network-rule.json|->
+          ssh-autotunnelctl delete-network-rule <network rule name>
+          ssh-autotunnelctl trust-current-network [profile name]
           ssh-autotunnelctl connect <profile name>
           ssh-autotunnelctl disconnect <profile name>
           ssh-autotunnelctl reconnect <profile name>

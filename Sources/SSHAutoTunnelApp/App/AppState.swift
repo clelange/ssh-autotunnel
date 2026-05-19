@@ -226,9 +226,13 @@ final class AppState: ObservableObject {
             lastProxyMessage = "Current network does not expose enough fingerprint data for a rule"
             return
         }
-        configuration.networkRules.append(rule)
-        saveConfiguration()
-        lastProxyMessage = "Added network rule \(rule.name)"
+        do {
+            configuration = try NetworkRuleConfigurationEditor.create(rule: rule, in: configuration)
+            saveConfiguration()
+            lastProxyMessage = "Added network rule \(rule.name)"
+        } catch {
+            lastProxyMessage = "Could not add network rule: \(error.localizedDescription)"
+        }
     }
 
     func snapshot() -> AppStatusSnapshot {
@@ -493,6 +497,63 @@ final class AppState: ObservableObject {
                 return ControlResponse(ok: true, message: "Deleted PAC rule", status: snapshot())
             } catch {
                 return ControlResponse(ok: false, message: "Could not delete PAC rule: \(error.localizedDescription)", status: snapshot())
+            }
+        case .createNetworkRule:
+            guard let requestRule = request.networkRule else {
+                return ControlResponse(ok: false, message: NetworkRuleConfigurationEditorError.missingRulePayload.localizedDescription, status: snapshot())
+            }
+            do {
+                configuration = try NetworkRuleConfigurationEditor.create(rule: requestRule, in: configuration)
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Created network rule \(requestRule.name)", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not create network rule: \(error.localizedDescription)", status: snapshot())
+            }
+        case .updateNetworkRule:
+            guard let requestRule = request.networkRule else {
+                return ControlResponse(ok: false, message: NetworkRuleConfigurationEditorError.missingRulePayload.localizedDescription, status: snapshot())
+            }
+            do {
+                configuration = try NetworkRuleConfigurationEditor.update(
+                    rule: requestRule,
+                    matchingID: request.networkRuleID,
+                    matchingName: request.networkRuleName,
+                    in: configuration
+                )
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Updated network rule \(requestRule.name)", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not update network rule: \(error.localizedDescription)", status: snapshot())
+            }
+        case .deleteNetworkRule:
+            do {
+                configuration = try NetworkRuleConfigurationEditor.delete(
+                    ruleID: request.networkRuleID,
+                    ruleName: request.networkRuleName,
+                    in: configuration
+                )
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Deleted network rule", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not delete network rule: \(error.localizedDescription)", status: snapshot())
+            }
+        case .createNetworkRuleFromCurrentNetwork:
+            refreshNetworkDecision()
+            guard var rule = NetworkPolicyRule.disableProxyRule(from: currentNetworkFingerprint) else {
+                return ControlResponse(ok: false, message: "Current network does not expose enough fingerprint data for a rule", status: snapshot())
+            }
+            if request.profileID != nil || request.profileName != nil {
+                guard let profile else {
+                    return ControlResponse(ok: false, message: "Profile not found", status: snapshot())
+                }
+                rule.profileID = profile.id
+            }
+            do {
+                configuration = try NetworkRuleConfigurationEditor.create(rule: rule, in: configuration)
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Created network rule \(rule.name)", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not create network rule: \(error.localizedDescription)", status: snapshot())
             }
         case .diagnostics:
             return ControlResponse(

@@ -61,4 +61,27 @@ final class CLIArgumentsTests: XCTestCase {
             CLIInvocation(command: "delete-pac-rule", profileName: "CERN")
         )
     }
+
+    func testParsesNetworkRuleManagementCommands() {
+        XCTAssertEqual(
+            CLIArguments.parse(["network-rule-template"]),
+            CLIInvocation(command: "network-rule-template")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["create-network-rule", "~/network-rule.json"]),
+            CLIInvocation(command: "create-network-rule", profileName: "~/network-rule.json")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["update-network-rule", "~/network-rule.json"]),
+            CLIInvocation(command: "update-network-rule", profileName: "~/network-rule.json")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["delete-network-rule", "CERN trusted network"]),
+            CLIInvocation(command: "delete-network-rule", profileName: "CERN trusted network")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["trust-current-network", "CERN lxplus"]),
+            CLIInvocation(command: "trust-current-network", profileName: "CERN lxplus")
+        )
+    }
 }
