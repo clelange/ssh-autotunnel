@@ -22,7 +22,6 @@ final class AppState: ObservableObject {
     private let notifications = AppNotificationService()
     private var pathMonitor: NWPathMonitor?
     private let jsonEncoder = JSONEncoder()
-    private let jsonDecoder = JSONDecoder()
     private lazy var localServers = LocalServerCoordinator<LocalHTTPServer> { [weak self] role, port in
         guard let self else {
             throw NSError(domain: "AppState", code: 1, userInfo: [NSLocalizedDescriptionKey: "App state is unavailable"])
@@ -298,22 +297,12 @@ final class AppState: ObservableObject {
 
     private nonisolated func handleAPIRequest(_ request: HTTPRequest) -> HTTPResponse {
         DispatchQueue.main.sync {
-            guard request.headers["authorization"] == "Bearer \(configuration.apiToken)" else {
-                return .error(401, "Unauthorized", "Missing or invalid API token")
-            }
-            if request.method == "GET", request.path.hasPrefix("/status") {
-                return .json(ControlResponse(ok: true, message: "OK", status: snapshot()), encoder: jsonEncoder)
-            }
-            guard request.method == "POST", request.path.hasPrefix("/api") else {
-                return .error(404, "Not Found", "Unknown API route")
-            }
-            do {
-                let request = try jsonDecoder.decode(ControlRequest.self, from: request.body)
-                let response = handleControlRequest(request)
-                return .json(response, encoder: jsonEncoder)
-            } catch {
-                return .json(ControlResponse(ok: false, message: error.localizedDescription, status: snapshot()), encoder: jsonEncoder)
-            }
+            ControlAPIRouter(
+                tokenProvider: { self.configuration.apiToken },
+                statusProvider: { ControlResponse(ok: true, message: "OK", status: self.snapshot()) },
+                controlHandler: self.handleControlRequest,
+                encoder: self.jsonEncoder
+            ).response(for: request)
         }
     }
 
