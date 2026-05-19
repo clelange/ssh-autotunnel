@@ -35,6 +35,8 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .importSSHAuto2FA))
             case "check-ssh-auto2fa":
                 response = try await client.send(ControlRequest(action: .checkSSHAuto2FA))
+            case "import-ssh-config":
+                response = try await client.send(ControlRequest(action: .importSSHConfig))
             case "diagnostics":
                 response = try await client.send(ControlRequest(action: .diagnostics))
             default:
@@ -130,6 +132,7 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl restore-system-proxy
           ssh-autotunnelctl import-ssh-auto2fa
           ssh-autotunnelctl check-ssh-auto2fa
+          ssh-autotunnelctl import-ssh-config
           ssh-autotunnelctl diagnostics --json
           ssh-autotunnelctl connect <profile name>
           ssh-autotunnelctl disconnect <profile name>

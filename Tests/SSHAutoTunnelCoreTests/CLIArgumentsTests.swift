@@ -25,4 +25,9 @@ final class CLIArgumentsTests: XCTestCase {
         let invocation = CLIArguments.parse(["diagnostics", "--json"])
         XCTAssertEqual(invocation, CLIInvocation(command: "diagnostics", outputJSON: true))
     }
+
+    func testParsesSSHConfigImportCommand() {
+        let invocation = CLIArguments.parse(["import-ssh-config"])
+        XCTAssertEqual(invocation, CLIInvocation(command: "import-ssh-config"))
+    }
 }

@@ -11,6 +11,7 @@ public enum ControlAction: String, Codable, Sendable {
     case restoreSystemPAC
     case importSSHAuto2FA
     case checkSSHAuto2FA
+    case importSSHConfig
     case diagnostics
 }
 

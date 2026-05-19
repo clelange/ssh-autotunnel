@@ -13,6 +13,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Native Keychain-backed password and TOTP support.
 - Configurable SSH host-key policy per profile, defaulting to accepting new keys while rejecting changed keys.
 - `ssh-auto2fa` Keychain service checks before importing preset profiles.
+- `~/.ssh/config` import for literal `Host` entries, including common user, port, jump-host, and identity options.
 - SSH SOCKS5 tunnels using `/usr/bin/ssh -N -D`.
 - Local PAC server with fail-closed routing when a tunnel is unhealthy.
 - Local blocking proxy that shows an explanatory page for HTTP requests when a PAC-matched tunnel is down.
@@ -74,6 +75,7 @@ swift run ssh-autotunnelctl reload-pac
 swift run ssh-autotunnelctl apply-system-pac
 swift run ssh-autotunnelctl restore-system-proxy
 swift run ssh-autotunnelctl import-ssh-auto2fa
+swift run ssh-autotunnelctl import-ssh-config
 swift run ssh-autotunnelctl check-ssh-auto2fa --json
 swift run ssh-autotunnelctl diagnostics --json
 swift run ssh-autotunnelctl connect "CERN lxplus"
@@ -95,6 +97,8 @@ The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keycha
 - `cern-lxplus-otp-secret`
 - `psit3-password`
 - `psit3-otp-secret`
+
+Settings, Shortcuts, and the CLI can also import literal `Host` entries from `~/.ssh/config`. Wildcard and negated host patterns are skipped because they do not map to one concrete tunnel profile.
 
 ## Development Notes
 

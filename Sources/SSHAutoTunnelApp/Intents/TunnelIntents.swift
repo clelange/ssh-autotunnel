@@ -142,6 +142,16 @@ struct CheckSSHAuto2FAIntent: AppIntent {
     }
 }
 
+struct ImportSSHConfigIntent: AppIntent {
+    static var title: LocalizedStringResource = "Import SSH Config"
+    static var description = IntentDescription("Create or update SSH AutoTunnel profiles from literal Host entries in ~/.ssh/config.")
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .importSSHConfig))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
 struct DiagnosticsIntent: AppIntent {
     static var title: LocalizedStringResource = "Get SSH AutoTunnel Diagnostics"
     static var description = IntentDescription("Get a structured SSH AutoTunnel diagnostics summary.")
@@ -218,6 +228,12 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             phrases: ["Check \(.applicationName) ssh auto two factor keychain"],
             shortTitle: "Check ssh-auto2fa",
             systemImageName: "key"
+        )
+        AppShortcut(
+            intent: ImportSSHConfigIntent(),
+            phrases: ["Import \(.applicationName) SSH config"],
+            shortTitle: "Import SSH Config",
+            systemImageName: "square.and.arrow.down.on.square"
         )
         AppShortcut(
             intent: DiagnosticsIntent(),

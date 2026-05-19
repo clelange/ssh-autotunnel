@@ -171,6 +171,16 @@ final class AppState: ObservableObject {
         return result
     }
 
+    @discardableResult
+    func importSSHConfig(url: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh/config")) throws -> SSHConfigImportResult {
+        let text = try String(contentsOf: url, encoding: .utf8)
+        let (updated, result) = SSHConfigImporter.apply(to: configuration, configText: text)
+        configuration = updated
+        saveConfiguration()
+        lastProxyMessage = "Imported SSH config: \(result.createdProfiles) created, \(result.updatedProfiles) updated, \(result.skippedHosts) skipped"
+        return result
+    }
+
     func addGenericProfile() {
         let profile = TunnelProfile(name: "New tunnel", host: "example.org", localSocksPort: nextFreeSocksPort())
         configuration.profiles.append(profile)
@@ -373,6 +383,17 @@ final class AppState: ObservableObject {
                 status: snapshot(),
                 sshAuto2FAServiceStatuses: sshAuto2FAServiceStatuses
             )
+        case .importSSHConfig:
+            do {
+                let result = try importSSHConfig()
+                return ControlResponse(
+                    ok: true,
+                    message: "Imported SSH config: \(result.createdProfiles) created, \(result.updatedProfiles) updated, \(result.skippedHosts) skipped",
+                    status: snapshot()
+                )
+            } catch {
+                return ControlResponse(ok: false, message: "Could not import SSH config: \(error.localizedDescription)", status: snapshot())
+            }
         case .diagnostics:
             return ControlResponse(
                 ok: true,

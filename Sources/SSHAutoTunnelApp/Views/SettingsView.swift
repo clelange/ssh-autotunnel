@@ -397,6 +397,13 @@ struct AppPreferencesView: View {
                     Button("Import ssh-auto2fa Presets") {
                         appState.importSSHAuto2FAPresets()
                     }
+                    Button("Import SSH Config") {
+                        do {
+                            try appState.importSSHConfig()
+                        } catch {
+                            appState.lastProxyMessage = "Could not import SSH config: \(error.localizedDescription)"
+                        }
+                    }
                 }
                 if !appState.sshAuto2FAServiceStatuses.isEmpty {
                     ForEach(appState.sshAuto2FAServiceStatuses) { status in
@@ -415,7 +422,7 @@ struct AppPreferencesView: View {
                         .font(.caption)
                     }
                 }
-                Text("Creates or updates CERN lxplus and PSI Tier-3 profiles using the existing Keychain service names.")
+                Text("Creates or updates CERN lxplus and PSI Tier-3 profiles using existing Keychain service names, or imports literal hosts from ~/.ssh/config.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
