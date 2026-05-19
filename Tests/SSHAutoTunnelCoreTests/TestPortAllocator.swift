@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+@testable import SSHAutoTunnelCore
 
 enum TestPortAllocator {
     static func freePort() throws -> Int {
@@ -35,5 +36,43 @@ enum TestPortAllocator {
         }
 
         return Int(UInt16(bigEndian: addr.sin_port))
+    }
+
+    static func startedLocalHTTPServer(
+        label: String,
+        retries: Int = 20,
+        handler: @escaping LocalHTTPServer.Handler
+    ) throws -> (server: LocalHTTPServer, port: Int) {
+        var lastError: Error?
+        for attempt in 0..<max(1, retries) {
+            let port = try freePort()
+            let server = try LocalHTTPServer(port: port, label: "\(label).\(attempt)", handler: handler)
+            do {
+                try server.start()
+                return (server, port)
+            } catch {
+                server.stop()
+                lastError = error
+                guard isRetryablePortRace(error) else {
+                    throw error
+                }
+                Thread.sleep(forTimeInterval: 0.02)
+            }
+        }
+
+        throw lastError ?? NSError(
+            domain: "TestPortAllocator",
+            code: 1,
+            userInfo: [NSLocalizedDescriptionKey: "Could not start local test server after \(retries) attempts"]
+        )
+    }
+
+    private static func isRetryablePortRace(_ error: Error) -> Bool {
+        guard case .startupFailed(let message) = error as? LocalHTTPServerError else {
+            return false
+        }
+        return message.localizedCaseInsensitiveContains("address already in use")
+            || message.localizedCaseInsensitiveContains("eaddrinuse")
+            || message.contains("error 48")
     }
 }
