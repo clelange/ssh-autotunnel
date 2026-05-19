@@ -45,6 +45,33 @@ final class ConfigurationStoreTests: XCTestCase {
         XCTAssertTrue(backups.isEmpty)
     }
 
+    func testBackupCurrentConfigurationCopiesPrivateConfig() throws {
+        let directory = try temporaryDirectory()
+        let url = directory.appendingPathComponent("config.json")
+        let expected = AppConfiguration(profiles: [
+            TunnelProfile(name: "Custom", host: "ssh.example.org", localSocksPort: 1200)
+        ])
+        let store = try ConfigurationStore(url: url)
+        try store.save(expected)
+
+        let backupURL = try XCTUnwrap(store.backupCurrentConfiguration(label: "pre-import"))
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: backupURL.path))
+        XCTAssertTrue(backupURL.lastPathComponent.contains(".pre-import-"))
+        XCTAssertEqual(try posixPermissions(of: backupURL), FileProtection.privateFilePermissions)
+        XCTAssertEqual(try JSONDecoder().decode(AppConfiguration.self, from: Data(contentsOf: backupURL)), expected)
+        XCTAssertEqual(try store.load(), expected)
+    }
+
+    func testBackupCurrentConfigurationReturnsNilWhenConfigIsMissing() throws {
+        let directory = try temporaryDirectory()
+        let url = directory.appendingPathComponent("config.json")
+        let store = try ConfigurationStore(url: url)
+
+        XCTAssertNil(try store.backupCurrentConfiguration(label: "pre-import"))
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ssh-autotunnel-tests")

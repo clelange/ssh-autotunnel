@@ -72,14 +72,27 @@ public final class ConfigurationStore {
         try FileProtection.protectFile(url)
     }
 
+    public func backupCurrentConfiguration(label: String = "backup") throws -> URL? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+
+        let directory = url.deletingLastPathComponent()
+        try FileProtection.protectDirectory(directory)
+        try FileProtection.protectFile(url)
+
+        let backupURL = stampedBackupURL(label: label)
+        if FileManager.default.fileExists(atPath: backupURL.path) {
+            try FileManager.default.removeItem(at: backupURL)
+        }
+        try FileManager.default.copyItem(at: url, to: backupURL)
+        try FileProtection.protectFile(backupURL)
+        return backupURL
+    }
+
     private func backupInvalidConfiguration() throws -> URL {
         let directory = url.deletingLastPathComponent()
         try FileProtection.protectDirectory(directory)
 
-        let formatter = ISO8601DateFormatter()
-        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
-        let backupURL = directory.appendingPathComponent("\(url.lastPathComponent).invalid-\(stamp)")
+        let backupURL = stampedBackupURL(label: "invalid")
 
         if FileManager.default.fileExists(atPath: backupURL.path) {
             try FileManager.default.removeItem(at: backupURL)
@@ -87,5 +100,16 @@ public final class ConfigurationStore {
         try FileManager.default.moveItem(at: url, to: backupURL)
         try FileProtection.protectFile(backupURL)
         return backupURL
+    }
+
+    private func stampedBackupURL(label: String) -> URL {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let stamp = formatter.string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        let safeLabel = label
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "/", with: "-")
+        let suffix = safeLabel.isEmpty ? "backup" : safeLabel
+        return url.deletingLastPathComponent().appendingPathComponent("\(url.lastPathComponent).\(suffix)-\(stamp)")
     }
 }

@@ -110,7 +110,7 @@ Runtime configuration is stored in:
 
 The app support directory is kept private to the current user, and `config.json` is written with user-only permissions because it contains the local API token.
 
-Use `ssh-autotunnelctl export-config` to write a portable configuration export. The export intentionally omits the local API token and never contains Keychain secret values. Importing an export preserves the current machine's local API token, validates port conflicts and profile references, stops tunnels removed by the import, and restarts local servers when listener ports change.
+Use `ssh-autotunnelctl export-config` to write a portable configuration export. The export intentionally omits the local API token and never contains Keychain secret values. Importing an export first writes a private `config.json.pre-import-*` backup, preserves the current machine's local API token, validates port conflicts and profile references, stops tunnels removed by the import, and restarts local servers when listener ports change.
 
 Use `ssh-autotunnelctl support-bundle` to write a redacted JSON bundle containing the portable configuration export plus diagnostics such as active ports, network fingerprint, runtime profile status, and file permission checks.
 
