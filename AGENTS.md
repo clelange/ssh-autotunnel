@@ -38,6 +38,7 @@
 - Expanded Shortcuts/App Intents coverage to include reconnect, PAC reload, system PAC apply/restore, and `ssh-auto2fa` import/check actions.
 - Added a diagnostics control action with CLI and Shortcuts coverage for structured state, network, port, and file-permission snapshots.
 - Bound local PAC, status, API, and blocking proxy servers to the loopback interface by default.
+- Made local HTTP server startup wait for listener readiness to avoid transient loopback connection races.
 - Persisted system PAC snapshots for restore across app restarts and app termination.
 - Extracted SSH tunnel command construction into a tested builder.
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.

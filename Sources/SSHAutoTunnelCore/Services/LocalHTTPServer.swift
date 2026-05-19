@@ -53,11 +53,17 @@ public struct HTTPResponse: Sendable {
 
 public enum LocalHTTPServerError: LocalizedError, Equatable, Sendable {
     case invalidPort(Int)
+    case startupFailed(String)
+    case startupTimedOut(Int)
 
     public var errorDescription: String? {
         switch self {
         case .invalidPort(let port):
             "Invalid local HTTP server port \(port). Expected a value between 1 and 65535."
+        case .startupFailed(let message):
+            "Local HTTP server failed to start: \(message)"
+        case .startupTimedOut(let port):
+            "Local HTTP server on port \(port) did not become ready in time."
         }
     }
 }
@@ -90,6 +96,8 @@ public final class LocalHTTPServer {
         guard let port = NWEndpoint.Port(rawValue: port) else {
             throw LocalHTTPServerError.invalidPort(Int(self.port))
         }
+        let startup = StartupState()
+        let ready = DispatchSemaphore(value: 0)
         let parameters = NWParameters.tcp
         let listener: NWListener
         switch bindAddress {
@@ -102,7 +110,30 @@ public final class LocalHTTPServer {
         listener.newConnectionHandler = { [weak self] connection in
             self?.handle(connection)
         }
+        listener.stateUpdateHandler = { state in
+            switch state {
+            case .ready:
+                ready.signal()
+            case .failed(let error):
+                startup.fail(error.localizedDescription)
+                ready.signal()
+            case .cancelled:
+                startup.fail("listener cancelled before becoming ready")
+                ready.signal()
+            default:
+                break
+            }
+        }
         listener.start(queue: queue)
+
+        guard ready.wait(timeout: .now() + 2) == .success else {
+            listener.cancel()
+            throw LocalHTTPServerError.startupTimedOut(Int(self.port))
+        }
+        if let message = startup.failureMessage {
+            listener.cancel()
+            throw LocalHTTPServerError.startupFailed(message)
+        }
         self.listener = listener
     }
 
@@ -181,5 +212,24 @@ public final class LocalHTTPServer {
             }
             .first ?? 0
         return data.count >= headerEnd + contentLength
+    }
+}
+
+private final class StartupState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var message: String?
+
+    var failureMessage: String? {
+        lock.lock()
+        defer { lock.unlock() }
+        return message
+    }
+
+    func fail(_ message: String) {
+        lock.lock()
+        if self.message == nil {
+            self.message = message
+        }
+        lock.unlock()
     }
 }
