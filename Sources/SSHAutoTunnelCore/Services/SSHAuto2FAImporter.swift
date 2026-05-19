@@ -31,6 +31,7 @@ public enum SSHAuto2FAImporter {
             named: "CERN lxplus",
             host: "lxplus.cern.ch",
             preferredPort: 1081,
+            user: cernAccount,
             authMode: .kerberosAndTOTP,
             keychain: KeychainReference(account: cernAccount, totpService: SSHAuto2FAPresets.cernLxplusTOTPService)
         )
@@ -48,7 +49,8 @@ public enum SSHAuto2FAImporter {
             named: "PSI Tier-3",
             host: "t3ui07.psi.ch",
             preferredPort: 1082,
-            jumpHost: "t3hop01.psi.ch",
+            user: psiAccount,
+            jumpHost: "\(psiAccount)@t3hop01.psi.ch",
             authMode: .passwordAndTOTP,
             keychain: KeychainReference(
                 account: psiAccount,
@@ -73,12 +75,14 @@ public enum SSHAuto2FAImporter {
         named name: String,
         host: String,
         preferredPort: Int,
+        user: String,
         jumpHost: String? = nil,
         authMode: TunnelAuthMode,
         keychain: KeychainReference
     ) -> UUID {
         if let index = configuration.profiles.firstIndex(where: { $0.name == name }) {
             configuration.profiles[index].host = host
+            configuration.profiles[index].user = user
             configuration.profiles[index].jumpHost = jumpHost
             configuration.profiles[index].authMode = authMode
             configuration.profiles[index].keychain = keychain
@@ -89,6 +93,7 @@ public enum SSHAuto2FAImporter {
         let profile = TunnelProfile(
             name: name,
             host: host,
+            user: user,
             localSocksPort: nextFreePort(preferred: preferredPort, profiles: configuration.profiles),
             jumpHost: jumpHost,
             authMode: authMode,

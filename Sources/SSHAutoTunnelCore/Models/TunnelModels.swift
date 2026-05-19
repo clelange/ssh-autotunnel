@@ -319,6 +319,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         let lxplus = TunnelProfile(
             name: "CERN lxplus",
             host: "lxplus.cern.ch",
+            user: NSUserName(),
             localSocksPort: 1081,
             authMode: .kerberosAndTOTP,
             keychain: KeychainReference(account: NSUserName(), totpService: SSHAuto2FAPresets.cernLxplusTOTPService),
@@ -328,8 +329,9 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         let tier3 = TunnelProfile(
             name: "PSI Tier-3",
             host: "t3ui07.psi.ch",
+            user: NSUserName(),
             localSocksPort: 1082,
-            jumpHost: "t3hop01.psi.ch",
+            jumpHost: "\(NSUserName())@t3hop01.psi.ch",
             authMode: .passwordAndTOTP,
             keychain: KeychainReference(
                 account: NSUserName(),

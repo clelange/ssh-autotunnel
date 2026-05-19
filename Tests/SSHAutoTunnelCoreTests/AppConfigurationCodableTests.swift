@@ -58,4 +58,14 @@ final class AppConfigurationCodableTests: XCTestCase {
 
         XCTAssertEqual(object["hostKeyPolicy"] as? String, "strict")
     }
+
+    func testDefaultPresetProfilesSetSSHUsers() throws {
+        let config = AppConfiguration.defaultConfiguration()
+        let lxplus = try XCTUnwrap(config.profiles.first { $0.name == "CERN lxplus" })
+        let tier3 = try XCTUnwrap(config.profiles.first { $0.name == "PSI Tier-3" })
+
+        XCTAssertEqual(lxplus.user, NSUserName())
+        XCTAssertEqual(tier3.user, NSUserName())
+        XCTAssertEqual(tier3.jumpHost, "\(NSUserName())@t3hop01.psi.ch")
+    }
 }

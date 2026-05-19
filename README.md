@@ -66,6 +66,8 @@ When running, the app serves loopback-only endpoints:
 
 The PAC returns `SOCKS5 127.0.0.1:<profile-port>` for matching tunnels that pass the local SOCKS5 handshake probe, `DIRECT` for unmatched hosts, and `PROXY 127.0.0.1:18485` for matched domains whose tunnel is down. The blocking proxy can show an explanatory HTML page for plain HTTP requests; HTTPS requests fail cleanly at the proxy because the app does not intercept TLS certificates.
 
+The app may append a `v=` query parameter to the PAC URL to make macOS and browsers re-fetch the PAC after tunnel status changes.
+
 ## CLI
 
 The CLI helper talks to the local API:

@@ -167,13 +167,18 @@ final class AppState: ObservableObject {
         let accountByService = sshAuto2FAPresetAccounts()
         switch configuration.profiles[index].name {
         case "CERN lxplus":
-            configuration.profiles[index].keychain.account = accountByService[SSHAuto2FAPresets.cernLxplusTOTPService] ?? NSUserName()
+            let account = accountByService[SSHAuto2FAPresets.cernLxplusTOTPService] ?? NSUserName()
+            configuration.profiles[index].user = account
+            configuration.profiles[index].keychain.account = account
             configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.cernLxplusTOTPService
         case "PSI Tier-3":
-            configuration.profiles[index].keychain.account = sharedPresetAccount(
+            let account = sharedPresetAccount(
                 services: [SSHAuto2FAPresets.psiTier3PasswordService, SSHAuto2FAPresets.psiTier3TOTPService],
                 accountByService: accountByService
             )
+            configuration.profiles[index].user = account
+            configuration.profiles[index].jumpHost = "\(account)@t3hop01.psi.ch"
+            configuration.profiles[index].keychain.account = account
             configuration.profiles[index].keychain.passwordService = SSHAuto2FAPresets.psiTier3PasswordService
             configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.psiTier3TOTPService
         default:

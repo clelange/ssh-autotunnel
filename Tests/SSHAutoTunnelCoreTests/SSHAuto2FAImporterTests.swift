@@ -11,12 +11,14 @@ final class SSHAuto2FAImporterTests: XCTestCase {
 
         let lxplus = configuration.profiles.first { $0.name == "CERN lxplus" }
         XCTAssertEqual(lxplus?.host, "lxplus.cern.ch")
+        XCTAssertEqual(lxplus?.user, "lange_c")
         XCTAssertEqual(lxplus?.authMode, .kerberosAndTOTP)
         XCTAssertEqual(lxplus?.keychain.account, "lange_c")
         XCTAssertEqual(lxplus?.keychain.totpService, "cern-lxplus-otp-secret")
 
         let tier3 = configuration.profiles.first { $0.name == "PSI Tier-3" }
-        XCTAssertEqual(tier3?.jumpHost, "t3hop01.psi.ch")
+        XCTAssertEqual(tier3?.user, "lange_c")
+        XCTAssertEqual(tier3?.jumpHost, "lange_c@t3hop01.psi.ch")
         XCTAssertEqual(tier3?.keychain.passwordService, "psit3-password")
         XCTAssertEqual(tier3?.keychain.totpService, "psit3-otp-secret")
 
@@ -41,6 +43,7 @@ final class SSHAuto2FAImporterTests: XCTestCase {
         XCTAssertEqual(lxplus.id, existing.id)
         XCTAssertEqual(lxplus.localSocksPort, 1200)
         XCTAssertEqual(lxplus.host, "lxplus.cern.ch")
+        XCTAssertEqual(lxplus.user, "lange_c")
         XCTAssertEqual(lxplus.keychain.totpService, "cern-lxplus-otp-secret")
     }
 
@@ -60,5 +63,8 @@ final class SSHAuto2FAImporterTests: XCTestCase {
 
         XCTAssertEqual(lxplus.keychain.account, "clange")
         XCTAssertEqual(tier3.keychain.account, "lange_c")
+        XCTAssertEqual(lxplus.user, "clange")
+        XCTAssertEqual(tier3.user, "lange_c")
+        XCTAssertEqual(tier3.jumpHost, "lange_c@t3hop01.psi.ch")
     }
 }
