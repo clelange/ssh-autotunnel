@@ -21,6 +21,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertEqual(export.profiles, configuration.profiles)
         XCTAssertEqual(export.pacRules, configuration.pacRules)
         XCTAssertEqual(export.networkRules, configuration.networkRules)
+        XCTAssertEqual(export.pacAppendSource, configuration.pacAppendSource)
     }
 
     func testDecodeExportDocumentAcceptsRawAppConfigurationBackups() throws {
@@ -39,12 +40,18 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertEqual(export.pacRules, configuration.pacRules)
         XCTAssertEqual(export.networkRules, configuration.networkRules)
         XCTAssertEqual(export.apiHTTPPort, configuration.apiHTTPPort)
+        XCTAssertEqual(export.pacAppendSource, configuration.pacAppendSource)
         XCTAssertFalse(exportedJSON.contains("secret-local-token"))
     }
 
     func testImportPreservesLocalAPIToken() throws {
         let current = AppConfiguration(apiToken: "local-token")
-        let source = sampleConfiguration(apiToken: "source-token")
+        var source = sampleConfiguration(apiToken: "source-token")
+        source.pacAppendSource = PACAppendSource(
+            enabled: true,
+            kind: .url,
+            location: "https://proxy.example/proxy.pac"
+        )
         let export = ConfigurationExportService.makeExport(from: source, appIdentifier: "test.app")
 
         let imported = try ConfigurationExportService.importConfiguration(from: export, preservingLocalValuesFrom: current)
@@ -57,6 +64,28 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertEqual(imported.blockingHTTPProxyPort, source.blockingHTTPProxyPort)
         XCTAssertEqual(imported.apiHTTPPort, source.apiHTTPPort)
         XCTAssertEqual(imported.proxyApplyMode, source.proxyApplyMode)
+        XCTAssertEqual(imported.pacAppendSource, source.pacAppendSource)
+    }
+
+    func testDecodesLegacyExportWithoutPACAppendSource() throws {
+        let json = Data("""
+        {
+          "schemaVersion": 1,
+          "exportedAt": 0,
+          "appIdentifier": "test.app",
+          "profiles": [],
+          "pacRules": [],
+          "networkRules": [],
+          "pacHTTPPort": 18483,
+          "blockingHTTPProxyPort": 18485,
+          "apiHTTPPort": 18484,
+          "proxyApplyMode": "manual"
+        }
+        """.utf8)
+
+        let export = try JSONDecoder().decode(ConfigurationExport.self, from: json)
+
+        XCTAssertEqual(export.pacAppendSource, PACAppendSource())
     }
 
     func testImportRejectsInvalidPorts() throws {

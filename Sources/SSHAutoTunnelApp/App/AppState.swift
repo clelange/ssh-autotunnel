@@ -14,6 +14,7 @@ final class AppState: ObservableObject {
     @Published var lastProxyMessage = "System PAC is not enabled"
     @Published var configurationValidationMessage: String?
     @Published var sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus] = []
+    @Published var pacAppendSourceMessage = "Existing PAC appending disabled"
 
     private let configurationStore: ConfigurationStore
     private let tunnelManager = TunnelManager()
@@ -24,6 +25,9 @@ final class AppState: ObservableObject {
     private let sshLogStore = SSHLogStore()
     private var pathMonitor: NWPathMonitor?
     private var pendingConfigurationSaveTask: Task<Void, Never>?
+    private var pendingPACAppendSourceTask: Task<Void, Never>?
+    private var loadedPACAppendSource: PACAppendSource?
+    private var appendedPACContent: String?
     private let jsonEncoder = JSONEncoder()
     private lazy var localServers = LocalServerCoordinator<LocalHTTPServer> { [weak self] role, port in
         guard let self else {
@@ -53,6 +57,7 @@ final class AppState: ObservableObject {
         refreshNetworkDecision()
         startServers()
         startNetworkMonitoring()
+        refreshPACAppendSource(force: true)
         writePACCopy()
     }
 
@@ -129,6 +134,7 @@ final class AppState: ObservableObject {
             try configurationStore.save(configuration)
             configurationValidationMessage = nil
             refreshNetworkDecision()
+            refreshPACAppendSource()
             writePACCopy()
             if didRestartServers, let activeServerPorts = localServers.activePorts {
                 lastProxyMessage = "Local servers restarted: PAC \(activeServerPorts.pacHTTPPort), API \(activeServerPorts.apiHTTPPort), blocking proxy \(activeServerPorts.blockingHTTPProxyPort)"
@@ -163,6 +169,44 @@ final class AppState: ObservableObject {
         configuration.apiToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         saveConfiguration()
         lastProxyMessage = "Local API token rotated"
+    }
+
+    func refreshPACAppendSource(force: Bool = false) {
+        let source = configuration.pacAppendSource
+        guard source.enabled else {
+            clearPACAppendSource(message: "Existing PAC appending disabled")
+            return
+        }
+        guard source.isReadyToLoad else {
+            clearPACAppendSource(message: "Existing PAC source location is required")
+            return
+        }
+        guard force || source != loadedPACAppendSource else { return }
+
+        pendingPACAppendSourceTask?.cancel()
+        loadedPACAppendSource = source
+        appendedPACContent = nil
+        pacAppendSourceMessage = "Loading existing PAC from \(source.trimmedLocation)"
+        pendingPACAppendSourceTask = Task { [weak self, source] in
+            do {
+                let content = try await PACAppendSourceLoader.load(source)
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self, self.configuration.pacAppendSource == source else { return }
+                    self.appendedPACContent = content
+                    self.pacAppendSourceMessage = "Loaded existing PAC from \(source.trimmedLocation)"
+                    self.writePACCopy()
+                }
+            } catch {
+                guard !Task.isCancelled else { return }
+                await MainActor.run {
+                    guard let self, self.configuration.pacAppendSource == source else { return }
+                    self.appendedPACContent = nil
+                    self.pacAppendSourceMessage = "Could not load existing PAC: \(error.localizedDescription)"
+                    self.writePACCopy()
+                }
+            }
+        }
     }
 
     @discardableResult
@@ -533,6 +577,7 @@ final class AppState: ObservableObject {
             reconnect(profile)
             return ControlResponse(ok: true, message: "Reconnecting \(profile.name)", status: snapshot())
         case .reloadPAC:
+            refreshPACAppendSource(force: true)
             writePACCopy()
             return ControlResponse(ok: true, message: "PAC reloaded", status: snapshot())
         case .pacURL:
@@ -843,9 +888,17 @@ final class AppState: ObservableObject {
             configuration: configuration,
             statuses: statuses,
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
-            networkDisabledProfileIDs: networkDecision.disabledProfileIDs
+            networkDisabledProfileIDs: networkDecision.disabledProfileIDs,
+            appendedPAC: configuration.pacAppendSource.isReadyToLoad ? appendedPACContent : nil
         )
         return PACGenerator.generate(context: context)
+    }
+
+    private func clearPACAppendSource(message: String) {
+        pendingPACAppendSourceTask?.cancel()
+        loadedPACAppendSource = nil
+        appendedPACContent = nil
+        pacAppendSourceMessage = message
     }
 
     private func sortedNetworkDisabledProfileIDs() -> [UUID] {

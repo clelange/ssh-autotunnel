@@ -62,7 +62,8 @@ public enum ConfigurationExportService {
             pacHTTPPort: configuration.pacHTTPPort,
             blockingHTTPProxyPort: configuration.blockingHTTPProxyPort,
             apiHTTPPort: configuration.apiHTTPPort,
-            proxyApplyMode: configuration.proxyApplyMode
+            proxyApplyMode: configuration.proxyApplyMode,
+            pacAppendSource: configuration.pacAppendSource
         )
     }
 
@@ -79,7 +80,8 @@ public enum ConfigurationExportService {
             blockingHTTPProxyPort: export.blockingHTTPProxyPort,
             apiHTTPPort: export.apiHTTPPort,
             apiToken: currentConfiguration.apiToken,
-            proxyApplyMode: export.proxyApplyMode
+            proxyApplyMode: export.proxyApplyMode,
+            pacAppendSource: export.pacAppendSource
         )
         try PortConfigurationValidator.validate(imported)
         return imported

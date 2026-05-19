@@ -243,6 +243,44 @@ public struct PACRule: Identifiable, Codable, Equatable, Sendable {
     }
 }
 
+public enum PACAppendSourceKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case url
+    case file
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .url: "URL"
+        case .file: "Local file"
+        }
+    }
+}
+
+public struct PACAppendSource: Codable, Equatable, Sendable {
+    public var enabled: Bool
+    public var kind: PACAppendSourceKind
+    public var location: String
+
+    public init(
+        enabled: Bool = false,
+        kind: PACAppendSourceKind = .url,
+        location: String = ""
+    ) {
+        self.enabled = enabled
+        self.kind = kind
+        self.location = location
+    }
+
+    public var trimmedLocation: String {
+        location.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    public var isReadyToLoad: Bool {
+        enabled && !trimmedLocation.isEmpty
+    }
+}
+
 public enum ProxyApplyMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case manual
     case activeNetworkServicePAC
@@ -259,6 +297,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var apiHTTPPort: Int
     public var apiToken: String
     public var proxyApplyMode: ProxyApplyMode
+    public var pacAppendSource: PACAppendSource
 
     private enum CodingKeys: String, CodingKey {
         case profiles
@@ -269,6 +308,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         case apiHTTPPort
         case apiToken
         case proxyApplyMode
+        case pacAppendSource
     }
 
     public init(
@@ -279,7 +319,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         blockingHTTPProxyPort: Int = 18485,
         apiHTTPPort: Int = 18484,
         apiToken: String = UUID().uuidString.replacingOccurrences(of: "-", with: ""),
-        proxyApplyMode: ProxyApplyMode = .manual
+        proxyApplyMode: ProxyApplyMode = .manual,
+        pacAppendSource: PACAppendSource = PACAppendSource()
     ) {
         self.profiles = profiles
         self.pacRules = pacRules
@@ -289,6 +330,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         self.apiHTTPPort = apiHTTPPort
         self.apiToken = apiToken
         self.proxyApplyMode = proxyApplyMode
+        self.pacAppendSource = pacAppendSource
     }
 
     public init(from decoder: Decoder) throws {
@@ -301,6 +343,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         apiHTTPPort = try container.decodeIfPresent(Int.self, forKey: .apiHTTPPort) ?? 18484
         apiToken = try container.decodeIfPresent(String.self, forKey: .apiToken) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
         proxyApplyMode = try container.decodeIfPresent(ProxyApplyMode.self, forKey: .proxyApplyMode) ?? .manual
+        pacAppendSource = try container.decodeIfPresent(PACAppendSource.self, forKey: .pacAppendSource) ?? PACAppendSource()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -313,6 +356,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         try container.encode(apiHTTPPort, forKey: .apiHTTPPort)
         try container.encode(apiToken, forKey: .apiToken)
         try container.encode(proxyApplyMode, forKey: .proxyApplyMode)
+        try container.encode(pacAppendSource, forKey: .pacAppendSource)
     }
 
     public static func defaultConfiguration() -> AppConfiguration {

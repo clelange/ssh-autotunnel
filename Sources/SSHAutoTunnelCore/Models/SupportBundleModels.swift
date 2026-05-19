@@ -24,7 +24,23 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
     public var blockingHTTPProxyPort: Int
     public var apiHTTPPort: Int
     public var proxyApplyMode: ProxyApplyMode
+    public var pacAppendSource: PACAppendSource
     public var redaction: ConfigurationExportRedaction
+
+    private enum CodingKeys: String, CodingKey {
+        case schemaVersion
+        case exportedAt
+        case appIdentifier
+        case profiles
+        case pacRules
+        case networkRules
+        case pacHTTPPort
+        case blockingHTTPProxyPort
+        case apiHTTPPort
+        case proxyApplyMode
+        case pacAppendSource
+        case redaction
+    }
 
     public init(
         schemaVersion: Int = 1,
@@ -37,6 +53,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         blockingHTTPProxyPort: Int,
         apiHTTPPort: Int,
         proxyApplyMode: ProxyApplyMode,
+        pacAppendSource: PACAppendSource = PACAppendSource(),
         redaction: ConfigurationExportRedaction = ConfigurationExportRedaction()
     ) {
         self.schemaVersion = schemaVersion
@@ -49,7 +66,24 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         self.blockingHTTPProxyPort = blockingHTTPProxyPort
         self.apiHTTPPort = apiHTTPPort
         self.proxyApplyMode = proxyApplyMode
+        self.pacAppendSource = pacAppendSource
         self.redaction = redaction
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
+        exportedAt = try container.decode(Date.self, forKey: .exportedAt)
+        appIdentifier = try container.decode(String.self, forKey: .appIdentifier)
+        profiles = try container.decode([TunnelProfile].self, forKey: .profiles)
+        pacRules = try container.decode([PACRule].self, forKey: .pacRules)
+        networkRules = try container.decode([NetworkPolicyRule].self, forKey: .networkRules)
+        pacHTTPPort = try container.decode(Int.self, forKey: .pacHTTPPort)
+        blockingHTTPProxyPort = try container.decode(Int.self, forKey: .blockingHTTPProxyPort)
+        apiHTTPPort = try container.decode(Int.self, forKey: .apiHTTPPort)
+        proxyApplyMode = try container.decode(ProxyApplyMode.self, forKey: .proxyApplyMode)
+        pacAppendSource = try container.decodeIfPresent(PACAppendSource.self, forKey: .pacAppendSource) ?? PACAppendSource()
+        redaction = try container.decodeIfPresent(ConfigurationExportRedaction.self, forKey: .redaction) ?? ConfigurationExportRedaction()
     }
 }
 

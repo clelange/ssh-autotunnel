@@ -38,6 +38,27 @@ final class PACGeneratorTests: XCTestCase {
         XCTAssertFalse(pac.contains("SOCKS5 127.0.0.1:1088"))
     }
 
+    func testNetworkPolicyDelegatesToAppendedPACWhenConfigured() {
+        let profile = TunnelProfile(name: "Test", host: "ssh.example.org", localSocksPort: 1088)
+        let rule = PACRule(name: "Example", domainPattern: "*.example.org", profileID: profile.id)
+        let config = AppConfiguration(profiles: [profile], pacRules: [rule])
+        let pac = PACGenerator.generate(context: PACGenerationContext(
+            configuration: config,
+            statuses: [profile.id: TunnelRuntimeStatus(profileID: profile.id, health: .healthy)],
+            proxyDisabledByNetworkPolicy: true,
+            appendedPAC: """
+            function FindProxyForURL(url, host) {
+              return "PROXY existing.example:8080";
+            }
+            """
+        ))
+
+        XCTAssertTrue(pac.contains("var __sshAutoTunnelExistingFindProxyForURL"))
+        XCTAssertTrue(pac.contains("var FindProxyForURL;"))
+        XCTAssertTrue(pac.contains("return __sshAutoTunnelExistingFindProxyForURL(url, host);"))
+        XCTAssertFalse(pac.contains("SOCKS5 127.0.0.1:1088"))
+    }
+
     func testScopedNetworkPolicyDisablesOnlyMatchingProfile() {
         let directProfile = TunnelProfile(name: "Direct", host: "direct.example.org", localSocksPort: 1088)
         let tunnelProfile = TunnelProfile(name: "Tunnel", host: "tunnel.example.org", localSocksPort: 1089)
@@ -60,5 +81,43 @@ final class PACGeneratorTests: XCTestCase {
         XCTAssertTrue(pac.contains("*.direct.example.org"))
         XCTAssertFalse(pac.contains("SOCKS5 127.0.0.1:1088"))
         XCTAssertTrue(pac.contains("SOCKS5 127.0.0.1:1089"))
+    }
+
+    func testUnmatchedHostsDelegateToAppendedPAC() {
+        let profile = TunnelProfile(name: "Test", host: "ssh.example.org", localSocksPort: 1088)
+        let rule = PACRule(name: "Example", domainPattern: "*.example.org", profileID: profile.id)
+        let config = AppConfiguration(profiles: [profile], pacRules: [rule])
+        let pac = PACGenerator.generate(context: PACGenerationContext(
+            configuration: config,
+            statuses: [profile.id: TunnelRuntimeStatus(profileID: profile.id, health: .healthy)],
+            appendedPAC: """
+            function FindProxyForURL(url, host) {
+              return "PROXY existing.example:8080";
+            }
+            """
+        ))
+
+        XCTAssertTrue(pac.contains("return \"SOCKS5 127.0.0.1:1088\";"))
+        XCTAssertTrue(pac.contains("return __sshAutoTunnelExistingFindProxyForURL(url, host);"))
+        XCTAssertTrue(pac.contains("PROXY existing.example:8080"))
+    }
+
+    func testDirectFallbackDelegatesToAppendedPAC() {
+        let profile = TunnelProfile(name: "Test", host: "ssh.example.org", localSocksPort: 1088)
+        let rule = PACRule(
+            name: "Example",
+            domainPattern: "*.example.org",
+            profileID: profile.id,
+            failureMode: .directFallback
+        )
+        let config = AppConfiguration(profiles: [profile], pacRules: [rule])
+        let pac = PACGenerator.generate(context: PACGenerationContext(
+            configuration: config,
+            statuses: [profile.id: TunnelRuntimeStatus(profileID: profile.id, health: .failed)],
+            appendedPAC: "function FindProxyForURL(url, host) { return \"PROXY existing.example:8080\"; }"
+        ))
+
+        XCTAssertTrue(pac.contains("return __sshAutoTunnelExistingFindProxyForURL(url, host);"))
+        XCTAssertFalse(pac.contains(PACGenerator.blockingProxy(port: config.blockingHTTPProxyPort)))
     }
 }

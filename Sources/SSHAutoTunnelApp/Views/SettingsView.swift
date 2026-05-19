@@ -405,6 +405,35 @@ struct AppPreferencesView: View {
                     .textSelection(.enabled)
                 TextField("PAC HTTP port", value: $appState.configuration.pacHTTPPort, format: .number)
                 TextField("Blocking proxy port", value: $appState.configuration.blockingHTTPProxyPort, format: .number)
+                Toggle("Append existing PAC", isOn: $appState.configuration.pacAppendSource.enabled)
+                Picker("Existing PAC source", selection: $appState.configuration.pacAppendSource.kind) {
+                    ForEach(PACAppendSourceKind.allCases) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
+                }
+                .disabled(!appState.configuration.pacAppendSource.enabled)
+                if appState.configuration.pacAppendSource.kind == .url {
+                    TextField("Existing PAC URL", text: $appState.configuration.pacAppendSource.location)
+                        .disabled(!appState.configuration.pacAppendSource.enabled)
+                } else {
+                    HStack {
+                        TextField("Existing PAC file", text: $appState.configuration.pacAppendSource.location)
+                        Button("Choose...") {
+                            choosePACFile()
+                        }
+                    }
+                    .disabled(!appState.configuration.pacAppendSource.enabled)
+                }
+                HStack {
+                    Button("Reload Existing PAC") {
+                        appState.refreshPACAppendSource(force: true)
+                    }
+                    .disabled(!appState.configuration.pacAppendSource.isReadyToLoad)
+                    Text(appState.pacAppendSourceMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
                 if let message = appState.configurationValidationMessage {
                     Text(message)
                         .font(.caption)
@@ -571,6 +600,18 @@ struct AppPreferencesView: View {
         panel.isExtensionHidden = false
         panel.nameFieldStringValue = defaultFileName
         return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    private func choosePACFile() {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        appState.configuration.pacAppendSource.kind = .file
+        appState.configuration.pacAppendSource.location = url.path
+        appState.saveConfiguration()
+        appState.refreshPACAppendSource(force: true)
     }
 
     private func openURL() -> URL? {

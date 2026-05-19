@@ -30,6 +30,42 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(object["blockingHTTPProxyPort"] as? Int, 19000)
     }
 
+    func testDecodesLegacyConfigurationWithoutPACAppendSource() throws {
+        let json = Data("""
+        {
+          "profiles": [],
+          "pacRules": [],
+          "networkRules": [],
+          "pacHTTPPort": 18483,
+          "blockingHTTPProxyPort": 18485,
+          "apiHTTPPort": 18484,
+          "apiToken": "token",
+          "proxyApplyMode": "manual"
+        }
+        """.utf8)
+
+        let config = try JSONDecoder().decode(AppConfiguration.self, from: json)
+
+        XCTAssertEqual(config.pacAppendSource, PACAppendSource())
+    }
+
+    func testEncodesPACAppendSource() throws {
+        let config = AppConfiguration(
+            pacAppendSource: PACAppendSource(
+                enabled: true,
+                kind: .file,
+                location: "/tmp/existing.pac"
+            )
+        )
+        let data = try JSONEncoder().encode(config)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let appendSource = try XCTUnwrap(object["pacAppendSource"] as? [String: Any])
+
+        XCTAssertEqual(appendSource["enabled"] as? Bool, true)
+        XCTAssertEqual(appendSource["kind"] as? String, "file")
+        XCTAssertEqual(appendSource["location"] as? String, "/tmp/existing.pac")
+    }
+
     func testDecodesLegacyProfileWithoutHostKeyPolicy() throws {
         let json = Data("""
         {
