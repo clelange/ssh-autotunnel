@@ -11,6 +11,7 @@ public enum ControlAction: String, Codable, Sendable {
     case restoreSystemPAC
     case importSSHAuto2FA
     case checkSSHAuto2FA
+    case diagnostics
 }
 
 public struct ControlRequest: Codable, Sendable {
@@ -25,7 +26,7 @@ public struct ControlRequest: Codable, Sendable {
     }
 }
 
-public struct ProfileStatusSnapshot: Codable, Sendable {
+public struct ProfileStatusSnapshot: Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
     public var localSocksPort: Int
@@ -43,7 +44,7 @@ public struct ProfileStatusSnapshot: Codable, Sendable {
     }
 }
 
-public struct AppStatusSnapshot: Codable, Sendable {
+public struct AppStatusSnapshot: Codable, Equatable, Sendable {
     public var pacURL: String
     public var proxyDisabledByNetworkPolicy: Bool
     public var matchedNetworkRule: String?
@@ -62,21 +63,92 @@ public struct AppStatusSnapshot: Codable, Sendable {
     }
 }
 
+public struct DiagnosticFileStatus: Codable, Equatable, Sendable {
+    public var label: String
+    public var path: String
+    public var exists: Bool
+    public var posixPermissions: String?
+    public var isPrivate: Bool
+
+    public init(
+        label: String,
+        path: String,
+        exists: Bool,
+        posixPermissions: String?,
+        isPrivate: Bool
+    ) {
+        self.label = label
+        self.path = path
+        self.exists = exists
+        self.posixPermissions = posixPermissions
+        self.isPrivate = isPrivate
+    }
+}
+
+public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
+    public var generatedAt: Date
+    public var appIdentifier: String
+    public var pacURL: String
+    public var statusURL: String
+    public var proxyApplyMode: ProxyApplyMode
+    public var proxyDisabledByNetworkPolicy: Bool
+    public var matchedNetworkRule: String?
+    public var configuredPorts: LocalServerPorts
+    public var activePorts: LocalServerPorts?
+    public var currentNetwork: NetworkFingerprint
+    public var profiles: [ProfileStatusSnapshot]
+    public var fileStatuses: [DiagnosticFileStatus]
+    public var systemProxySnapshotExists: Bool
+
+    public init(
+        generatedAt: Date = Date(),
+        appIdentifier: String,
+        pacURL: String,
+        statusURL: String,
+        proxyApplyMode: ProxyApplyMode,
+        proxyDisabledByNetworkPolicy: Bool,
+        matchedNetworkRule: String?,
+        configuredPorts: LocalServerPorts,
+        activePorts: LocalServerPorts?,
+        currentNetwork: NetworkFingerprint,
+        profiles: [ProfileStatusSnapshot],
+        fileStatuses: [DiagnosticFileStatus],
+        systemProxySnapshotExists: Bool
+    ) {
+        self.generatedAt = generatedAt
+        self.appIdentifier = appIdentifier
+        self.pacURL = pacURL
+        self.statusURL = statusURL
+        self.proxyApplyMode = proxyApplyMode
+        self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
+        self.matchedNetworkRule = matchedNetworkRule
+        self.configuredPorts = configuredPorts
+        self.activePorts = activePorts
+        self.currentNetwork = currentNetwork
+        self.profiles = profiles
+        self.fileStatuses = fileStatuses
+        self.systemProxySnapshotExists = systemProxySnapshotExists
+    }
+}
+
 public struct ControlResponse: Codable, Sendable {
     public var ok: Bool
     public var message: String
     public var status: AppStatusSnapshot?
     public var sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus]?
+    public var diagnostics: DiagnosticsSnapshot?
 
     public init(
         ok: Bool,
         message: String,
         status: AppStatusSnapshot? = nil,
-        sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus]? = nil
+        sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus]? = nil,
+        diagnostics: DiagnosticsSnapshot? = nil
     ) {
         self.ok = ok
         self.message = message
         self.status = status
         self.sshAuto2FAServiceStatuses = sshAuto2FAServiceStatuses
+        self.diagnostics = diagnostics
     }
 }

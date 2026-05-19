@@ -20,4 +20,9 @@ final class CLIArgumentsTests: XCTestCase {
         let invocation = CLIArguments.parse(["check-ssh-auto2fa", "--json"])
         XCTAssertEqual(invocation, CLIInvocation(command: "check-ssh-auto2fa", outputJSON: true))
     }
+
+    func testParsesDiagnosticsCommand() {
+        let invocation = CLIArguments.parse(["diagnostics", "--json"])
+        XCTAssertEqual(invocation, CLIInvocation(command: "diagnostics", outputJSON: true))
+    }
 }

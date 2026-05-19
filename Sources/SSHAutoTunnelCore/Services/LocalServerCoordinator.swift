@@ -13,7 +13,7 @@ public protocol LocalServerControlling: AnyObject {
 
 extension LocalHTTPServer: LocalServerControlling {}
 
-public struct LocalServerPorts: Equatable, Sendable {
+public struct LocalServerPorts: Codable, Equatable, Sendable {
     public var pacHTTPPort: Int
     public var blockingHTTPProxyPort: Int
     public var apiHTTPPort: Int

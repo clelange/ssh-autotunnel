@@ -142,6 +142,21 @@ struct CheckSSHAuto2FAIntent: AppIntent {
     }
 }
 
+struct DiagnosticsIntent: AppIntent {
+    static var title: LocalizedStringResource = "Get SSH AutoTunnel Diagnostics"
+    static var description = IntentDescription("Get a structured SSH AutoTunnel diagnostics summary.")
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .diagnostics))
+        let diagnostics = response.diagnostics
+        let activePorts = diagnostics?.activePorts.map {
+            "PAC \($0.pacHTTPPort), API \($0.apiHTTPPort), blocking proxy \($0.blockingHTTPProxyPort)"
+        } ?? "none"
+        let summary = "Diagnostics: \(response.status?.profiles.count ?? 0) profiles, active ports \(activePorts)"
+        return .result(dialog: IntentDialog(stringLiteral: summary))
+    }
+}
+
 struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -203,6 +218,12 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             phrases: ["Check \(.applicationName) ssh auto two factor keychain"],
             shortTitle: "Check ssh-auto2fa",
             systemImageName: "key"
+        )
+        AppShortcut(
+            intent: DiagnosticsIntent(),
+            phrases: ["Get \(.applicationName) diagnostics"],
+            shortTitle: "Diagnostics",
+            systemImageName: "stethoscope"
         )
     }
 }

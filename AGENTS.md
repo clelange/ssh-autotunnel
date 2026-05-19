@@ -31,6 +31,7 @@
 - Added tested CLI argument parsing and `--json` output for automation.
 - Added local API and CLI actions for system PAC apply/restore, PAC reload, `ssh-auto2fa` preset import, and `ssh-auto2fa` Keychain checks.
 - Expanded Shortcuts/App Intents coverage to include reconnect, PAC reload, system PAC apply/restore, and `ssh-auto2fa` import/check actions.
+- Added a diagnostics control action with CLI and Shortcuts coverage for structured state, network, port, and file-permission snapshots.
 - Bound local PAC, status, API, and blocking proxy servers to the loopback interface by default.
 - Persisted system PAC snapshots for restore across app restarts and app termination.
 - Extracted SSH tunnel command construction into a tested builder.
@@ -65,7 +66,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 93 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 98 XCTest cases.
 
 ## Known Gaps
 

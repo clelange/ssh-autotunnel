@@ -19,4 +19,14 @@ public enum FileProtection {
             ofItemAtPath: url.path
         )
     }
+
+    public static func posixPermissions(of url: URL) throws -> Int? {
+        guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path)
+        return (attributes[.posixPermissions] as? NSNumber)?.intValue
+    }
+
+    public static func octalPermissions(of url: URL) throws -> String? {
+        try posixPermissions(of: url).map { String(format: "%03o", $0) }
+    }
 }

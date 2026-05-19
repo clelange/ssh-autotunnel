@@ -211,6 +211,28 @@ final class AppState: ObservableObject {
         )
     }
 
+    func diagnosticsSnapshot(generatedAt: Date = Date()) -> DiagnosticsSnapshot {
+        let profileStatuses = configuration.profiles.map { profile in
+            ProfileStatusSnapshot(profile: profile, status: status(for: profile))
+        }
+        let files = diagnosticFileStatuses()
+        return DiagnosticsSnapshot(
+            generatedAt: generatedAt,
+            appIdentifier: AppPaths.appIdentifier,
+            pacURL: pacURL,
+            statusURL: statusURL,
+            proxyApplyMode: configuration.proxyApplyMode,
+            proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
+            matchedNetworkRule: networkDecision.matchedRule?.name,
+            configuredPorts: LocalServerPorts(configuration: configuration),
+            activePorts: localServers.activePorts,
+            currentNetwork: currentNetworkFingerprint,
+            profiles: profileStatuses,
+            fileStatuses: files,
+            systemProxySnapshotExists: files.first { $0.label == "System PAC snapshot" }?.exists == true
+        )
+    }
+
     private func setupTunnelCallbacks() {
         tunnelManager.onStatusChange = { [weak self] status in
             guard let self else { return }
@@ -348,6 +370,65 @@ final class AppState: ObservableObject {
                 message: "Checked \(sshAuto2FAServiceStatuses.count) ssh-auto2fa Keychain services",
                 status: snapshot(),
                 sshAuto2FAServiceStatuses: sshAuto2FAServiceStatuses
+            )
+        case .diagnostics:
+            return ControlResponse(
+                ok: true,
+                message: "Diagnostics",
+                status: snapshot(),
+                diagnostics: diagnosticsSnapshot()
+            )
+        }
+    }
+
+    private func diagnosticFileStatuses() -> [DiagnosticFileStatus] {
+        [
+            diagnosticFileStatus(
+                label: "Application Support",
+                urlProvider: AppPaths.applicationSupportDirectory,
+                expectedPermissions: FileProtection.privateDirectoryPermissions
+            ),
+            diagnosticFileStatus(
+                label: "Configuration",
+                urlProvider: AppPaths.configurationURL,
+                expectedPermissions: FileProtection.privateFilePermissions
+            ),
+            diagnosticFileStatus(
+                label: "Generated PAC copy",
+                urlProvider: AppPaths.pacCopyURL,
+                expectedPermissions: FileProtection.privateFilePermissions
+            ),
+            diagnosticFileStatus(
+                label: "System PAC snapshot",
+                urlProvider: AppPaths.proxySnapshotURL,
+                expectedPermissions: FileProtection.privateFilePermissions
+            )
+        ]
+    }
+
+    private func diagnosticFileStatus(
+        label: String,
+        urlProvider: () throws -> URL,
+        expectedPermissions: Int
+    ) -> DiagnosticFileStatus {
+        do {
+            let url = try urlProvider()
+            let exists = FileManager.default.fileExists(atPath: url.path)
+            let permissions = try FileProtection.posixPermissions(of: url)
+            return DiagnosticFileStatus(
+                label: label,
+                path: url.path,
+                exists: exists,
+                posixPermissions: permissions.map { String(format: "%03o", $0) },
+                isPrivate: permissions == expectedPermissions
+            )
+        } catch {
+            return DiagnosticFileStatus(
+                label: label,
+                path: "Unavailable: \(error.localizedDescription)",
+                exists: false,
+                posixPermissions: nil,
+                isPrivate: false
             )
         }
     }

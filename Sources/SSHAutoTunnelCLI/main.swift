@@ -35,6 +35,8 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .importSSHAuto2FA))
             case "check-ssh-auto2fa":
                 response = try await client.send(ControlRequest(action: .checkSSHAuto2FA))
+            case "diagnostics":
+                response = try await client.send(ControlRequest(action: .diagnostics))
             default:
                 printUsage()
                 return
@@ -74,6 +76,33 @@ struct SSHAutoTunnelCLI {
                 print("- \(serviceStatus.requirement.profileName) \(serviceStatus.requirement.kind.displayName): \(serviceStatus.requirement.service) - \(label(for: serviceStatus.state))")
             }
         }
+        if let diagnostics = response.diagnostics {
+            print("Diagnostics:")
+            print("- Generated: \(ISO8601DateFormatter().string(from: diagnostics.generatedAt))")
+            print("- App: \(diagnostics.appIdentifier)")
+            print("- Status URL: \(diagnostics.statusURL)")
+            print("- Proxy apply mode: \(diagnostics.proxyApplyMode.rawValue)")
+            if let activePorts = diagnostics.activePorts {
+                print("- Active ports: PAC \(activePorts.pacHTTPPort), API \(activePorts.apiHTTPPort), blocking proxy \(activePorts.blockingHTTPProxyPort)")
+            } else {
+                print("- Active ports: none")
+            }
+            let network = diagnostics.currentNetwork
+            let networkParts = [
+                network.serviceName.map { "service=\($0)" },
+                network.interfaceName.map { "interface=\($0)" },
+                network.wifiSSID.map { "ssid=\($0)" },
+                network.gateway.map { "gateway=\($0)" },
+                "vpn=\(network.hasVPNInterface)"
+            ].compactMap(\.self)
+            print("- Network: \(networkParts.joined(separator: ", "))")
+            print("- System PAC snapshot: \(diagnostics.systemProxySnapshotExists ? "present" : "absent")")
+            print("Files:")
+            for file in diagnostics.fileStatuses {
+                let permissions = file.posixPermissions ?? "n/a"
+                print("- \(file.label): \(file.exists ? "exists" : "missing"), mode \(permissions), private=\(file.isPrivate), \(file.path)")
+            }
+        }
     }
 
     private static func label(for state: KeychainCredentialState) -> String {
@@ -95,6 +124,7 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl restore-system-proxy
           ssh-autotunnelctl import-ssh-auto2fa
           ssh-autotunnelctl check-ssh-auto2fa
+          ssh-autotunnelctl diagnostics --json
           ssh-autotunnelctl connect <profile name>
           ssh-autotunnelctl disconnect <profile name>
           ssh-autotunnelctl reconnect <profile name>

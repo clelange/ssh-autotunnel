@@ -27,6 +27,25 @@ final class FileProtectionTests: XCTestCase {
         XCTAssertEqual(try posixPermissions(of: url), FileProtection.privateFilePermissions)
     }
 
+    func testReportsExistingFilePermissions() throws {
+        let url = try temporaryDirectory().appendingPathComponent("config.json")
+        try Data("{}".utf8).write(to: url)
+        try FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: 0o640)],
+            ofItemAtPath: url.path
+        )
+
+        XCTAssertEqual(try FileProtection.posixPermissions(of: url), 0o640)
+        XCTAssertEqual(try FileProtection.octalPermissions(of: url), "640")
+    }
+
+    func testReportsNilPermissionsForMissingFile() throws {
+        let url = try temporaryDirectory().appendingPathComponent("missing.json")
+
+        XCTAssertNil(try FileProtection.posixPermissions(of: url))
+        XCTAssertNil(try FileProtection.octalPermissions(of: url))
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ssh-autotunnel-tests")
