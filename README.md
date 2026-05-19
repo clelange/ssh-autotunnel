@@ -25,7 +25,8 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Settings and diagnostics windows.
 - Port validation for PAC/API/blocking/SOCKS settings, with local server restart when valid listener ports change.
 - Local API and CLI helper for tunnel control, profile management, PAC, diagnostics, system proxy, and imports.
-- Shortcuts/App Intents for tunnel, profile management, PAC, diagnostics, system proxy, and import actions.
+- Redacted configuration export/import and support bundle generation for backup, migration, and troubleshooting.
+- Shortcuts/App Intents for tunnel, profile management, PAC, diagnostics, system proxy, import, export, and support-bundle actions.
 - Automatic recovery from malformed configuration files by backing them up and recreating defaults.
 
 ## Build and Run
@@ -79,6 +80,9 @@ swift run ssh-autotunnelctl import-ssh-auto2fa
 swift run ssh-autotunnelctl import-ssh-config
 swift run ssh-autotunnelctl check-ssh-auto2fa --json
 swift run ssh-autotunnelctl diagnostics --json
+swift run ssh-autotunnelctl export-config ./ssh-autotunnel-config.json
+swift run ssh-autotunnelctl import-config ./ssh-autotunnel-config.json
+swift run ssh-autotunnelctl support-bundle ./ssh-autotunnel-support.json
 swift run ssh-autotunnelctl profile-template > profile.json
 swift run ssh-autotunnelctl create-profile ./profile.json
 swift run ssh-autotunnelctl update-profile ./profile.json
@@ -106,6 +110,10 @@ Runtime configuration is stored in:
 
 The app support directory is kept private to the current user, and `config.json` is written with user-only permissions because it contains the local API token.
 
+Use `ssh-autotunnelctl export-config` to write a portable configuration export. The export intentionally omits the local API token and never contains Keychain secret values. Importing an export preserves the current machine's local API token, validates port conflicts and profile references, stops tunnels removed by the import, and restarts local servers when listener ports change.
+
+Use `ssh-autotunnelctl support-bundle` to write a redacted JSON bundle containing the portable configuration export plus diagnostics such as active ports, network fingerprint, runtime profile status, and file permission checks.
+
 The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keychain service names can be checked and imported from setup or settings:
 
 - `cern-lxplus-otp-secret`
@@ -114,7 +122,7 @@ The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keycha
 
 Settings, Shortcuts, and the CLI can also import literal `Host` entries from `~/.ssh/config`. Wildcard and negated host patterns are skipped because they do not map to one concrete tunnel profile.
 
-Shortcuts/App Intents expose tunnel connect/disconnect/reconnect, status, diagnostics, imports, system PAC apply/restore, and profile/PAC/network rule management. Shortcuts can also list configured profiles, PAC rules, and network rules as typed results, use picker-based profile/rule parameters for selected-item actions, and return the current PAC URL, diagnostics summary, and network fingerprint as automation values.
+Shortcuts/App Intents expose tunnel connect/disconnect/reconnect, status, diagnostics, imports, exports, support bundles, system PAC apply/restore, and profile/PAC/network rule management. Shortcuts can also list configured profiles, PAC rules, and network rules as typed results, use picker-based profile/rule parameters for selected-item actions, and return the current PAC URL, diagnostics summary, network fingerprint, redacted configuration JSON, and redacted support-bundle JSON as automation values.
 
 For external automation, generate a profile JSON template with `ssh-autotunnelctl profile-template`, edit it, then pass it to `create-profile` or `update-profile`. The template command does not require the app to be running.
 

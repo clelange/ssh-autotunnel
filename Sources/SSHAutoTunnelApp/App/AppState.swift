@@ -562,6 +562,49 @@ final class AppState: ObservableObject {
                 status: snapshot(),
                 diagnostics: diagnosticsSnapshot()
             )
+        case .exportConfiguration:
+            return ControlResponse(
+                ok: true,
+                message: "Configuration export",
+                status: snapshot(),
+                configurationExport: ConfigurationExportService.makeExport(from: configuration)
+            )
+        case .importConfiguration:
+            guard let export = request.configurationExport else {
+                return ControlResponse(ok: false, message: "A configuration export payload is required.", status: snapshot())
+            }
+            do {
+                let imported = try ConfigurationExportService.importConfiguration(
+                    from: export,
+                    preservingLocalValuesFrom: configuration
+                )
+                let importedProfileIDs = Set(imported.profiles.map(\.id))
+                for profile in configuration.profiles where !importedProfileIDs.contains(profile.id) {
+                    tunnelManager.stop(profileID: profile.id)
+                }
+                statuses = statuses.filter { importedProfileIDs.contains($0.key) }
+                configuration = imported
+                saveConfiguration()
+                return ControlResponse(
+                    ok: configurationValidationMessage == nil,
+                    message: configurationValidationMessage ?? "Imported configuration",
+                    status: snapshot()
+                )
+            } catch {
+                return ControlResponse(ok: false, message: "Could not import configuration: \(error.localizedDescription)", status: snapshot())
+            }
+        case .supportBundle:
+            let diagnostics = diagnosticsSnapshot()
+            return ControlResponse(
+                ok: true,
+                message: "Support bundle",
+                status: snapshot(),
+                supportBundle: ConfigurationExportService.makeSupportBundle(
+                    configuration: configuration,
+                    diagnostics: diagnostics,
+                    generatedAt: diagnostics.generatedAt
+                )
+            )
         }
     }
 

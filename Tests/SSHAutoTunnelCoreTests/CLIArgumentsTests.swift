@@ -26,6 +26,21 @@ final class CLIArgumentsTests: XCTestCase {
         XCTAssertEqual(invocation, CLIInvocation(command: "diagnostics", outputJSON: true))
     }
 
+    func testParsesConfigurationPortabilityCommands() {
+        XCTAssertEqual(
+            CLIArguments.parse(["export-config", "~/ssh-autotunnel-export.json"]),
+            CLIInvocation(command: "export-config", profileName: "~/ssh-autotunnel-export.json")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["import-config", "-"]),
+            CLIInvocation(command: "import-config", profileName: "-")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["support-bundle", "--json"]),
+            CLIInvocation(command: "support-bundle", outputJSON: true)
+        )
+    }
+
     func testParsesSSHConfigImportCommand() {
         let invocation = CLIArguments.parse(["import-ssh-config"])
         XCTAssertEqual(invocation, CLIInvocation(command: "import-ssh-config"))

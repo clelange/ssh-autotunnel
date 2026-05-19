@@ -67,6 +67,8 @@
 - Added `script/build_and_run.sh` and `.codex/environments/environment.toml` for local app launch.
 - Added `script/package_local.sh` for release builds, local app/CLI archive creation, ad-hoc signing, and bundle verification.
 - Added GitHub Actions CI for Swift build, test, and local package verification on macOS runners.
+- Hardened loopback HTTP integration tests with retrying port allocation to reduce transient port races.
+- Added redacted configuration export/import and support-bundle generation with local API, CLI, Shortcuts, and core redaction/validation coverage.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -80,7 +82,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 144 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 151 XCTest cases.
 
 ## Known Gaps
 
@@ -88,6 +90,7 @@ All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite cu
 - The pseudo-terminal process boundary and prompt matcher are now unit-tested with fakes and mixed prompt transcripts, but still need live tuning after real CERN/PSI server tests.
 - System PAC restoration command planning, durable snapshot storage, and manager orchestration are unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents now cover the local control API actions, but Shortcuts discovery and invocation still need end-to-end validation from the Shortcuts app.
+- Configuration export/import and support-bundle generation are unit-tested and exposed through CLI/API/Shortcuts, but live Shortcuts import/export invocation still needs end-to-end validation.
 - The local API token can be rotated from settings and is stored in a user-private config file; client authentication and error handling have integration coverage.
 - `ssh-auto2fa` service detection is unit-tested with fake readers; real Keychain availability still depends on the user's local items and access prompts.
 - The package script creates a local ad-hoc-signed zip; Developer ID signing and notarization still need signing credentials and distribution decisions.

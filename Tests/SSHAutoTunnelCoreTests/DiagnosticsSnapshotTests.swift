@@ -61,4 +61,31 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         XCTAssertEqual(decoded.message, "Diagnostics")
         XCTAssertEqual(decoded.diagnostics, diagnostics)
     }
+
+    func testControlResponseCanCarryConfigurationExportAndSupportBundle() throws {
+        let configuration = AppConfiguration(apiToken: "local-token")
+        let export = ConfigurationExportService.makeExport(
+            from: configuration,
+            exportedAt: Date(timeIntervalSince1970: 1_700_000_002),
+            appIdentifier: "dev.clange.ssh-autotunnel"
+        )
+        let bundle = ConfigurationExportService.makeSupportBundle(
+            configuration: configuration,
+            diagnostics: nil,
+            generatedAt: export.exportedAt,
+            appIdentifier: "dev.clange.ssh-autotunnel"
+        )
+        let response = ControlResponse(
+            ok: true,
+            message: "Support bundle",
+            configurationExport: export,
+            supportBundle: bundle
+        )
+
+        let data = try JSONEncoder().encode(response)
+        let decoded = try JSONDecoder().decode(ControlResponse.self, from: data)
+
+        XCTAssertEqual(decoded.configurationExport, export)
+        XCTAssertEqual(decoded.supportBundle, bundle)
+    }
 }

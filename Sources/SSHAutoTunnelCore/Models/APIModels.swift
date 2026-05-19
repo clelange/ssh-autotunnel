@@ -23,6 +23,9 @@ public enum ControlAction: String, Codable, Sendable {
     case deleteNetworkRule
     case createNetworkRuleFromCurrentNetwork
     case diagnostics
+    case exportConfiguration
+    case importConfiguration
+    case supportBundle
 }
 
 public struct ControlRequest: Codable, Sendable {
@@ -36,6 +39,7 @@ public struct ControlRequest: Codable, Sendable {
     public var networkRuleName: String?
     public var networkRuleID: UUID?
     public var networkRule: NetworkPolicyRule?
+    public var configurationExport: ConfigurationExport?
 
     public init(
         action: ControlAction,
@@ -47,7 +51,8 @@ public struct ControlRequest: Codable, Sendable {
         pacRule: PACRule? = nil,
         networkRuleName: String? = nil,
         networkRuleID: UUID? = nil,
-        networkRule: NetworkPolicyRule? = nil
+        networkRule: NetworkPolicyRule? = nil,
+        configurationExport: ConfigurationExport? = nil
     ) {
         self.action = action
         self.profileName = profileName
@@ -59,6 +64,7 @@ public struct ControlRequest: Codable, Sendable {
         self.networkRuleName = networkRuleName
         self.networkRuleID = networkRuleID
         self.networkRule = networkRule
+        self.configurationExport = configurationExport
     }
 }
 
@@ -179,18 +185,24 @@ public struct ControlResponse: Codable, Sendable {
     public var status: AppStatusSnapshot?
     public var sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus]?
     public var diagnostics: DiagnosticsSnapshot?
+    public var configurationExport: ConfigurationExport?
+    public var supportBundle: SupportBundle?
 
     public init(
         ok: Bool,
         message: String,
         status: AppStatusSnapshot? = nil,
         sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus]? = nil,
-        diagnostics: DiagnosticsSnapshot? = nil
+        diagnostics: DiagnosticsSnapshot? = nil,
+        configurationExport: ConfigurationExport? = nil,
+        supportBundle: SupportBundle? = nil
     ) {
         self.ok = ok
         self.message = message
         self.status = status
         self.sshAuto2FAServiceStatuses = sshAuto2FAServiceStatuses
         self.diagnostics = diagnostics
+        self.configurationExport = configurationExport
+        self.supportBundle = supportBundle
     }
 }

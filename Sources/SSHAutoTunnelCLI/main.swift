@@ -27,6 +27,17 @@ struct SSHAutoTunnelCLI {
             let client = ControlAPIClient(configuration: configuration)
             let response: ControlResponse
 
+            if invocation.command == "export-config" {
+                let response = try await client.send(ControlRequest(action: .exportConfiguration))
+                try writePayload(response.configurationExport, from: response, to: invocation.profileName)
+                exit(response.ok ? 0 : 1)
+            }
+            if invocation.command == "support-bundle" {
+                let response = try await client.send(ControlRequest(action: .supportBundle))
+                try writePayload(response.supportBundle, from: response, to: invocation.profileName)
+                exit(response.ok ? 0 : 1)
+            }
+
             switch invocation.command {
             case "connect":
                 response = try await client.send(ControlRequest(action: .connect, profileName: invocation.profileName))
@@ -78,6 +89,12 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .createNetworkRuleFromCurrentNetwork, profileName: invocation.profileName))
             case "diagnostics":
                 response = try await client.send(ControlRequest(action: .diagnostics))
+            case "import-config":
+                let export: ConfigurationExport = try readJSON(
+                    from: invocation.profileName,
+                    missingMessage: "Configuration export JSON path is required"
+                )
+                response = try await client.send(ControlRequest(action: .importConfiguration, configurationExport: export))
             default:
                 printUsage()
                 return
@@ -172,6 +189,22 @@ struct SSHAutoTunnelCLI {
         try readJSON(from: argument, missingMessage: "Network rule JSON path is required")
     }
 
+    private static func writePayload<T: Encodable>(_ payload: T?, from response: ControlResponse, to argument: String?) throws {
+        guard response.ok, let payload else {
+            throw NSError(domain: "ssh-autotunnelctl", code: 3, userInfo: [NSLocalizedDescriptionKey: response.message])
+        }
+
+        let data = try encodedJSONData(payload)
+        guard let argument, !argument.isEmpty, argument != "-" else {
+            FileHandle.standardOutput.write(data)
+            return
+        }
+
+        let path = NSString(string: argument).expandingTildeInPath
+        try data.write(to: URL(fileURLWithPath: path), options: [.atomic])
+        print("Wrote \(path)")
+    }
+
     private static func readJSON<T: Decodable>(from argument: String?, missingMessage: String) throws -> T {
         guard let argument, !argument.isEmpty else {
             throw NSError(domain: "ssh-autotunnelctl", code: 2, userInfo: [NSLocalizedDescriptionKey: missingMessage])
@@ -200,11 +233,17 @@ struct SSHAutoTunnelCLI {
     }
 
     private static func printJSON<T: Encodable>(_ value: T) {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-        if let data = try? encoder.encode(value), let text = String(data: data, encoding: .utf8) {
+        if let data = try? encodedJSONData(value), let text = String(data: data, encoding: .utf8) {
             print(text)
         }
+    }
+
+    private static func encodedJSONData<T: Encodable>(_ value: T) throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        var data = try encoder.encode(value)
+        data.append(0x0a)
+        return data
     }
 
     private static func printUsage() {
@@ -220,6 +259,9 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl check-ssh-auto2fa
           ssh-autotunnelctl import-ssh-config
           ssh-autotunnelctl diagnostics --json
+          ssh-autotunnelctl export-config [config-export.json|-]
+          ssh-autotunnelctl import-config <config-export.json|->
+          ssh-autotunnelctl support-bundle [support-bundle.json|-]
           ssh-autotunnelctl profile-template
           ssh-autotunnelctl create-profile <profile.json|->
           ssh-autotunnelctl update-profile <profile.json|->

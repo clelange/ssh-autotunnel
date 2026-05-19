@@ -574,6 +574,60 @@ struct DiagnosticsIntent: AppIntent {
     }
 }
 
+struct ExportConfigurationIntent: AppIntent {
+    static var title: LocalizedStringResource = "Export SSH AutoTunnel Configuration"
+    static var description = IntentDescription("Return a redacted SSH AutoTunnel configuration export as JSON.")
+
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .exportConfiguration))
+        guard response.ok, let export = response.configurationExport else {
+            throw intentError(response.message)
+        }
+        let json = try automationJSONString(export)
+        return .result(value: json, dialog: IntentDialog(stringLiteral: "Exported redacted configuration"))
+    }
+}
+
+struct ImportConfigurationIntent: AppIntent {
+    static var title: LocalizedStringResource = "Import SSH AutoTunnel Configuration"
+    static var description = IntentDescription("Import a redacted SSH AutoTunnel configuration export from JSON.")
+
+    @Parameter(title: "Configuration JSON")
+    var configurationJSON: String
+
+    init() {
+        configurationJSON = ""
+    }
+
+    init(configurationJSON: String) {
+        self.configurationJSON = configurationJSON
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard let data = configurationJSON.data(using: .utf8) else {
+            throw intentError("Configuration JSON is not valid UTF-8.")
+        }
+        let export = try JSONDecoder().decode(ConfigurationExport.self, from: data)
+        let response = try await api().send(ControlRequest(action: .importConfiguration, configurationExport: export))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct SupportBundleIntent: AppIntent {
+    static var title: LocalizedStringResource = "Get SSH AutoTunnel Support Bundle"
+    static var description = IntentDescription("Return a redacted SSH AutoTunnel support bundle as JSON.")
+
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .supportBundle))
+        guard response.ok, let bundle = response.supportBundle else {
+            throw intentError(response.message)
+        }
+        let json = try automationJSONString(bundle)
+        let profileCount = bundle.configuration.profiles.count
+        return .result(value: json, dialog: IntentDialog(stringLiteral: "Created support bundle for \(profileCount) profiles"))
+    }
+}
+
 struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
@@ -750,6 +804,24 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             shortTitle: "Diagnostics",
             systemImageName: "stethoscope"
         )
+        AppShortcut(
+            intent: ExportConfigurationIntent(),
+            phrases: ["Export \(.applicationName) configuration"],
+            shortTitle: "Export Config",
+            systemImageName: "square.and.arrow.up"
+        )
+        AppShortcut(
+            intent: ImportConfigurationIntent(),
+            phrases: ["Import \(.applicationName) configuration"],
+            shortTitle: "Import Config",
+            systemImageName: "square.and.arrow.down"
+        )
+        AppShortcut(
+            intent: SupportBundleIntent(),
+            phrases: ["Get \(.applicationName) support bundle"],
+            shortTitle: "Support Bundle",
+            systemImageName: "shippingbox"
+        )
     }
 }
 
@@ -836,6 +908,16 @@ private func networkMatch(
 
 private func intentError(_ message: String) -> NSError {
     NSError(domain: "dev.clange.ssh-autotunnel.app-intents", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
+}
+
+private func automationJSONString<T: Encodable>(_ value: T) throws -> String {
+    let encoder = JSONEncoder()
+    encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+    let data = try encoder.encode(value)
+    guard let json = String(data: data, encoding: .utf8) else {
+        throw intentError("Could not encode JSON.")
+    }
+    return json
 }
 
 private func label(for state: KeychainCredentialState) -> String {
