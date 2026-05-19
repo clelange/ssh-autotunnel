@@ -65,6 +65,36 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertEqual(manager.status(for: profile.id).health, .connecting)
     }
 
+    func testUnexpectedExitIncludesLastSSHOutputInStatus() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: false)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+
+        session.emit("debug line\r\nPermission denied, please try again.\r\n")
+        session.exit(status: 255)
+        waitUntil("exit status includes SSH output") {
+            manager.status(for: profile.id).health == .failed
+        }
+
+        XCTAssertEqual(
+            manager.status(for: profile.id).message,
+            "SSH exited with status 255: Permission denied, please try again."
+        )
+    }
+
     func testRepeatedHealthFailureRestartsTunnel() throws {
         let launcher = FakeSSHProcessLauncher()
         let profile = testProfile(autoReconnect: true)

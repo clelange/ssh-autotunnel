@@ -176,7 +176,12 @@ public final class TunnelManager {
                         wasIntentionalStop: managed.stopReason != nil,
                         autoReconnect: profile.autoReconnect
                     )
-                    self.applyProcessExitDecisionLocked(decision, profile: profile, terminationStatus: session.terminationStatus)
+                    self.applyProcessExitDecisionLocked(
+                        decision,
+                        profile: profile,
+                        terminationStatus: session.terminationStatus,
+                        exitDetail: managed.lastOutputLine
+                    )
                 }
             }
         )
@@ -274,20 +279,35 @@ public final class TunnelManager {
         }
     }
 
-    private func applyProcessExitDecisionLocked(_ decision: TunnelLifecyclePolicy.ProcessExitDecision, profile: TunnelProfile, terminationStatus: Int32) {
+    private func applyProcessExitDecisionLocked(
+        _ decision: TunnelLifecyclePolicy.ProcessExitDecision,
+        profile: TunnelProfile,
+        terminationStatus: Int32,
+        exitDetail: String?
+    ) {
         switch decision {
         case .ignore:
             return
         case .markStopped:
             reconnectTokens[profile.id] = nil
             reconnectAttempts[profile.id] = nil
-            updateStatusLocked(profile.id, .stopped, "SSH exited with status \(terminationStatus)", pid: nil)
+            updateStatusLocked(profile.id, .stopped, sshExitMessage(status: terminationStatus, detail: exitDetail), pid: nil)
         case .markFailed:
             reconnectTokens[profile.id] = nil
-            updateStatusLocked(profile.id, .failed, "SSH exited with status \(terminationStatus)", pid: nil)
+            updateStatusLocked(profile.id, .failed, sshExitMessage(status: terminationStatus, detail: exitDetail), pid: nil)
         case .reconnect:
-            scheduleReconnectLocked(profile: profile, message: "SSH exited with status \(terminationStatus); reconnecting")
+            scheduleReconnectLocked(
+                profile: profile,
+                message: "\(sshExitMessage(status: terminationStatus, detail: exitDetail)); reconnecting"
+            )
         }
+    }
+
+    private func sshExitMessage(status: Int32, detail: String?) -> String {
+        guard let detail, !detail.isEmpty else {
+            return "SSH exited with status \(status)"
+        }
+        return "SSH exited with status \(status): \(detail)"
     }
 
     private func scheduleReconnectLocked(profile: TunnelProfile, message: String, delay explicitDelay: TimeInterval? = nil) {
@@ -332,7 +352,12 @@ public final class TunnelManager {
                     wasIntentionalStop: managed.stopReason != nil,
                     autoReconnect: managed.profile.autoReconnect
                 )
-                applyProcessExitDecisionLocked(decision, profile: managed.profile, terminationStatus: managed.session.terminationStatus)
+                applyProcessExitDecisionLocked(
+                    decision,
+                    profile: managed.profile,
+                    terminationStatus: managed.session.terminationStatus,
+                    exitDetail: managed.lastOutputLine
+                )
                 continue
             }
 
@@ -400,6 +425,20 @@ private final class ManagedTunnel {
     var sentHostKeyConfirmation = false
     var sentPassword = false
     var sentTOTP = false
+
+    var lastOutputLine: String? {
+        guard let text = String(data: outputBuffer, encoding: .utf8) else {
+            return nil
+        }
+        let normalized = text.replacingOccurrences(of: "\r", with: "\n")
+        for line in normalized.split(whereSeparator: \.isNewline).reversed() {
+            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !trimmed.isEmpty {
+                return String(trimmed.prefix(240))
+            }
+        }
+        return nil
+    }
 
     init(profile: TunnelProfile, credentials: TunnelCredentials, startedAt: Date) {
         self.profile = profile
