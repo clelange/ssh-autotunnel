@@ -47,6 +47,7 @@
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
 - Made system proxy management injectable and added tests for apply, restore, missing service handling, and snapshot reuse.
 - Made persisted system PAC snapshot load errors explicit during restore instead of silently ignoring them.
+- Changed persisted system PAC snapshots to a backward-compatible per-network-service archive so Wi-Fi, Ethernet, and VPN service restores do not overwrite each other.
 - Added explicit unified logging for system PAC restore failures during app termination.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
@@ -68,7 +69,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 100 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 103 XCTest cases.
 
 ## Known Gaps
 

@@ -18,8 +18,8 @@ public enum SystemProxyManagerError: LocalizedError, Equatable {
 }
 
 protocol ProxySnapshotStoring: AnyObject {
-    func save(_ snapshot: ProxySnapshot) throws
-    func load() throws -> ProxySnapshot?
+    func saveAll(_ snapshots: [ProxySnapshot]) throws
+    func loadAll() throws -> [ProxySnapshot]
     func clear() throws
 }
 
@@ -27,7 +27,8 @@ public final class SystemProxyManager {
     private let snapshotStore: ProxySnapshotStoring?
     private let currentServiceName: () -> String?
     private let commandRunner: (NetworkSetupCommand) throws -> ShellResult
-    private var snapshot: ProxySnapshot?
+    private var snapshotsByService: [String: ProxySnapshot] = [:]
+    private var didLoadSnapshots = false
 
     public convenience init(snapshotStore: ProxySnapshotStore? = nil) {
         let networkIdentity = NetworkIdentityService()
@@ -54,10 +55,11 @@ public final class SystemProxyManager {
         guard let service = currentServiceName() else {
             throw SystemProxyManagerError.missingActiveNetworkService
         }
-        if snapshot == nil || snapshot?.serviceName != service {
+        try loadSnapshotsIfNeeded()
+        if snapshotsByService[service] == nil {
             let currentSnapshot = currentAutoProxySnapshot(serviceName: service)
-            try snapshotStore?.save(currentSnapshot)
-            snapshot = currentSnapshot
+            snapshotsByService[service] = currentSnapshot
+            try snapshotStore?.saveAll(sortedSnapshots())
         }
         for command in SystemProxyPlanner.applyPACCommands(serviceName: service, pacURL: url) {
             _ = try commandRunner(command)
@@ -66,18 +68,30 @@ public final class SystemProxyManager {
     }
 
     public func restoreIfNeeded() throws {
-        let snapshotToRestore: ProxySnapshot?
-        if let snapshot {
-            snapshotToRestore = snapshot
-        } else {
-            snapshotToRestore = try snapshotStore?.load()
+        try loadSnapshotsIfNeeded()
+        let snapshots = sortedSnapshots()
+        guard !snapshots.isEmpty else { return }
+        for snapshot in snapshots {
+            for command in SystemProxyPlanner.restoreCommands(snapshot: snapshot) {
+                _ = try commandRunner(command)
+            }
         }
-        guard let snapshot = snapshotToRestore else { return }
-        for command in SystemProxyPlanner.restoreCommands(snapshot: snapshot) {
-            _ = try commandRunner(command)
-        }
-        self.snapshot = nil
+        snapshotsByService.removeAll()
         try snapshotStore?.clear()
+    }
+
+    private func loadSnapshotsIfNeeded() throws {
+        guard !didLoadSnapshots else { return }
+        let snapshots = try snapshotStore?.loadAll() ?? []
+        snapshotsByService = [:]
+        for snapshot in snapshots {
+            snapshotsByService[snapshot.serviceName] = snapshot
+        }
+        didLoadSnapshots = true
+    }
+
+    private func sortedSnapshots() -> [ProxySnapshot] {
+        snapshotsByService.values.sorted { $0.serviceName < $1.serviceName }
     }
 
     private func currentAutoProxySnapshot(serviceName: String) -> ProxySnapshot {

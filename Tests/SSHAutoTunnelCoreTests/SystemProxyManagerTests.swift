@@ -27,13 +27,13 @@ final class SystemProxyManagerTests: XCTestCase {
         let service = try manager.applyPAC(url: "http://127.0.0.1:18483/proxy.pac")
 
         XCTAssertEqual(service, "Wi-Fi")
-        XCTAssertEqual(store.savedSnapshots, [
+        XCTAssertEqual(store.savedArchives, [[
             ProxySnapshot(
                 serviceName: "Wi-Fi",
                 autoProxyEnabled: true,
                 autoProxyURL: "http://existing.example/proxy.pac"
             )
-        ])
+        ]])
         XCTAssertEqual(commands, [
             NetworkSetupCommand(arguments: ["-getautoproxyurl", "Wi-Fi"]),
             NetworkSetupCommand(arguments: ["-setautoproxyurl", "Wi-Fi", "http://127.0.0.1:18483/proxy.pac"]),
@@ -55,7 +55,7 @@ final class SystemProxyManagerTests: XCTestCase {
         XCTAssertThrowsError(try manager.applyPAC(url: "http://127.0.0.1:18483/proxy.pac")) { error in
             XCTAssertEqual(error as? SystemProxyManagerError, .missingActiveNetworkService)
         }
-        XCTAssertTrue(store.savedSnapshots.isEmpty)
+        XCTAssertTrue(store.savedArchives.isEmpty)
     }
 
     func testApplyPACReusesSnapshotForSameService() throws {
@@ -80,11 +80,70 @@ final class SystemProxyManagerTests: XCTestCase {
         _ = try manager.applyPAC(url: "http://127.0.0.1:18483/proxy.pac")
         _ = try manager.applyPAC(url: "http://127.0.0.1:18483/proxy.pac")
 
-        XCTAssertEqual(store.savedSnapshots, [
+        XCTAssertEqual(store.currentSnapshots, [
             ProxySnapshot(serviceName: "Wi-Fi", autoProxyEnabled: false, autoProxyURL: nil)
         ])
+        XCTAssertEqual(store.savedArchives.count, 1)
         XCTAssertEqual(commands.filter { $0.arguments.first == "-getautoproxyurl" }.count, 1)
         XCTAssertEqual(commands.filter { $0.arguments.first == "-setautoproxyurl" }.count, 2)
+    }
+
+    func testApplyPACPreservesSnapshotsForMultipleServicesAndRestoresAll() throws {
+        let store = FakeProxySnapshotStore()
+        var activeService = "Wi-Fi"
+        var commands: [NetworkSetupCommand] = []
+        let manager = SystemProxyManager(
+            snapshotStore: store,
+            currentServiceName: { activeService },
+            commandRunner: { command in
+                commands.append(command)
+                if command.arguments.first == "-getautoproxyurl" {
+                    let serviceName = command.arguments[1]
+                    switch serviceName {
+                    case "Wi-Fi":
+                        return ShellResult(
+                            exitCode: 0,
+                            stdout: """
+                            URL: http://wifi.example/proxy.pac
+                            Enabled: Yes
+                            """,
+                            stderr: ""
+                        )
+                    case "USB 10/100/1000 LAN":
+                        return ShellResult(
+                            exitCode: 0,
+                            stdout: """
+                            URL:
+                            Enabled: No
+                            """,
+                            stderr: ""
+                        )
+                    default:
+                        XCTFail("Unexpected service \(serviceName)")
+                    }
+                }
+                return ShellResult(exitCode: 0, stdout: "", stderr: "")
+            }
+        )
+
+        _ = try manager.applyPAC(url: "http://127.0.0.1:18483/proxy.pac")
+        activeService = "USB 10/100/1000 LAN"
+        _ = try manager.applyPAC(url: "http://127.0.0.1:18483/proxy.pac")
+
+        XCTAssertEqual(store.currentSnapshots, [
+            ProxySnapshot(serviceName: "USB 10/100/1000 LAN", autoProxyEnabled: false, autoProxyURL: nil),
+            ProxySnapshot(serviceName: "Wi-Fi", autoProxyEnabled: true, autoProxyURL: "http://wifi.example/proxy.pac")
+        ])
+
+        commands.removeAll()
+        try manager.restoreIfNeeded()
+
+        XCTAssertEqual(commands, [
+            NetworkSetupCommand(arguments: ["-setautoproxystate", "USB 10/100/1000 LAN", "off"]),
+            NetworkSetupCommand(arguments: ["-setautoproxyurl", "Wi-Fi", "http://wifi.example/proxy.pac"]),
+            NetworkSetupCommand(arguments: ["-setautoproxystate", "Wi-Fi", "on"])
+        ])
+        XCTAssertTrue(store.didClear)
     }
 
     func testRestoreLoadsPersistedSnapshotRunsRestoreCommandsAndClearsStore() throws {
@@ -93,7 +152,7 @@ final class SystemProxyManagerTests: XCTestCase {
             autoProxyEnabled: true,
             autoProxyURL: "http://existing.example/proxy.pac"
         )
-        let store = FakeProxySnapshotStore(snapshot: snapshot)
+        let store = FakeProxySnapshotStore(snapshots: [snapshot])
         var commands: [NetworkSetupCommand] = []
         let manager = SystemProxyManager(
             snapshotStore: store,
@@ -138,30 +197,35 @@ private final class FakeProxySnapshotStore: ProxySnapshotStoring {
         case loadFailed
     }
 
-    private var snapshot: ProxySnapshot?
+    private var snapshots: [ProxySnapshot]
     private var loadError: StoreError?
-    private(set) var savedSnapshots: [ProxySnapshot] = []
+    private(set) var savedArchives: [[ProxySnapshot]] = []
     private(set) var didClear = false
 
-    init(snapshot: ProxySnapshot? = nil, loadError: StoreError? = nil) {
-        self.snapshot = snapshot
+    var currentSnapshots: [ProxySnapshot] {
+        snapshots.sorted { $0.serviceName < $1.serviceName }
+    }
+
+    init(snapshots: [ProxySnapshot] = [], loadError: StoreError? = nil) {
+        self.snapshots = snapshots
         self.loadError = loadError
     }
 
-    func save(_ snapshot: ProxySnapshot) throws {
-        savedSnapshots.append(snapshot)
-        self.snapshot = snapshot
+    func saveAll(_ snapshots: [ProxySnapshot]) throws {
+        let sorted = snapshots.sorted { $0.serviceName < $1.serviceName }
+        savedArchives.append(sorted)
+        self.snapshots = sorted
     }
 
-    func load() throws -> ProxySnapshot? {
+    func loadAll() throws -> [ProxySnapshot] {
         if let loadError {
             throw loadError
         }
-        return snapshot
+        return snapshots
     }
 
     func clear() throws {
         didClear = true
-        snapshot = nil
+        snapshots = []
     }
 }

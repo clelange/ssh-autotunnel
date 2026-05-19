@@ -25,6 +25,35 @@ final class ProxySnapshotStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
 
+    func testSavesAndLoadsAllServiceSnapshots() throws {
+        let url = try temporaryDirectory().appendingPathComponent("snapshot.json")
+        let store = try ProxySnapshotStore(url: url)
+        let snapshots = [
+            ProxySnapshot(serviceName: "Wi-Fi", autoProxyEnabled: true, autoProxyURL: "http://wifi.example/proxy.pac"),
+            ProxySnapshot(serviceName: "USB 10/100/1000 LAN", autoProxyEnabled: false, autoProxyURL: nil)
+        ]
+
+        try store.saveAll(snapshots)
+
+        XCTAssertEqual(try store.loadAll(), [
+            ProxySnapshot(serviceName: "USB 10/100/1000 LAN", autoProxyEnabled: false, autoProxyURL: nil),
+            ProxySnapshot(serviceName: "Wi-Fi", autoProxyEnabled: true, autoProxyURL: "http://wifi.example/proxy.pac")
+        ])
+    }
+
+    func testLoadsLegacySingleSnapshotFile() throws {
+        let url = try temporaryDirectory().appendingPathComponent("snapshot.json")
+        let store = try ProxySnapshotStore(url: url)
+        let snapshot = ProxySnapshot(
+            serviceName: "Wi-Fi",
+            autoProxyEnabled: true,
+            autoProxyURL: "http://existing.example/proxy.pac"
+        )
+        try JSONEncoder().encode(snapshot).write(to: url, options: [.atomic])
+
+        XCTAssertEqual(try store.loadAll(), [snapshot])
+    }
+
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("ssh-autotunnel-tests")
