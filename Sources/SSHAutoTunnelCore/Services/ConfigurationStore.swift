@@ -37,17 +37,22 @@ public final class ConfigurationStore {
             try FileProtection.protectDirectory(url.deletingLastPathComponent())
             try FileProtection.protectFile(url)
             let data = try Data(contentsOf: url)
-            return try decoder.decode(AppConfiguration.self, from: data)
+            let decoded = try decoder.decode(AppConfiguration.self, from: data)
+            let (migrated, didUpdate) = SSHAuto2FAImporter.backfillPresetSSHUsers(in: decoded)
+            if didUpdate {
+                try save(migrated)
+            }
+            return migrated
         }
 
-        let config = AppConfiguration.defaultConfiguration()
+        let (config, _) = SSHAuto2FAImporter.backfillPresetSSHUsers(in: AppConfiguration.defaultConfiguration())
         try save(config)
         return config
     }
 
     public func loadRecovering() throws -> ConfigurationLoadResult {
         guard FileManager.default.fileExists(atPath: url.path) else {
-            let config = AppConfiguration.defaultConfiguration()
+            let (config, _) = SSHAuto2FAImporter.backfillPresetSSHUsers(in: AppConfiguration.defaultConfiguration())
             try save(config)
             return ConfigurationLoadResult(configuration: config)
         }

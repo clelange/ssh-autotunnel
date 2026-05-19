@@ -45,6 +45,36 @@ final class ConfigurationStoreTests: XCTestCase {
         XCTAssertTrue(backups.isEmpty)
     }
 
+    func testLoadMigratesMissingPresetSSHUsers() throws {
+        let directory = try temporaryDirectory()
+        let url = directory.appendingPathComponent("config.json")
+        let legacy = AppConfiguration(profiles: [
+            TunnelProfile(
+                name: "CERN lxplus",
+                host: "lxplus.cern.ch",
+                localSocksPort: 1081,
+                keychain: KeychainReference(account: "clange", totpService: "cern-lxplus-otp-secret")
+            ),
+            TunnelProfile(
+                name: "PSI Tier-3",
+                host: "t3ui07.psi.ch",
+                localSocksPort: 1082,
+                jumpHost: "t3hop01.psi.ch",
+                keychain: KeychainReference(account: "lange_c", passwordService: "psit3-password", totpService: "psit3-otp-secret")
+            )
+        ])
+        let store = try ConfigurationStore(url: url)
+        try store.save(legacy)
+
+        let migrated = try store.load()
+        let persisted = try JSONDecoder().decode(AppConfiguration.self, from: Data(contentsOf: url))
+
+        XCTAssertEqual(migrated.profiles[0].user, "clange")
+        XCTAssertEqual(migrated.profiles[1].user, "lange_c")
+        XCTAssertEqual(migrated.profiles[1].jumpHost, "lange_c@t3hop01.psi.ch")
+        XCTAssertEqual(persisted, migrated)
+    }
+
     func testBackupCurrentConfigurationCopiesPrivateConfig() throws {
         let directory = try temporaryDirectory()
         let url = directory.appendingPathComponent("config.json")

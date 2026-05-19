@@ -7,6 +7,25 @@ public struct SSHAuto2FAImportResult: Equatable, Sendable {
 }
 
 public enum SSHAuto2FAImporter {
+    public static func backfillPresetSSHUsers(in configuration: AppConfiguration) -> (AppConfiguration, Bool) {
+        var configuration = configuration
+        var didUpdate = false
+
+        for index in configuration.profiles.indices {
+            switch configuration.profiles[index].name {
+            case "CERN lxplus":
+                didUpdate = backfillUser(in: &configuration.profiles[index]) || didUpdate
+            case "PSI Tier-3":
+                didUpdate = backfillUser(in: &configuration.profiles[index]) || didUpdate
+                didUpdate = backfillPSIJumpHost(in: &configuration.profiles[index]) || didUpdate
+            default:
+                break
+            }
+        }
+
+        return (configuration, didUpdate)
+    }
+
     public static func apply(
         to configuration: AppConfiguration,
         account: String = NSUserName(),
@@ -141,5 +160,25 @@ public enum SSHAuto2FAImporter {
         guard !discovered.isEmpty else { return fallback }
         let unique = Set(discovered)
         return unique.count == 1 ? discovered[0] : fallback
+    }
+
+    private static func backfillUser(in profile: inout TunnelProfile) -> Bool {
+        guard profile.user?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty != false else {
+            return false
+        }
+        profile.user = profile.keychain.account
+        return true
+    }
+
+    private static func backfillPSIJumpHost(in profile: inout TunnelProfile) -> Bool {
+        let account = profile.user?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? profile.user!
+            : profile.keychain.account
+        let current = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard current == nil || current == "" || current == "t3hop01.psi.ch" else {
+            return false
+        }
+        profile.jumpHost = "\(account)@t3hop01.psi.ch"
+        return current != profile.jumpHost
     }
 }

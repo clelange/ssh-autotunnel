@@ -67,4 +67,38 @@ final class SSHAuto2FAImporterTests: XCTestCase {
         XCTAssertEqual(tier3.user, "lange_c")
         XCTAssertEqual(tier3.jumpHost, "lange_c@t3hop01.psi.ch")
     }
+
+    func testBackfillsMissingPresetSSHUsersWithoutOverwritingCustomUsers() throws {
+        let cern = TunnelProfile(
+            name: "CERN lxplus",
+            host: "lxplus.cern.ch",
+            localSocksPort: 1081,
+            keychain: KeychainReference(account: "clange", totpService: "cern-lxplus-otp-secret")
+        )
+        let psi = TunnelProfile(
+            name: "PSI Tier-3",
+            host: "t3ui07.psi.ch",
+            user: "",
+            localSocksPort: 1082,
+            jumpHost: "t3hop01.psi.ch",
+            keychain: KeychainReference(account: "lange_c", passwordService: "psit3-password", totpService: "psit3-otp-secret")
+        )
+        let custom = TunnelProfile(
+            name: "Custom",
+            host: "custom.example.org",
+            user: "alice",
+            localSocksPort: 1083,
+            keychain: KeychainReference(account: "ignored")
+        )
+
+        let (configuration, didUpdate) = SSHAuto2FAImporter.backfillPresetSSHUsers(
+            in: AppConfiguration(profiles: [cern, psi, custom])
+        )
+
+        XCTAssertTrue(didUpdate)
+        XCTAssertEqual(configuration.profiles[0].user, "clange")
+        XCTAssertEqual(configuration.profiles[1].user, "lange_c")
+        XCTAssertEqual(configuration.profiles[1].jumpHost, "lange_c@t3hop01.psi.ch")
+        XCTAssertEqual(configuration.profiles[2].user, "alice")
+    }
 }
