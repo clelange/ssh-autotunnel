@@ -31,3 +31,11 @@ jobs:
 
       - name: Verify Local Package
         run: ./script/package_local.sh --verify
+
+      - name: Upload Local Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: SSH-AutoTunnel-local
+          path: dist/package/SSH-AutoTunnel-local.zip
+          if-no-files-found: error
+          retention-days: 14

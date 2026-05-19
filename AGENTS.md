@@ -76,6 +76,7 @@
 - Applied user-only file permissions to CLI-written configuration exports and support bundles.
 - Added Settings file-panel actions for configuration export, validation, import, and support-bundle generation.
 - Added tested pruning for old pre-import configuration backups while preserving malformed-config recovery backups.
+- Added CI artifact upload for the verified local app/CLI package zip.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status

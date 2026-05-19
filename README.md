@@ -53,7 +53,7 @@ Create an unsigned/ad-hoc-signed local zip with the app bundle and CLI helper:
 ./script/package_local.sh
 ```
 
-The archive is written to `dist/package/SSH-AutoTunnel-local.zip`.
+The archive is written to `dist/package/SSH-AutoTunnel-local.zip`. CI verifies this package and uploads the zip as a short-lived GitHub Actions artifact.
 
 ## Local Endpoints
 
