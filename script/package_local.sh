@@ -15,6 +15,7 @@ APP_MACOS="$APP_CONTENTS/MacOS"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 ZIP_PATH="$DIST_DIR/SSH-AutoTunnel-local.zip"
+CHECKSUM_PATH="$ZIP_PATH.sha256"
 
 MODE="${1:-package}"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
@@ -26,7 +27,7 @@ swift build -c release --product "$CLI_NAME"
 
 BIN_DIR="$(swift build -c release --show-bin-path)"
 
-rm -rf "$ARCHIVE_ROOT" "$ZIP_PATH"
+rm -rf "$ARCHIVE_ROOT" "$ZIP_PATH" "$CHECKSUM_PATH"
 mkdir -p "$APP_MACOS"
 
 cp "$BIN_DIR/$APP_NAME" "$APP_BINARY"
@@ -72,6 +73,7 @@ fi
 (
   cd "$DIST_DIR"
   /usr/bin/ditto -c -k --sequesterRsrc --keepParent "SSH AutoTunnel" "$ZIP_PATH"
+  /usr/bin/shasum -a 256 "$(basename "$ZIP_PATH")" >"$(basename "$CHECKSUM_PATH")"
 )
 
 case "$MODE" in
@@ -83,6 +85,8 @@ case "$MODE" in
     test -x "$APP_BINARY"
     test -x "$ARCHIVE_ROOT/$CLI_NAME"
     test -f "$ZIP_PATH"
+    test -f "$CHECKSUM_PATH"
+    (cd "$DIST_DIR" && /usr/bin/shasum -a 256 -c "$(basename "$CHECKSUM_PATH")")
     /usr/bin/plutil -extract CFBundleIdentifier raw "$INFO_PLIST" | grep -qx "$BUNDLE_ID"
     echo "$ZIP_PATH"
     ;;
