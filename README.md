@@ -79,6 +79,7 @@ swift run ssh-autotunnelctl import-ssh-auto2fa
 swift run ssh-autotunnelctl import-ssh-config
 swift run ssh-autotunnelctl check-ssh-auto2fa --json
 swift run ssh-autotunnelctl diagnostics --json
+swift run ssh-autotunnelctl profile-template > profile.json
 swift run ssh-autotunnelctl create-profile ./profile.json
 swift run ssh-autotunnelctl update-profile ./profile.json
 swift run ssh-autotunnelctl delete-profile "Old tunnel"
@@ -103,6 +104,8 @@ The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keycha
 - `psit3-otp-secret`
 
 Settings, Shortcuts, and the CLI can also import literal `Host` entries from `~/.ssh/config`. Wildcard and negated host patterns are skipped because they do not map to one concrete tunnel profile.
+
+For external automation, generate a profile JSON template with `ssh-autotunnelctl profile-template`, edit it, then pass it to `create-profile` or `update-profile`. The template command does not require the app to be running.
 
 ## Development Notes
 

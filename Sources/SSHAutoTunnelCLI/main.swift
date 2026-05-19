@@ -10,6 +10,11 @@ struct SSHAutoTunnelCLI {
                 return
             }
 
+            if invocation.command == "profile-template" {
+                printProfileTemplate()
+                return
+            }
+
             let configuration = try ConfigurationStore().load()
             let client = ControlAPIClient(configuration: configuration)
             let response: ControlResponse
@@ -144,6 +149,14 @@ struct SSHAutoTunnelCLI {
         return try JSONDecoder().decode(TunnelProfile.self, from: data)
     }
 
+    private static func printProfileTemplate() {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        if let data = try? encoder.encode(ProfileTemplate.example()), let text = String(data: data, encoding: .utf8) {
+            print(text)
+        }
+    }
+
     private static func printUsage() {
         print("""
         Usage:
@@ -157,6 +170,7 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl check-ssh-auto2fa
           ssh-autotunnelctl import-ssh-config
           ssh-autotunnelctl diagnostics --json
+          ssh-autotunnelctl profile-template
           ssh-autotunnelctl create-profile <profile.json|->
           ssh-autotunnelctl update-profile <profile.json|->
           ssh-autotunnelctl delete-profile <profile name>
