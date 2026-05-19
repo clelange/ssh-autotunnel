@@ -195,8 +195,19 @@ public final class TunnelManager {
         switch action {
         case .confirmHostKey:
             guard !tunnel.sentHostKeyConfirmation else { return }
-            tunnel.sentHostKeyConfirmation = true
-            write("yes\n", to: tunnel)
+            switch tunnel.profile.hostKeyPolicy {
+            case .promptAndAccept:
+                tunnel.sentHostKeyConfirmation = true
+                write("yes\n", to: tunnel)
+            case .acceptNew, .strict:
+                updateStatusLocked(
+                    tunnel.profile.id,
+                    .failed,
+                    "SSH host key prompt blocked by \(tunnel.profile.hostKeyPolicy.displayName) policy",
+                    pid: tunnel.session.processIdentifier
+                )
+                stopLocked(profileID: tunnel.profile.id, updateStatus: false, reason: .user)
+            }
         case .sendPassword:
             guard !tunnel.sentPassword else { return }
             if let password = tunnel.credentials.password {

@@ -18,9 +18,12 @@ public enum SSHCommandBuilder {
             "-p", "\(profile.sshPort)",
             "-o", "ExitOnForwardFailure=yes",
             "-o", "ServerAliveInterval=20",
-            "-o", "ServerAliveCountMax=2",
-            "-o", "StrictHostKeyChecking=accept-new"
+            "-o", "ServerAliveCountMax=2"
         ]
+
+        if let strictHostKeyCheckingValue = profile.hostKeyPolicy.strictHostKeyCheckingValue {
+            arguments += ["-o", "StrictHostKeyChecking=\(strictHostKeyCheckingValue)"]
+        }
 
         if usesKeyboardInteractiveAuth(profile.authMode) {
             arguments += ["-o", "PreferredAuthentications=keyboard-interactive,password"]

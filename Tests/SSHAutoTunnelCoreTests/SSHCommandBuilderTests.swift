@@ -48,6 +48,32 @@ final class SSHCommandBuilderTests: XCTestCase {
         XCTAssertTrue(command.arguments.containsSubsequence(["-o", "PreferredAuthentications=keyboard-interactive,password"]))
     }
 
+    func testHostKeyPolicyControlsStrictHostKeyChecking() {
+        let acceptNewProfile = TunnelProfile(
+            name: "Accept",
+            host: "ssh.example.org",
+            localSocksPort: 1095,
+            hostKeyPolicy: .acceptNew
+        )
+        let strictProfile = TunnelProfile(
+            name: "Strict",
+            host: "ssh.example.org",
+            localSocksPort: 1096,
+            hostKeyPolicy: .strict
+        )
+        let promptProfile = TunnelProfile(
+            name: "Prompt",
+            host: "ssh.example.org",
+            localSocksPort: 1097,
+            hostKeyPolicy: .promptAndAccept
+        )
+
+        XCTAssertTrue(SSHCommandBuilder.tunnelCommand(for: acceptNewProfile).arguments.containsSubsequence(["-o", "StrictHostKeyChecking=accept-new"]))
+        XCTAssertTrue(SSHCommandBuilder.tunnelCommand(for: strictProfile).arguments.containsSubsequence(["-o", "StrictHostKeyChecking=yes"]))
+        XCTAssertFalse(SSHCommandBuilder.tunnelCommand(for: promptProfile).arguments.contains("StrictHostKeyChecking=accept-new"))
+        XCTAssertFalse(SSHCommandBuilder.tunnelCommand(for: promptProfile).arguments.contains("StrictHostKeyChecking=yes"))
+    }
+
     func testKerberosTOTPDoesNotForcePasswordAuth() {
         let profile = TunnelProfile(
             name: "Kerberos",

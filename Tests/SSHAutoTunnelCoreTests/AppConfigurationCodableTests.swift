@@ -29,4 +29,33 @@ final class AppConfigurationCodableTests: XCTestCase {
 
         XCTAssertEqual(object["blockingHTTPProxyPort"] as? Int, 19000)
     }
+
+    func testDecodesLegacyProfileWithoutHostKeyPolicy() throws {
+        let json = Data("""
+        {
+          "name": "Legacy",
+          "host": "ssh.example.org",
+          "localSocksPort": 1080
+        }
+        """.utf8)
+
+        let profile = try JSONDecoder().decode(TunnelProfile.self, from: json)
+
+        XCTAssertEqual(profile.name, "Legacy")
+        XCTAssertEqual(profile.sshPort, 22)
+        XCTAssertEqual(profile.hostKeyPolicy, .acceptNew)
+    }
+
+    func testEncodesProfileHostKeyPolicy() throws {
+        let profile = TunnelProfile(
+            name: "Strict",
+            host: "ssh.example.org",
+            localSocksPort: 1080,
+            hostKeyPolicy: .strict
+        )
+        let data = try JSONEncoder().encode(profile)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertEqual(object["hostKeyPolicy"] as? String, "strict")
+    }
 }

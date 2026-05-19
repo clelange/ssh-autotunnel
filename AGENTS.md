@@ -17,6 +17,7 @@
 - Created the SwiftPM macOS menu-bar app scaffold.
 - Implemented native TOTP generation, Keychain access, SSH tunnel process management, health-aware PAC generation, network policy matching, local PAC/status/API servers, Shortcuts intents, and a CLI helper.
 - Moved tunnel TOTP generation to SSH prompt time so slow logins do not consume a code generated before SSH starts.
+- Added per-profile SSH host-key policies, command construction coverage, legacy decoding defaults, and strict-policy prompt rejection.
 - Seeded default CERN lxplus and PSI Tier-3 profiles and PAC rules.
 - Added unit tests for TOTP vectors, PAC generation, domain matching, and network policy matching.
 - Extracted SSH prompt detection into a tested pure core service and made tunnel prompt replies one-shot per prompt type.
@@ -70,7 +71,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 104 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 108 XCTest cases.
 
 ## Known Gaps
 

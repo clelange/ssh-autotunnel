@@ -20,6 +20,33 @@ public enum TunnelAuthMode: String, Codable, CaseIterable, Identifiable, Sendabl
     }
 }
 
+public enum SSHHostKeyPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
+    case acceptNew
+    case strict
+    case promptAndAccept
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .acceptNew: "Accept new, reject changed"
+        case .strict: "Strict known hosts only"
+        case .promptAndAccept: "Prompt and auto-accept"
+        }
+    }
+
+    public var strictHostKeyCheckingValue: String? {
+        switch self {
+        case .acceptNew:
+            "accept-new"
+        case .strict:
+            "yes"
+        case .promptAndAccept:
+            nil
+        }
+    }
+}
+
 public enum TunnelHealth: String, Codable, CaseIterable, Sendable {
     case stopped
     case connecting
@@ -67,10 +94,27 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
     public var localSocksPort: Int
     public var jumpHost: String?
     public var authMode: TunnelAuthMode
+    public var hostKeyPolicy: SSHHostKeyPolicy
     public var keychain: KeychainReference
     public var autoReconnect: Bool
     public var healthProbe: HealthProbe?
     public var extraSSHOptions: [String]
+
+    private enum CodingKeys: String, CodingKey {
+        case id
+        case name
+        case host
+        case user
+        case sshPort
+        case localSocksPort
+        case jumpHost
+        case authMode
+        case hostKeyPolicy
+        case keychain
+        case autoReconnect
+        case healthProbe
+        case extraSSHOptions
+    }
 
     public init(
         id: UUID = UUID(),
@@ -81,6 +125,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         localSocksPort: Int,
         jumpHost: String? = nil,
         authMode: TunnelAuthMode = .none,
+        hostKeyPolicy: SSHHostKeyPolicy = .acceptNew,
         keychain: KeychainReference = KeychainReference(),
         autoReconnect: Bool = true,
         healthProbe: HealthProbe? = nil,
@@ -94,10 +139,45 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         self.localSocksPort = localSocksPort
         self.jumpHost = jumpHost
         self.authMode = authMode
+        self.hostKeyPolicy = hostKeyPolicy
         self.keychain = keychain
         self.autoReconnect = autoReconnect
         self.healthProbe = healthProbe
         self.extraSSHOptions = extraSSHOptions
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decodeIfPresent(UUID.self, forKey: .id) ?? UUID()
+        name = try container.decode(String.self, forKey: .name)
+        host = try container.decode(String.self, forKey: .host)
+        user = try container.decodeIfPresent(String.self, forKey: .user)
+        sshPort = try container.decodeIfPresent(Int.self, forKey: .sshPort) ?? 22
+        localSocksPort = try container.decode(Int.self, forKey: .localSocksPort)
+        jumpHost = try container.decodeIfPresent(String.self, forKey: .jumpHost)
+        authMode = try container.decodeIfPresent(TunnelAuthMode.self, forKey: .authMode) ?? .none
+        hostKeyPolicy = try container.decodeIfPresent(SSHHostKeyPolicy.self, forKey: .hostKeyPolicy) ?? .acceptNew
+        keychain = try container.decodeIfPresent(KeychainReference.self, forKey: .keychain) ?? KeychainReference()
+        autoReconnect = try container.decodeIfPresent(Bool.self, forKey: .autoReconnect) ?? true
+        healthProbe = try container.decodeIfPresent(HealthProbe.self, forKey: .healthProbe)
+        extraSSHOptions = try container.decodeIfPresent([String].self, forKey: .extraSSHOptions) ?? []
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(id, forKey: .id)
+        try container.encode(name, forKey: .name)
+        try container.encode(host, forKey: .host)
+        try container.encodeIfPresent(user, forKey: .user)
+        try container.encode(sshPort, forKey: .sshPort)
+        try container.encode(localSocksPort, forKey: .localSocksPort)
+        try container.encodeIfPresent(jumpHost, forKey: .jumpHost)
+        try container.encode(authMode, forKey: .authMode)
+        try container.encode(hostKeyPolicy, forKey: .hostKeyPolicy)
+        try container.encode(keychain, forKey: .keychain)
+        try container.encode(autoReconnect, forKey: .autoReconnect)
+        try container.encodeIfPresent(healthProbe, forKey: .healthProbe)
+        try container.encode(extraSSHOptions, forKey: .extraSSHOptions)
     }
 
     public var sshDestination: String {

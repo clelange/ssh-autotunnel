@@ -149,6 +149,39 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertEqual(keychain.reads.count, 1)
     }
 
+    func testStrictHostKeyPolicyRejectsInteractiveHostKeyPrompt() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = TunnelProfile(
+            name: "Strict",
+            host: "ssh.example.org",
+            localSocksPort: 1099,
+            hostKeyPolicy: .strict
+        )
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+
+        session.emit("Are you sure you want to continue connecting (yes/no/[fingerprint])?")
+        waitUntil("strict host key rejection") {
+            manager.status(for: profile.id).health == .failed
+        }
+
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("host key prompt blocked"))
+        XCTAssertTrue(session.writes.isEmpty)
+        XCTAssertEqual(session.terminateCallCount, 1)
+    }
+
     private func testProfile(autoReconnect: Bool) -> TunnelProfile {
         TunnelProfile(
             name: "Test",

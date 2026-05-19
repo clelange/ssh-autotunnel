@@ -75,6 +75,11 @@ struct ProfileEditorView: View {
                     TextField("SSH port", value: binding(index, \.sshPort), format: .number)
                     TextField("Local SOCKS port", value: binding(index, \.localSocksPort), format: .number)
                     TextField("Jump host", text: optionalBinding(index, \.jumpHost))
+                    Picker("Host key policy", selection: binding(index, \.hostKeyPolicy)) {
+                        ForEach(SSHHostKeyPolicy.allCases) { policy in
+                            Text(policy.displayName).tag(policy)
+                        }
+                    }
                     Picker("Authentication", selection: binding(index, \.authMode)) {
                         ForEach(TunnelAuthMode.allCases) { mode in
                             Text(mode.displayName).tag(mode)
