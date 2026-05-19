@@ -36,7 +36,7 @@
 - Added tested CLI argument parsing and `--json` output for automation.
 - Added local API and CLI actions for system PAC apply/restore, PAC reload, `ssh-auto2fa` preset import, and `ssh-auto2fa` Keychain checks.
 - Added tested profile configuration create/update/delete logic with local API and CLI actions for external automation.
-- Expanded Shortcuts/App Intents coverage to include reconnect, PAC reload, system PAC apply/restore, and `ssh-auto2fa` import/check actions.
+- Expanded Shortcuts/App Intents coverage to include reconnect, profile create/update/delete, PAC reload, system PAC apply/restore, and import/check actions.
 - Added a diagnostics control action with CLI and Shortcuts coverage for structured state, network, port, and file-permission snapshots.
 - Bound local PAC, status, API, and blocking proxy servers to the loopback interface by default.
 - Made local HTTP server startup wait for listener readiness to avoid transient loopback connection races.

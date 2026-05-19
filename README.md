@@ -25,7 +25,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Settings and diagnostics windows.
 - Port validation for PAC/API/blocking/SOCKS settings, with local server restart when valid listener ports change.
 - Local API and CLI helper for tunnel control, profile management, PAC, diagnostics, system proxy, and imports.
-- Shortcuts/App Intents for tunnel, PAC, diagnostics, system proxy, and import actions.
+- Shortcuts/App Intents for tunnel, profile management, PAC, diagnostics, system proxy, and import actions.
 - Automatic recovery from malformed configuration files by backing them up and recreating defaults.
 
 ## Build and Run

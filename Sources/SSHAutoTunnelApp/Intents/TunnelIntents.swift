@@ -152,6 +152,135 @@ struct ImportSSHConfigIntent: AppIntent {
     }
 }
 
+struct CreateProfileIntent: AppIntent {
+    static var title: LocalizedStringResource = "Create SSH AutoTunnel Profile"
+    static var description = IntentDescription("Create an SSH AutoTunnel profile from Shortcuts or Automations.")
+
+    @Parameter(title: "Name")
+    var name: String
+
+    @Parameter(title: "Host")
+    var host: String
+
+    @Parameter(title: "Local SOCKS Port")
+    var localSocksPort: Int
+
+    @Parameter(title: "SSH Port")
+    var sshPort: Int
+
+    @Parameter(title: "User")
+    var user: String
+
+    @Parameter(title: "Jump Host")
+    var jumpHost: String
+
+    init() {
+        name = "New tunnel"
+        host = "example.org"
+        localSocksPort = 1083
+        sshPort = 22
+        user = ""
+        jumpHost = ""
+    }
+
+    init(name: String, host: String, localSocksPort: Int, sshPort: Int = 22, user: String = "", jumpHost: String = "") {
+        self.name = name
+        self.host = host
+        self.localSocksPort = localSocksPort
+        self.sshPort = sshPort
+        self.user = user
+        self.jumpHost = jumpHost
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let profile = TunnelProfile(
+            name: name,
+            host: host,
+            user: optionalString(user),
+            sshPort: sshPort,
+            localSocksPort: localSocksPort,
+            jumpHost: optionalString(jumpHost)
+        )
+        let response = try await api().send(ControlRequest(action: .createProfile, profile: profile))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct UpdateProfileIntent: AppIntent {
+    static var title: LocalizedStringResource = "Update SSH AutoTunnel Profile"
+    static var description = IntentDescription("Update basic SSH AutoTunnel profile fields from Shortcuts or Automations.")
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    @Parameter(title: "Host")
+    var host: String
+
+    @Parameter(title: "Local SOCKS Port")
+    var localSocksPort: Int
+
+    @Parameter(title: "SSH Port")
+    var sshPort: Int
+
+    @Parameter(title: "User")
+    var user: String
+
+    @Parameter(title: "Jump Host")
+    var jumpHost: String
+
+    init() {
+        profileName = "CERN lxplus"
+        host = "lxplus.cern.ch"
+        localSocksPort = 1081
+        sshPort = 22
+        user = ""
+        jumpHost = ""
+    }
+
+    init(profileName: String, host: String, localSocksPort: Int, sshPort: Int = 22, user: String = "", jumpHost: String = "") {
+        self.profileName = profileName
+        self.host = host
+        self.localSocksPort = localSocksPort
+        self.sshPort = sshPort
+        self.user = user
+        self.jumpHost = jumpHost
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let profile = TunnelProfile(
+            name: profileName,
+            host: host,
+            user: optionalString(user),
+            sshPort: sshPort,
+            localSocksPort: localSocksPort,
+            jumpHost: optionalString(jumpHost)
+        )
+        let response = try await api().send(ControlRequest(action: .updateProfile, profileName: profileName, profile: profile))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct DeleteProfileIntent: AppIntent {
+    static var title: LocalizedStringResource = "Delete SSH AutoTunnel Profile"
+    static var description = IntentDescription("Delete an SSH AutoTunnel profile by name.")
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    init() {
+        profileName = "Old tunnel"
+    }
+
+    init(profileName: String) {
+        self.profileName = profileName
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .deleteProfile, profileName: profileName))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
 struct DiagnosticsIntent: AppIntent {
     static var title: LocalizedStringResource = "Get SSH AutoTunnel Diagnostics"
     static var description = IntentDescription("Get a structured SSH AutoTunnel diagnostics summary.")
@@ -236,6 +365,24 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             systemImageName: "square.and.arrow.down.on.square"
         )
         AppShortcut(
+            intent: CreateProfileIntent(),
+            phrases: ["Create \(.applicationName) profile"],
+            shortTitle: "Create Profile",
+            systemImageName: "plus.circle"
+        )
+        AppShortcut(
+            intent: UpdateProfileIntent(),
+            phrases: ["Update \(.applicationName) profile"],
+            shortTitle: "Update Profile",
+            systemImageName: "pencil.circle"
+        )
+        AppShortcut(
+            intent: DeleteProfileIntent(),
+            phrases: ["Delete \(.applicationName) profile"],
+            shortTitle: "Delete Profile",
+            systemImageName: "trash"
+        )
+        AppShortcut(
             intent: DiagnosticsIntent(),
             phrases: ["Get \(.applicationName) diagnostics"],
             shortTitle: "Diagnostics",
@@ -247,6 +394,11 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
 private func api() throws -> ControlAPIClient {
     let configuration = try ConfigurationStore().load()
     return ControlAPIClient(configuration: configuration)
+}
+
+private func optionalString(_ value: String) -> String? {
+    let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    return trimmed.isEmpty ? nil : trimmed
 }
 
 private func label(for state: KeychainCredentialState) -> String {
