@@ -1,4 +1,5 @@
 import AppKit
+import OSLog
 import SSHAutoTunnelCore
 import SwiftUI
 
@@ -39,11 +40,18 @@ struct SSHAutoTunnelApp: App {
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    private let logger = Logger(subsystem: AppPaths.appIdentifier, category: "lifecycle")
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        try? SystemProxyManager().restoreIfNeeded()
+        do {
+            try SystemProxyManager().restoreIfNeeded()
+            logger.info("Checked system PAC restore state during app termination")
+        } catch {
+            logger.error("System PAC restore failed during app termination: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

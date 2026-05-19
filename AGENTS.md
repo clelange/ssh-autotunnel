@@ -46,6 +46,7 @@
 - Extracted macOS `networksetup` parsing and system PAC apply/restore command planning into tested core services.
 - Made system proxy management injectable and added tests for apply, restore, missing service handling, and snapshot reuse.
 - Made persisted system PAC snapshot load errors explicit during restore instead of silently ignoring them.
+- Added explicit unified logging for system PAC restore failures during app termination.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
 - Added tested configuration recovery for malformed config files with backup creation and default regeneration.
