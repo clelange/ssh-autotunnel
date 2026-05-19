@@ -106,7 +106,8 @@ public enum ConfigurationExportService {
         configuration: AppConfiguration,
         diagnostics: DiagnosticsSnapshot?,
         generatedAt: Date = Date(),
-        appIdentifier: String = AppPaths.appIdentifier
+        appIdentifier: String = AppPaths.appIdentifier,
+        homeDirectoryPath: String? = FileManager.default.homeDirectoryForCurrentUser.path
     ) -> SupportBundle {
         SupportBundle(
             bundleVersion: bundleVersion,
@@ -117,7 +118,7 @@ public enum ConfigurationExportService {
                 exportedAt: generatedAt,
                 appIdentifier: appIdentifier
             ),
-            diagnostics: diagnostics
+            diagnostics: redactedDiagnostics(diagnostics, homeDirectoryPath: homeDirectoryPath)
         )
     }
 
@@ -152,5 +153,25 @@ public enum ConfigurationExportService {
                 throw error(id)
             }
         }
+    }
+
+    private static func redactedDiagnostics(
+        _ diagnostics: DiagnosticsSnapshot?,
+        homeDirectoryPath: String?
+    ) -> DiagnosticsSnapshot? {
+        guard var diagnostics else { return nil }
+        diagnostics.fileStatuses = diagnostics.fileStatuses.map { status in
+            var copy = status
+            copy.path = redactedPath(status.path, homeDirectoryPath: homeDirectoryPath)
+            return copy
+        }
+        return diagnostics
+    }
+
+    private static func redactedPath(_ path: String, homeDirectoryPath: String?) -> String {
+        guard let homeDirectoryPath, !homeDirectoryPath.isEmpty, homeDirectoryPath != "/" else {
+            return path
+        }
+        return path.replacingOccurrences(of: homeDirectoryPath, with: "~")
     }
 }

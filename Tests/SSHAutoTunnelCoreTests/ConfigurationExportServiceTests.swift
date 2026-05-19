@@ -133,6 +133,46 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertFalse(json.contains("secret-local-token"))
     }
 
+    func testSupportBundleRedactsHomeDirectoryPathsInDiagnostics() throws {
+        let configuration = sampleConfiguration()
+        let diagnostics = DiagnosticsSnapshot(
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_003),
+            appIdentifier: "test.app",
+            pacURL: "http://127.0.0.1:18483/proxy.pac",
+            statusURL: "http://127.0.0.1:18483/status",
+            proxyApplyMode: configuration.proxyApplyMode,
+            proxyDisabledByNetworkPolicy: false,
+            matchedNetworkRule: nil,
+            configuredPorts: LocalServerPorts(configuration: configuration),
+            activePorts: nil,
+            currentNetwork: NetworkFingerprint(),
+            profiles: [],
+            fileStatuses: [
+                DiagnosticFileStatus(
+                    label: "Configuration",
+                    path: "/Users/alice/Library/Application Support/SSHAutoTunnel/config.json",
+                    exists: true,
+                    posixPermissions: "600",
+                    isPrivate: true
+                )
+            ],
+            systemProxySnapshotExists: false
+        )
+
+        let bundle = ConfigurationExportService.makeSupportBundle(
+            configuration: configuration,
+            diagnostics: diagnostics,
+            generatedAt: diagnostics.generatedAt,
+            appIdentifier: "test.app",
+            homeDirectoryPath: "/Users/alice"
+        )
+
+        XCTAssertEqual(
+            bundle.diagnostics?.fileStatuses.first?.path,
+            "~/Library/Application Support/SSHAutoTunnel/config.json"
+        )
+    }
+
     private func sampleConfiguration(apiToken: String = "token") -> AppConfiguration {
         let profileID = UUID(uuidString: "11111111-1111-1111-1111-111111111111")!
         let pacRuleID = UUID(uuidString: "22222222-2222-2222-2222-222222222222")!

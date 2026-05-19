@@ -71,6 +71,7 @@
 - Added redacted configuration export/import and support-bundle generation with local API, CLI, Shortcuts, and core redaction/validation coverage.
 - Added private pre-import configuration backups before applying a redacted configuration export.
 - Added dry-run configuration export validation through local API, CLI, Shortcuts, and core tests.
+- Redacted home-directory paths from support-bundle diagnostics.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -84,7 +85,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 155 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 156 XCTest cases.
 
 ## Known Gaps
 
