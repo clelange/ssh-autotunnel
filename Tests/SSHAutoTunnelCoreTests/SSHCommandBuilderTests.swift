@@ -74,7 +74,7 @@ final class SSHCommandBuilderTests: XCTestCase {
         XCTAssertFalse(SSHCommandBuilder.tunnelCommand(for: promptProfile).arguments.contains("StrictHostKeyChecking=yes"))
     }
 
-    func testKerberosTOTPDoesNotForcePasswordAuth() {
+    func testKerberosTOTPEnablesGSSAPIAndKeyboardInteractive() {
         let profile = TunnelProfile(
             name: "Kerberos",
             host: "lxplus.cern.ch",
@@ -85,6 +85,9 @@ final class SSHCommandBuilderTests: XCTestCase {
         let command = SSHCommandBuilder.tunnelCommand(for: profile)
 
         XCTAssertFalse(command.arguments.containsSubsequence(["-o", "PreferredAuthentications=keyboard-interactive,password"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "GSSAPIAuthentication=yes"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "PreferredAuthentications=gssapi-with-mic,keyboard-interactive"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "PasswordAuthentication=no"]))
     }
 
     func testExtraOptionsArePreservedBeforeDestination() {

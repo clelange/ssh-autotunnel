@@ -29,6 +29,14 @@ public enum SSHCommandBuilder {
             arguments += ["-o", "PreferredAuthentications=keyboard-interactive,password"]
         }
 
+        if usesKerberosAuth(profile.authMode) {
+            arguments += [
+                "-o", "GSSAPIAuthentication=yes",
+                "-o", "PreferredAuthentications=gssapi-with-mic,keyboard-interactive",
+                "-o", "PasswordAuthentication=no"
+            ]
+        }
+
         if let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines), !jumpHost.isEmpty {
             arguments += ["-J", jumpHost]
         }
@@ -43,6 +51,15 @@ public enum SSHCommandBuilder {
         case .password, .passwordAndTOTP:
             return true
         case .none, .totp, .kerberosAndTOTP:
+            return false
+        }
+    }
+
+    private static func usesKerberosAuth(_ authMode: TunnelAuthMode) -> Bool {
+        switch authMode {
+        case .kerberosAndTOTP:
+            return true
+        case .none, .password, .totp, .passwordAndTOTP:
             return false
         }
     }
