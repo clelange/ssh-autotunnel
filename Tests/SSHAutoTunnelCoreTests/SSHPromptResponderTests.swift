@@ -18,6 +18,41 @@ final class SSHPromptResponderTests: XCTestCase {
         XCTAssertEqual(SSHPromptResponder.nextAction(for: "Verification code"), .sendTOTP)
     }
 
+    func testAdditionalTwoFactorPromptVariantsRequestCode() {
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: "Enter PASSCODE:"), .sendTOTP)
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: "Authentication code:"), .sendTOTP)
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: "Token code:"), .sendTOTP)
+    }
+
+    func testNewestPasswordPromptWinsAfterHostKeyPrompt() {
+        let transcript = """
+        The authenticity of host 'example.org' can't be established.
+        Are you sure you want to continue connecting (yes/no/[fingerprint])?
+        Warning: Permanently added 'example.org' to the list of known hosts.
+        user@example.org's password:
+        """
+
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: transcript), .sendPassword)
+    }
+
+    func testNewestTOTPPromptWinsAfterPasswordPrompt() {
+        let transcript = """
+        user@example.org's password:
+        Verification code:
+        """
+
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: transcript), .sendTOTP)
+    }
+
+    func testNewestPasswordPromptWinsAfterEarlierTOTPMention() {
+        let transcript = """
+        Last login required TOTP enrollment.
+        user@example.org's password:
+        """
+
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: transcript), .sendPassword)
+    }
+
     func testNonPromptOutputDoesNotRequestAction() {
         XCTAssertNil(SSHPromptResponder.nextAction(for: "Last login: Sun May 17 12:00:00\n[user@host ~]$"))
         XCTAssertNil(SSHPromptResponder.nextAction(for: "Permission denied, please try again."))

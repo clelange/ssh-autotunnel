@@ -19,6 +19,7 @@
 - Seeded default CERN lxplus and PSI Tier-3 profiles and PAC rules.
 - Added unit tests for TOTP vectors, PAC generation, domain matching, and network policy matching.
 - Extracted SSH prompt detection into a tested pure core service and made tunnel prompt replies one-shot per prompt type.
+- Made SSH prompt detection choose the newest prompt in the PTY transcript and added mixed host-key/password/TOTP fixture coverage.
 - Added integration tests for the local HTTP server, including PAC serving and complete POST body handling.
 - Added authenticated local API client integration tests.
 - Added current-network fingerprint display and a “create disable rule from current network” flow.
@@ -61,12 +62,12 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 83 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 87 XCTest cases.
 
 ## Known Gaps
 
 - Real CERN/PSI SSH login flows still need live validation with the user’s Keychain secrets and reachable networks.
-- The pseudo-terminal process boundary and prompt matcher are now unit-tested with fakes, but still need live tuning after real CERN/PSI server tests.
+- The pseudo-terminal process boundary and prompt matcher are now unit-tested with fakes and mixed prompt transcripts, but still need live tuning after real CERN/PSI server tests.
 - System PAC restoration command planning, durable snapshot storage, and manager orchestration are unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents are present, but Shortcuts discovery and invocation need end-to-end validation from the Shortcuts app.
 - The local API token can be rotated from settings and is stored in a user-private config file; client authentication and error handling have integration coverage.
