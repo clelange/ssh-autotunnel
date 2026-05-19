@@ -281,6 +281,284 @@ struct DeleteProfileIntent: AppIntent {
     }
 }
 
+struct CreatePACRuleIntent: AppIntent {
+    static var title: LocalizedStringResource = "Create SSH AutoTunnel PAC Rule"
+    static var description = IntentDescription("Create a PAC routing rule from Shortcuts or Automations.")
+
+    @Parameter(title: "Name")
+    var name: String
+
+    @Parameter(title: "Domain Pattern")
+    var domainPattern: String
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    @Parameter(title: "Failure Mode")
+    var failureMode: String
+
+    init() {
+        name = "New routing"
+        domainPattern = "*.example.org"
+        profileName = "CERN lxplus"
+        failureMode = PACFailureMode.failClosed.rawValue
+    }
+
+    init(name: String, domainPattern: String, profileName: String, failureMode: String = PACFailureMode.failClosed.rawValue) {
+        self.name = name
+        self.domainPattern = domainPattern
+        self.profileName = profileName
+        self.failureMode = failureMode
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let configuration = try localConfiguration()
+        let rule = PACRule(
+            name: name,
+            domainPattern: domainPattern,
+            profileID: try profileID(named: profileName, in: configuration),
+            failureMode: try pacFailureMode(from: failureMode)
+        )
+        let response = try await api(configuration: configuration).send(ControlRequest(action: .createPACRule, pacRule: rule))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct UpdatePACRuleIntent: AppIntent {
+    static var title: LocalizedStringResource = "Update SSH AutoTunnel PAC Rule"
+    static var description = IntentDescription("Update a PAC routing rule from Shortcuts or Automations.")
+
+    @Parameter(title: "Rule Name")
+    var ruleName: String
+
+    @Parameter(title: "Domain Pattern")
+    var domainPattern: String
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    @Parameter(title: "Failure Mode")
+    var failureMode: String
+
+    @Parameter(title: "Enabled")
+    var enabled: Bool
+
+    init() {
+        ruleName = "CERN"
+        domainPattern = "*.cern.ch"
+        profileName = "CERN lxplus"
+        failureMode = PACFailureMode.failClosed.rawValue
+        enabled = true
+    }
+
+    init(
+        ruleName: String,
+        domainPattern: String,
+        profileName: String,
+        failureMode: String = PACFailureMode.failClosed.rawValue,
+        enabled: Bool = true
+    ) {
+        self.ruleName = ruleName
+        self.domainPattern = domainPattern
+        self.profileName = profileName
+        self.failureMode = failureMode
+        self.enabled = enabled
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let configuration = try localConfiguration()
+        let rule = PACRule(
+            name: ruleName,
+            domainPattern: domainPattern,
+            profileID: try profileID(named: profileName, in: configuration),
+            enabled: enabled,
+            failureMode: try pacFailureMode(from: failureMode)
+        )
+        let response = try await api(configuration: configuration).send(
+            ControlRequest(action: .updatePACRule, pacRuleName: ruleName, pacRule: rule)
+        )
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct DeletePACRuleIntent: AppIntent {
+    static var title: LocalizedStringResource = "Delete SSH AutoTunnel PAC Rule"
+    static var description = IntentDescription("Delete a PAC routing rule by name.")
+
+    @Parameter(title: "Rule Name")
+    var ruleName: String
+
+    init() {
+        ruleName = "Old routing"
+    }
+
+    init(ruleName: String) {
+        self.ruleName = ruleName
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .deletePACRule, pacRuleName: ruleName))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct TrustCurrentNetworkIntent: AppIntent {
+    static var title: LocalizedStringResource = "Trust Current SSH AutoTunnel Network"
+    static var description = IntentDescription("Create a network policy rule from the current network fingerprint.")
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    init() {
+        profileName = ""
+    }
+
+    init(profileName: String = "") {
+        self.profileName = profileName
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await api().send(
+            ControlRequest(action: .createNetworkRuleFromCurrentNetwork, profileName: optionalString(profileName))
+        )
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct CreateNetworkRuleIntent: AppIntent {
+    static var title: LocalizedStringResource = "Create SSH AutoTunnel Network Rule"
+    static var description = IntentDescription("Create a trusted-network rule from Shortcuts or Automations.")
+
+    @Parameter(title: "Name")
+    var name: String
+
+    @Parameter(title: "Wi-Fi SSID")
+    var wifiSSID: String
+
+    @Parameter(title: "Search Domain Contains")
+    var searchDomainContains: String
+
+    @Parameter(title: "Service Name Contains")
+    var serviceNameContains: String
+
+    @Parameter(title: "Gateway")
+    var gateway: String
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    @Parameter(title: "Action")
+    var action: String
+
+    init() {
+        name = "Trusted network"
+        wifiSSID = ""
+        searchDomainContains = "example.org"
+        serviceNameContains = ""
+        gateway = ""
+        profileName = ""
+        action = NetworkPolicyAction.disableProxy.rawValue
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let configuration = try localConfiguration()
+        let rule = NetworkPolicyRule(
+            name: name,
+            match: try networkMatch(
+                wifiSSID: wifiSSID,
+                searchDomainContains: searchDomainContains,
+                serviceNameContains: serviceNameContains,
+                gateway: gateway
+            ),
+            action: try networkPolicyAction(from: action),
+            profileID: try optionalProfileID(named: profileName, in: configuration)
+        )
+        let response = try await api(configuration: configuration).send(ControlRequest(action: .createNetworkRule, networkRule: rule))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct UpdateNetworkRuleIntent: AppIntent {
+    static var title: LocalizedStringResource = "Update SSH AutoTunnel Network Rule"
+    static var description = IntentDescription("Update a trusted-network rule from Shortcuts or Automations.")
+
+    @Parameter(title: "Rule Name")
+    var ruleName: String
+
+    @Parameter(title: "Wi-Fi SSID")
+    var wifiSSID: String
+
+    @Parameter(title: "Search Domain Contains")
+    var searchDomainContains: String
+
+    @Parameter(title: "Service Name Contains")
+    var serviceNameContains: String
+
+    @Parameter(title: "Gateway")
+    var gateway: String
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    @Parameter(title: "Action")
+    var action: String
+
+    @Parameter(title: "Enabled")
+    var enabled: Bool
+
+    init() {
+        ruleName = "Trusted network"
+        wifiSSID = ""
+        searchDomainContains = "example.org"
+        serviceNameContains = ""
+        gateway = ""
+        profileName = ""
+        action = NetworkPolicyAction.disableProxy.rawValue
+        enabled = true
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let configuration = try localConfiguration()
+        let rule = NetworkPolicyRule(
+            name: ruleName,
+            enabled: enabled,
+            match: try networkMatch(
+                wifiSSID: wifiSSID,
+                searchDomainContains: searchDomainContains,
+                serviceNameContains: serviceNameContains,
+                gateway: gateway
+            ),
+            action: try networkPolicyAction(from: action),
+            profileID: try optionalProfileID(named: profileName, in: configuration)
+        )
+        let response = try await api(configuration: configuration).send(
+            ControlRequest(action: .updateNetworkRule, networkRuleName: ruleName, networkRule: rule)
+        )
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct DeleteNetworkRuleIntent: AppIntent {
+    static var title: LocalizedStringResource = "Delete SSH AutoTunnel Network Rule"
+    static var description = IntentDescription("Delete a trusted-network rule by name.")
+
+    @Parameter(title: "Rule Name")
+    var ruleName: String
+
+    init() {
+        ruleName = "Old trusted network"
+    }
+
+    init(ruleName: String) {
+        self.ruleName = ruleName
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .deleteNetworkRule, networkRuleName: ruleName))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
 struct DiagnosticsIntent: AppIntent {
     static var title: LocalizedStringResource = "Get SSH AutoTunnel Diagnostics"
     static var description = IntentDescription("Get a structured SSH AutoTunnel diagnostics summary.")
@@ -383,6 +661,48 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             systemImageName: "trash"
         )
         AppShortcut(
+            intent: CreatePACRuleIntent(),
+            phrases: ["Create \(.applicationName) PAC rule"],
+            shortTitle: "Create PAC Rule",
+            systemImageName: "point.topleft.down.curvedto.point.bottomright.up"
+        )
+        AppShortcut(
+            intent: UpdatePACRuleIntent(),
+            phrases: ["Update \(.applicationName) PAC rule"],
+            shortTitle: "Update PAC Rule",
+            systemImageName: "pencil.and.list.clipboard"
+        )
+        AppShortcut(
+            intent: DeletePACRuleIntent(),
+            phrases: ["Delete \(.applicationName) PAC rule"],
+            shortTitle: "Delete PAC Rule",
+            systemImageName: "trash"
+        )
+        AppShortcut(
+            intent: TrustCurrentNetworkIntent(),
+            phrases: ["Trust current \(.applicationName) network"],
+            shortTitle: "Trust Network",
+            systemImageName: "wifi.router"
+        )
+        AppShortcut(
+            intent: CreateNetworkRuleIntent(),
+            phrases: ["Create \(.applicationName) network rule"],
+            shortTitle: "Create Network Rule",
+            systemImageName: "network"
+        )
+        AppShortcut(
+            intent: UpdateNetworkRuleIntent(),
+            phrases: ["Update \(.applicationName) network rule"],
+            shortTitle: "Update Network Rule",
+            systemImageName: "pencil.circle"
+        )
+        AppShortcut(
+            intent: DeleteNetworkRuleIntent(),
+            phrases: ["Delete \(.applicationName) network rule"],
+            shortTitle: "Delete Network Rule",
+            systemImageName: "trash"
+        )
+        AppShortcut(
             intent: DiagnosticsIntent(),
             phrases: ["Get \(.applicationName) diagnostics"],
             shortTitle: "Diagnostics",
@@ -391,14 +711,89 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
     }
 }
 
-private func api() throws -> ControlAPIClient {
-    let configuration = try ConfigurationStore().load()
+private func localConfiguration() throws -> AppConfiguration {
+    try ConfigurationStore().load()
+}
+
+private func api(configuration: AppConfiguration? = nil) throws -> ControlAPIClient {
+    let configuration = try configuration ?? localConfiguration()
     return ControlAPIClient(configuration: configuration)
 }
 
 private func optionalString(_ value: String) -> String? {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? nil : trimmed
+}
+
+private func profileID(named name: String, in configuration: AppConfiguration) throws -> UUID {
+    let trimmedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard let profile = configuration.profiles.first(where: { $0.name.localizedCaseInsensitiveCompare(trimmedName) == .orderedSame }) else {
+        throw intentError("Profile not found: \(trimmedName)")
+    }
+    return profile.id
+}
+
+private func optionalProfileID(named name: String, in configuration: AppConfiguration) throws -> UUID? {
+    guard let name = optionalString(name) else { return nil }
+    return try profileID(named: name, in: configuration)
+}
+
+private func pacFailureMode(from value: String) throws -> PACFailureMode {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if normalized.isEmpty {
+        return .failClosed
+    }
+    if let mode = PACFailureMode(rawValue: normalized) {
+        return mode
+    }
+    switch normalized.lowercased() {
+    case "fail closed", "fail-closed":
+        return .failClosed
+    case "direct fallback", "direct-fallback":
+        return .directFallback
+    default:
+        throw intentError("Unknown PAC failure mode: \(value)")
+    }
+}
+
+private func networkPolicyAction(from value: String) throws -> NetworkPolicyAction {
+    let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    if normalized.isEmpty {
+        return .disableProxy
+    }
+    if let action = NetworkPolicyAction(rawValue: normalized) {
+        return action
+    }
+    switch normalized.lowercased() {
+    case "disable proxy", "disable-proxy":
+        return .disableProxy
+    case "allow proxy", "allow-proxy":
+        return .allowProxy
+    default:
+        throw intentError("Unknown network policy action: \(value)")
+    }
+}
+
+private func networkMatch(
+    wifiSSID: String,
+    searchDomainContains: String,
+    serviceNameContains: String,
+    gateway: String
+) throws -> NetworkMatch {
+    let match = NetworkMatch(
+        wifiSSID: optionalString(wifiSSID),
+        serviceNameContains: optionalString(serviceNameContains),
+        searchDomainContains: optionalString(searchDomainContains),
+        gateway: optionalString(gateway)
+    )
+    guard match.wifiSSID != nil || match.serviceNameContains != nil || match.searchDomainContains != nil || match.gateway != nil else {
+        throw intentError("At least one network match field is required.")
+    }
+    return match
+}
+
+private func intentError(_ message: String) -> NSError {
+    NSError(domain: "dev.clange.ssh-autotunnel.app-intents", code: 1, userInfo: [NSLocalizedDescriptionKey: message])
 }
 
 private func label(for state: KeychainCredentialState) -> String {
