@@ -1,5 +1,7 @@
+import AppKit
 import SSHAutoTunnelCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
@@ -354,6 +356,7 @@ private struct NetworkFingerprintView: View {
 
 struct AppPreferencesView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var configurationFileMessage = ""
 
     var body: some View {
         Form {
@@ -390,6 +393,31 @@ struct AppPreferencesView: View {
             }
 
             Section("Migration") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Button("Export Configuration...") {
+                            exportConfiguration()
+                        }
+                        Button("Validate Configuration...") {
+                            validateConfiguration()
+                        }
+                    }
+                    HStack {
+                        Button("Import Configuration...") {
+                            importConfiguration()
+                        }
+                        Button("Create Support Bundle...") {
+                            createSupportBundle()
+                        }
+                    }
+                    if !configurationFileMessage.isEmpty {
+                        Text(configurationFileMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+
                 HStack {
                     Button("Check ssh-auto2fa Services") {
                         appState.refreshSSHAuto2FAServiceStatuses()
@@ -439,5 +467,106 @@ struct AppPreferencesView: View {
         case .missing: "Missing"
         case .unreadable: "Unreadable"
         }
+    }
+
+    private func exportConfiguration() {
+        guard let url = saveURL(defaultFileName: "ssh-autotunnel-config.json") else { return }
+        do {
+            try writeJSON(appState.configurationExport(), to: url)
+            configurationFileMessage = "Exported configuration to \(url.path)"
+        } catch {
+            configurationFileMessage = "Could not export configuration: \(error.localizedDescription)"
+        }
+    }
+
+    private func validateConfiguration() {
+        guard let url = openURL() else { return }
+        do {
+            let export = try readConfigurationExport(from: url)
+            let report = appState.configurationValidationReport(for: export)
+            configurationFileMessage = validationMessage(report)
+        } catch {
+            configurationFileMessage = "Could not validate configuration: \(error.localizedDescription)"
+        }
+    }
+
+    private func importConfiguration() {
+        guard let url = openURL() else { return }
+        do {
+            let export = try readConfigurationExport(from: url)
+            let report = appState.configurationValidationReport(for: export)
+            guard report.ok else {
+                configurationFileMessage = validationMessage(report)
+                return
+            }
+            guard confirmImport(report) else {
+                configurationFileMessage = "Import canceled"
+                return
+            }
+            let response = appState.importConfigurationExport(export)
+            configurationFileMessage = response.message
+        } catch {
+            configurationFileMessage = "Could not import configuration: \(error.localizedDescription)"
+        }
+    }
+
+    private func createSupportBundle() {
+        guard let url = saveURL(defaultFileName: "ssh-autotunnel-support.json") else { return }
+        do {
+            try writeJSON(appState.supportBundle(), to: url)
+            configurationFileMessage = "Created support bundle at \(url.path)"
+        } catch {
+            configurationFileMessage = "Could not create support bundle: \(error.localizedDescription)"
+        }
+    }
+
+    private func saveURL(defaultFileName: String) -> URL? {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.nameFieldStringValue = defaultFileName
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    private func openURL() -> URL? {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        return panel.runModal() == .OK ? panel.url : nil
+    }
+
+    private func readConfigurationExport(from url: URL) throws -> ConfigurationExport {
+        let data = try Data(contentsOf: url)
+        return try ConfigurationExportService.decodeExportDocument(from: data)
+    }
+
+    private func writeJSON<T: Encodable>(_ value: T, to url: URL) throws {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        var data = try encoder.encode(value)
+        data.append(0x0a)
+        try data.write(to: url, options: [.atomic])
+        try FileProtection.protectFile(url)
+    }
+
+    private func validationMessage(_ report: ConfigurationValidationReport) -> String {
+        if report.ok {
+            return "Configuration is valid: \(report.profileCount) profiles, \(report.pacRuleCount) PAC rules, \(report.networkRuleCount) network rules"
+        }
+        let details = report.messages.isEmpty ? report.message : report.messages.joined(separator: "; ")
+        return "Configuration is invalid: \(details)"
+    }
+
+    private func confirmImport(_ report: ConfigurationValidationReport) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Import Configuration?"
+        alert.informativeText = "This will replace the current profiles and rules with \(report.profileCount) profiles, \(report.pacRuleCount) PAC rules, and \(report.networkRuleCount) network rules. A private pre-import backup will be created first."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Import")
+        alert.addButton(withTitle: "Cancel")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 }

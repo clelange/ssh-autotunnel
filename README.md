@@ -26,6 +26,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Port validation for PAC/API/blocking/SOCKS settings, with local server restart when valid listener ports change.
 - Local API and CLI helper for tunnel control, profile management, PAC, diagnostics, system proxy, and imports.
 - Redacted configuration export/import and support bundle generation for backup, migration, and troubleshooting.
+- Settings actions for exporting, validating, importing, and generating support-bundle JSON files with native macOS file panels.
 - Shortcuts/App Intents for tunnel, profile management, PAC, diagnostics, system proxy, import, export, and support-bundle actions.
 - Automatic recovery from malformed configuration files by backing them up and recreating defaults.
 
@@ -120,6 +121,8 @@ Both `validate-config` and `import-config` also accept a raw `config.json` backu
 Use `ssh-autotunnelctl support-bundle` to write a redacted JSON bundle containing the portable configuration export plus diagnostics such as active ports, network fingerprint, runtime profile status, and file permission checks. Home-directory paths in diagnostics are shortened to `~`.
 
 When `export-config` or `support-bundle` writes to a file path, the CLI applies user-only file permissions to the generated JSON file.
+
+The Settings window exposes the same configuration export, validation, import, and support-bundle workflows with native macOS open/save panels. Settings imports also validate first and create a private pre-import backup before replacing the current configuration.
 
 The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keychain service names can be checked and imported from setup or settings:
 

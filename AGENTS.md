@@ -74,6 +74,7 @@
 - Redacted home-directory paths from support-bundle diagnostics.
 - Made configuration import and validation accept raw `config.json` backups by converting them to redacted exports before local API submission.
 - Applied user-only file permissions to CLI-written configuration exports and support bundles.
+- Added Settings file-panel actions for configuration export, validation, import, and support-bundle generation.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status

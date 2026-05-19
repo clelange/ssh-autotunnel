@@ -271,6 +271,55 @@ final class AppState: ObservableObject {
         )
     }
 
+    func configurationExport(exportedAt: Date = Date()) -> ConfigurationExport {
+        ConfigurationExportService.makeExport(from: configuration, exportedAt: exportedAt)
+    }
+
+    func configurationValidationReport(for export: ConfigurationExport) -> ConfigurationValidationReport {
+        ConfigurationExportService.validationReport(
+            for: export,
+            preservingLocalValuesFrom: configuration
+        )
+    }
+
+    func supportBundle(generatedAt: Date = Date()) -> SupportBundle {
+        let diagnostics = diagnosticsSnapshot(generatedAt: generatedAt)
+        return ConfigurationExportService.makeSupportBundle(
+            configuration: configuration,
+            diagnostics: diagnostics,
+            generatedAt: diagnostics.generatedAt
+        )
+    }
+
+    func importConfigurationExport(_ export: ConfigurationExport) -> ControlResponse {
+        do {
+            let imported = try ConfigurationExportService.importConfiguration(
+                from: export,
+                preservingLocalValuesFrom: configuration
+            )
+            let backupURL = try configurationStore.backupCurrentConfiguration(label: "pre-import")
+            let importedProfileIDs = Set(imported.profiles.map(\.id))
+            for profile in configuration.profiles where !importedProfileIDs.contains(profile.id) {
+                tunnelManager.stop(profileID: profile.id)
+            }
+            statuses = statuses.filter { importedProfileIDs.contains($0.key) }
+            configuration = imported
+            saveConfiguration()
+            let backupMessage = backupURL.map { " Backup: \($0.path)" } ?? ""
+            let message = configurationValidationMessage ?? "Imported configuration.\(backupMessage)"
+            lastProxyMessage = message
+            return ControlResponse(
+                ok: configurationValidationMessage == nil,
+                message: message,
+                status: snapshot()
+            )
+        } catch {
+            let message = "Could not import configuration: \(error.localizedDescription)"
+            lastProxyMessage = message
+            return ControlResponse(ok: false, message: message, status: snapshot())
+        }
+    }
+
     private func setupTunnelCallbacks() {
         tunnelManager.onStatusChange = { [weak self] status in
             guard let self else { return }
@@ -567,42 +616,18 @@ final class AppState: ObservableObject {
                 ok: true,
                 message: "Configuration export",
                 status: snapshot(),
-                configurationExport: ConfigurationExportService.makeExport(from: configuration)
+                configurationExport: configurationExport()
             )
         case .importConfiguration:
             guard let export = request.configurationExport else {
                 return ControlResponse(ok: false, message: "A configuration export payload is required.", status: snapshot())
             }
-            do {
-                let imported = try ConfigurationExportService.importConfiguration(
-                    from: export,
-                    preservingLocalValuesFrom: configuration
-                )
-                let backupURL = try configurationStore.backupCurrentConfiguration(label: "pre-import")
-                let importedProfileIDs = Set(imported.profiles.map(\.id))
-                for profile in configuration.profiles where !importedProfileIDs.contains(profile.id) {
-                    tunnelManager.stop(profileID: profile.id)
-                }
-                statuses = statuses.filter { importedProfileIDs.contains($0.key) }
-                configuration = imported
-                saveConfiguration()
-                let backupMessage = backupURL.map { " Backup: \($0.path)" } ?? ""
-                return ControlResponse(
-                    ok: configurationValidationMessage == nil,
-                    message: configurationValidationMessage ?? "Imported configuration.\(backupMessage)",
-                    status: snapshot()
-                )
-            } catch {
-                return ControlResponse(ok: false, message: "Could not import configuration: \(error.localizedDescription)", status: snapshot())
-            }
+            return importConfigurationExport(export)
         case .validateConfigurationExport:
             guard let export = request.configurationExport else {
                 return ControlResponse(ok: false, message: "A configuration export payload is required.", status: snapshot())
             }
-            let report = ConfigurationExportService.validationReport(
-                for: export,
-                preservingLocalValuesFrom: configuration
-            )
+            let report = configurationValidationReport(for: export)
             return ControlResponse(
                 ok: report.ok,
                 message: report.message,
@@ -610,16 +635,12 @@ final class AppState: ObservableObject {
                 configurationValidation: report
             )
         case .supportBundle:
-            let diagnostics = diagnosticsSnapshot()
+            let bundle = supportBundle()
             return ControlResponse(
                 ok: true,
                 message: "Support bundle",
                 status: snapshot(),
-                supportBundle: ConfigurationExportService.makeSupportBundle(
-                    configuration: configuration,
-                    diagnostics: diagnostics,
-                    generatedAt: diagnostics.generatedAt
-                )
+                supportBundle: bundle
             )
         }
     }
