@@ -37,6 +37,14 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .checkSSHAuto2FA))
             case "import-ssh-config":
                 response = try await client.send(ControlRequest(action: .importSSHConfig))
+            case "create-profile":
+                let profile = try readProfile(from: invocation.profileName)
+                response = try await client.send(ControlRequest(action: .createProfile, profile: profile))
+            case "update-profile":
+                let profile = try readProfile(from: invocation.profileName)
+                response = try await client.send(ControlRequest(action: .updateProfile, profileName: profile.name, profileID: profile.id, profile: profile))
+            case "delete-profile":
+                response = try await client.send(ControlRequest(action: .deleteProfile, profileName: invocation.profileName))
             case "diagnostics":
                 response = try await client.send(ControlRequest(action: .diagnostics))
             default:
@@ -121,6 +129,21 @@ struct SSHAutoTunnelCLI {
         }
     }
 
+    private static func readProfile(from argument: String?) throws -> TunnelProfile {
+        guard let argument, !argument.isEmpty else {
+            throw NSError(domain: "ssh-autotunnelctl", code: 2, userInfo: [NSLocalizedDescriptionKey: "Profile JSON path is required"])
+        }
+
+        let data: Data
+        if argument == "-" {
+            data = FileHandle.standardInput.readDataToEndOfFile()
+        } else {
+            let path = NSString(string: argument).expandingTildeInPath
+            data = try Data(contentsOf: URL(fileURLWithPath: path))
+        }
+        return try JSONDecoder().decode(TunnelProfile.self, from: data)
+    }
+
     private static func printUsage() {
         print("""
         Usage:
@@ -134,6 +157,9 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl check-ssh-auto2fa
           ssh-autotunnelctl import-ssh-config
           ssh-autotunnelctl diagnostics --json
+          ssh-autotunnelctl create-profile <profile.json|->
+          ssh-autotunnelctl update-profile <profile.json|->
+          ssh-autotunnelctl delete-profile <profile name>
           ssh-autotunnelctl connect <profile name>
           ssh-autotunnelctl disconnect <profile name>
           ssh-autotunnelctl reconnect <profile name>

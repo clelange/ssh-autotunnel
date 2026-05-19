@@ -12,6 +12,9 @@ public enum ControlAction: String, Codable, Sendable {
     case importSSHAuto2FA
     case checkSSHAuto2FA
     case importSSHConfig
+    case createProfile
+    case updateProfile
+    case deleteProfile
     case diagnostics
 }
 
@@ -19,11 +22,13 @@ public struct ControlRequest: Codable, Sendable {
     public var action: ControlAction
     public var profileName: String?
     public var profileID: UUID?
+    public var profile: TunnelProfile?
 
-    public init(action: ControlAction, profileName: String? = nil, profileID: UUID? = nil) {
+    public init(action: ControlAction, profileName: String? = nil, profileID: UUID? = nil, profile: TunnelProfile? = nil) {
         self.action = action
         self.profileName = profileName
         self.profileID = profileID
+        self.profile = profile
     }
 }
 

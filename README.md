@@ -24,7 +24,8 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Network fingerprint rules to disable all proxy/PAC behavior or only selected profiles on trusted networks.
 - Settings and diagnostics windows.
 - Port validation for PAC/API/blocking/SOCKS settings, with local server restart when valid listener ports change.
-- Local API, CLI helper, and Shortcuts/App Intents for tunnel, PAC, diagnostics, system proxy, and `ssh-auto2fa` actions.
+- Local API and CLI helper for tunnel control, profile management, PAC, diagnostics, system proxy, and imports.
+- Shortcuts/App Intents for tunnel, PAC, diagnostics, system proxy, and import actions.
 - Automatic recovery from malformed configuration files by backing them up and recreating defaults.
 
 ## Build and Run
@@ -78,6 +79,9 @@ swift run ssh-autotunnelctl import-ssh-auto2fa
 swift run ssh-autotunnelctl import-ssh-config
 swift run ssh-autotunnelctl check-ssh-auto2fa --json
 swift run ssh-autotunnelctl diagnostics --json
+swift run ssh-autotunnelctl create-profile ./profile.json
+swift run ssh-autotunnelctl update-profile ./profile.json
+swift run ssh-autotunnelctl delete-profile "Old tunnel"
 swift run ssh-autotunnelctl connect "CERN lxplus"
 swift run ssh-autotunnelctl disconnect "CERN lxplus"
 ```

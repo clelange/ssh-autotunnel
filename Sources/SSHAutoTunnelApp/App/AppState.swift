@@ -394,6 +394,45 @@ final class AppState: ObservableObject {
             } catch {
                 return ControlResponse(ok: false, message: "Could not import SSH config: \(error.localizedDescription)", status: snapshot())
             }
+        case .createProfile:
+            guard let requestProfile = request.profile else {
+                return ControlResponse(ok: false, message: ProfileConfigurationEditorError.missingProfilePayload.localizedDescription, status: snapshot())
+            }
+            do {
+                let updated = try ProfileConfigurationEditor.create(profile: requestProfile, in: configuration)
+                configuration = updated
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Created profile \(requestProfile.name)", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not create profile: \(error.localizedDescription)", status: snapshot())
+            }
+        case .updateProfile:
+            guard let requestProfile = request.profile else {
+                return ControlResponse(ok: false, message: ProfileConfigurationEditorError.missingProfilePayload.localizedDescription, status: snapshot())
+            }
+            do {
+                let updated = try ProfileConfigurationEditor.update(
+                    profile: requestProfile,
+                    matchingID: request.profileID,
+                    matchingName: request.profileName,
+                    in: configuration
+                )
+                configuration = updated
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Updated profile \(requestProfile.name)", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not update profile: \(error.localizedDescription)", status: snapshot())
+            }
+        case .deleteProfile:
+            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
+            do {
+                tunnelManager.stop(profileID: profile.id)
+                configuration = try ProfileConfigurationEditor.delete(profileID: profile.id, in: configuration)
+                saveConfiguration()
+                return ControlResponse(ok: true, message: "Deleted profile \(profile.name)", status: snapshot())
+            } catch {
+                return ControlResponse(ok: false, message: "Could not delete profile: \(error.localizedDescription)", status: snapshot())
+            }
         case .diagnostics:
             return ControlResponse(
                 ok: true,
