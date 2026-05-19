@@ -613,6 +613,35 @@ struct ImportConfigurationIntent: AppIntent {
     }
 }
 
+struct ValidateConfigurationIntent: AppIntent {
+    static var title: LocalizedStringResource = "Validate SSH AutoTunnel Configuration"
+    static var description = IntentDescription("Validate a redacted SSH AutoTunnel configuration export without applying it.")
+
+    @Parameter(title: "Configuration JSON")
+    var configurationJSON: String
+
+    init() {
+        configurationJSON = ""
+    }
+
+    init(configurationJSON: String) {
+        self.configurationJSON = configurationJSON
+    }
+
+    func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
+        guard let data = configurationJSON.data(using: .utf8) else {
+            throw intentError("Configuration JSON is not valid UTF-8.")
+        }
+        let export = try JSONDecoder().decode(ConfigurationExport.self, from: data)
+        let response = try await api().send(ControlRequest(action: .validateConfigurationExport, configurationExport: export))
+        let report = response.configurationValidation
+        let summary = report.map {
+            "\($0.message). Profiles: \($0.profileCount), PAC rules: \($0.pacRuleCount), network rules: \($0.networkRuleCount)"
+        } ?? response.message
+        return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))
+    }
+}
+
 struct SupportBundleIntent: AppIntent {
     static var title: LocalizedStringResource = "Get SSH AutoTunnel Support Bundle"
     static var description = IntentDescription("Return a redacted SSH AutoTunnel support bundle as JSON.")
@@ -815,6 +844,12 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             phrases: ["Import \(.applicationName) configuration"],
             shortTitle: "Import Config",
             systemImageName: "square.and.arrow.down"
+        )
+        AppShortcut(
+            intent: ValidateConfigurationIntent(),
+            phrases: ["Validate \(.applicationName) configuration"],
+            shortTitle: "Validate Config",
+            systemImageName: "checkmark.shield"
         )
         AppShortcut(
             intent: SupportBundleIntent(),

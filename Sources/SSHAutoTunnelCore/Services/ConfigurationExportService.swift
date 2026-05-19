@@ -68,6 +68,40 @@ public enum ConfigurationExportService {
         return imported
     }
 
+    public static func validationReport(
+        for export: ConfigurationExport,
+        preservingLocalValuesFrom currentConfiguration: AppConfiguration
+    ) -> ConfigurationValidationReport {
+        do {
+            _ = try importConfiguration(from: export, preservingLocalValuesFrom: currentConfiguration)
+            return ConfigurationValidationReport(
+                ok: true,
+                message: "Configuration export is valid",
+                profileCount: export.profiles.count,
+                pacRuleCount: export.pacRules.count,
+                networkRuleCount: export.networkRules.count
+            )
+        } catch let error as PortConfigurationError {
+            return ConfigurationValidationReport(
+                ok: false,
+                message: error.localizedDescription,
+                messages: error.messages,
+                profileCount: export.profiles.count,
+                pacRuleCount: export.pacRules.count,
+                networkRuleCount: export.networkRules.count
+            )
+        } catch {
+            return ConfigurationValidationReport(
+                ok: false,
+                message: error.localizedDescription,
+                messages: [error.localizedDescription],
+                profileCount: export.profiles.count,
+                pacRuleCount: export.pacRules.count,
+                networkRuleCount: export.networkRules.count
+            )
+        }
+    }
+
     public static func makeSupportBundle(
         configuration: AppConfiguration,
         diagnostics: DiagnosticsSnapshot?,

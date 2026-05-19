@@ -95,6 +95,12 @@ struct SSHAutoTunnelCLI {
                     missingMessage: "Configuration export JSON path is required"
                 )
                 response = try await client.send(ControlRequest(action: .importConfiguration, configurationExport: export))
+            case "validate-config":
+                let export: ConfigurationExport = try readJSON(
+                    from: invocation.profileName,
+                    missingMessage: "Configuration export JSON path is required"
+                )
+                response = try await client.send(ControlRequest(action: .validateConfigurationExport, configurationExport: export))
             default:
                 printUsage()
                 return
@@ -165,6 +171,15 @@ struct SSHAutoTunnelCLI {
             for file in diagnostics.fileStatuses {
                 let permissions = file.posixPermissions ?? "n/a"
                 print("- \(file.label): \(file.exists ? "exists" : "missing"), mode \(permissions), private=\(file.isPrivate), \(file.path)")
+            }
+        }
+        if let validation = response.configurationValidation {
+            print("Configuration validation:")
+            print("- Profiles: \(validation.profileCount)")
+            print("- PAC rules: \(validation.pacRuleCount)")
+            print("- Network rules: \(validation.networkRuleCount)")
+            for message in validation.messages {
+                print("- \(message)")
             }
         }
     }
@@ -260,6 +275,7 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl import-ssh-config
           ssh-autotunnelctl diagnostics --json
           ssh-autotunnelctl export-config [config-export.json|-]
+          ssh-autotunnelctl validate-config <config-export.json|->
           ssh-autotunnelctl import-config <config-export.json|->
           ssh-autotunnelctl support-bundle [support-bundle.json|-]
           ssh-autotunnelctl profile-template

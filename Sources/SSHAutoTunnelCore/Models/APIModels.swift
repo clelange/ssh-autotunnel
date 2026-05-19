@@ -25,6 +25,7 @@ public enum ControlAction: String, Codable, Sendable {
     case diagnostics
     case exportConfiguration
     case importConfiguration
+    case validateConfigurationExport
     case supportBundle
 }
 
@@ -187,6 +188,7 @@ public struct ControlResponse: Codable, Sendable {
     public var diagnostics: DiagnosticsSnapshot?
     public var configurationExport: ConfigurationExport?
     public var supportBundle: SupportBundle?
+    public var configurationValidation: ConfigurationValidationReport?
 
     public init(
         ok: Bool,
@@ -195,7 +197,8 @@ public struct ControlResponse: Codable, Sendable {
         sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus]? = nil,
         diagnostics: DiagnosticsSnapshot? = nil,
         configurationExport: ConfigurationExport? = nil,
-        supportBundle: SupportBundle? = nil
+        supportBundle: SupportBundle? = nil,
+        configurationValidation: ConfigurationValidationReport? = nil
     ) {
         self.ok = ok
         self.message = message
@@ -204,5 +207,6 @@ public struct ControlResponse: Codable, Sendable {
         self.diagnostics = diagnostics
         self.configurationExport = configurationExport
         self.supportBundle = supportBundle
+        self.configurationValidation = configurationValidation
     }
 }

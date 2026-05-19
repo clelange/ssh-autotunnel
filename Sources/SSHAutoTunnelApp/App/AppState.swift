@@ -595,6 +595,20 @@ final class AppState: ObservableObject {
             } catch {
                 return ControlResponse(ok: false, message: "Could not import configuration: \(error.localizedDescription)", status: snapshot())
             }
+        case .validateConfigurationExport:
+            guard let export = request.configurationExport else {
+                return ControlResponse(ok: false, message: "A configuration export payload is required.", status: snapshot())
+            }
+            let report = ConfigurationExportService.validationReport(
+                for: export,
+                preservingLocalValuesFrom: configuration
+            )
+            return ControlResponse(
+                ok: report.ok,
+                message: report.message,
+                status: snapshot(),
+                configurationValidation: report
+            )
         case .supportBundle:
             let diagnostics = diagnosticsSnapshot()
             return ControlResponse(

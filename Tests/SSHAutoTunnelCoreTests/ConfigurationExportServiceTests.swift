@@ -69,6 +69,35 @@ final class ConfigurationExportServiceTests: XCTestCase {
         }
     }
 
+    func testValidationReportSummarizesValidExport() {
+        let export = ConfigurationExportService.makeExport(from: sampleConfiguration(), appIdentifier: "test.app")
+
+        let report = ConfigurationExportService.validationReport(
+            for: export,
+            preservingLocalValuesFrom: AppConfiguration(apiToken: "local-token")
+        )
+
+        XCTAssertTrue(report.ok)
+        XCTAssertEqual(report.message, "Configuration export is valid")
+        XCTAssertEqual(report.messages, [])
+        XCTAssertEqual(report.profileCount, 1)
+        XCTAssertEqual(report.pacRuleCount, 1)
+        XCTAssertEqual(report.networkRuleCount, 1)
+    }
+
+    func testValidationReportCollectsPortMessages() {
+        var export = ConfigurationExportService.makeExport(from: sampleConfiguration(), appIdentifier: "test.app")
+        export.blockingHTTPProxyPort = export.pacHTTPPort
+
+        let report = ConfigurationExportService.validationReport(
+            for: export,
+            preservingLocalValuesFrom: AppConfiguration(apiToken: "local-token")
+        )
+
+        XCTAssertFalse(report.ok)
+        XCTAssertEqual(report.messages, ["Port \(export.pacHTTPPort) is used by PAC HTTP port, Blocking proxy port"])
+    }
+
     func testSupportBundleIncludesRedactedConfigurationAndDiagnostics() throws {
         let configuration = sampleConfiguration(apiToken: "secret-local-token")
         let diagnostics = DiagnosticsSnapshot(

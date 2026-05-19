@@ -36,6 +36,10 @@ final class CLIArgumentsTests: XCTestCase {
             CLIInvocation(command: "import-config", profileName: "-")
         )
         XCTAssertEqual(
+            CLIArguments.parse(["validate-config", "~/ssh-autotunnel-export.json"]),
+            CLIInvocation(command: "validate-config", profileName: "~/ssh-autotunnel-export.json")
+        )
+        XCTAssertEqual(
             CLIArguments.parse(["support-bundle", "--json"]),
             CLIInvocation(command: "support-bundle", outputJSON: true)
         )

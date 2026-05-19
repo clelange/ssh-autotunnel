@@ -74,3 +74,28 @@ public struct SupportBundle: Codable, Equatable, Sendable {
         self.diagnostics = diagnostics
     }
 }
+
+public struct ConfigurationValidationReport: Codable, Equatable, Sendable {
+    public var ok: Bool
+    public var message: String
+    public var messages: [String]
+    public var profileCount: Int
+    public var pacRuleCount: Int
+    public var networkRuleCount: Int
+
+    public init(
+        ok: Bool,
+        message: String,
+        messages: [String] = [],
+        profileCount: Int,
+        pacRuleCount: Int,
+        networkRuleCount: Int
+    ) {
+        self.ok = ok
+        self.message = message
+        self.messages = messages
+        self.profileCount = profileCount
+        self.pacRuleCount = pacRuleCount
+        self.networkRuleCount = networkRuleCount
+    }
+}

@@ -75,11 +75,13 @@ final class DiagnosticsSnapshotTests: XCTestCase {
             generatedAt: export.exportedAt,
             appIdentifier: "dev.clange.ssh-autotunnel"
         )
+        let validation = ConfigurationExportService.validationReport(for: export, preservingLocalValuesFrom: configuration)
         let response = ControlResponse(
             ok: true,
             message: "Support bundle",
             configurationExport: export,
-            supportBundle: bundle
+            supportBundle: bundle,
+            configurationValidation: validation
         )
 
         let data = try JSONEncoder().encode(response)
@@ -87,5 +89,6 @@ final class DiagnosticsSnapshotTests: XCTestCase {
 
         XCTAssertEqual(decoded.configurationExport, export)
         XCTAssertEqual(decoded.supportBundle, bundle)
+        XCTAssertEqual(decoded.configurationValidation, validation)
     }
 }
