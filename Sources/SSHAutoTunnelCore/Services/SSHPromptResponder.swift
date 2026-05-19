@@ -33,6 +33,8 @@ public enum SSHPromptResponder {
         PromptPattern("authentication code", .sendTOTP),
         PromptPattern("passcode:", .sendTOTP),
         PromptPattern("token code:", .sendTOTP),
+        PromptPattern("otp code", .sendTOTP),
+        PromptPattern("enter otp", .sendTOTP),
         PromptPattern("2nd factor", .sendTOTP),
         PromptPattern("second factor", .sendTOTP),
         PromptPattern("totp", .sendTOTP),

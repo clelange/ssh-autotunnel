@@ -20,6 +20,7 @@
 - Added unit tests for TOTP vectors, PAC generation, domain matching, and network policy matching.
 - Extracted SSH prompt detection into a tested pure core service and made tunnel prompt replies one-shot per prompt type.
 - Made SSH prompt detection choose the newest prompt in the PTY transcript and added mixed host-key/password/TOTP fixture coverage.
+- Expanded SSH prompt fixture coverage for PAM/keyboard-interactive password, OTP-code, verification-code, and passcode retry ordering.
 - Added integration tests for the local HTTP server, including PAC serving and complete POST body handling.
 - Added authenticated local API client integration tests.
 - Extracted local API routing into a tested core service covering auth, status, dispatch, unknown routes, and malformed requests.
@@ -67,7 +68,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 98 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 100 XCTest cases.
 
 ## Known Gaps
 

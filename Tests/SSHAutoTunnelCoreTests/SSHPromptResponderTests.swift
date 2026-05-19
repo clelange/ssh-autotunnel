@@ -8,6 +8,7 @@ final class SSHPromptResponderTests: XCTestCase {
     }
 
     func testPasswordPromptsRequestPassword() {
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: "Password:"), .sendPassword)
         XCTAssertEqual(SSHPromptResponder.nextAction(for: "user@example.org's password:"), .sendPassword)
         XCTAssertEqual(SSHPromptResponder.nextAction(for: "Password for user@example.org:"), .sendPassword)
     }
@@ -22,6 +23,10 @@ final class SSHPromptResponderTests: XCTestCase {
         XCTAssertEqual(SSHPromptResponder.nextAction(for: "Enter PASSCODE:"), .sendTOTP)
         XCTAssertEqual(SSHPromptResponder.nextAction(for: "Authentication code:"), .sendTOTP)
         XCTAssertEqual(SSHPromptResponder.nextAction(for: "Token code:"), .sendTOTP)
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: "Enter verification code:"), .sendTOTP)
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: "OTP code:"), .sendTOTP)
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: "Enter OTP:"), .sendTOTP)
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: "Duo passcode:"), .sendTOTP)
     }
 
     func testNewestPasswordPromptWinsAfterHostKeyPrompt() {
@@ -51,6 +56,26 @@ final class SSHPromptResponderTests: XCTestCase {
         """
 
         XCTAssertEqual(SSHPromptResponder.nextAction(for: transcript), .sendPassword)
+    }
+
+    func testNewestPasswordPromptWinsAfterEarlierPasscodePrompt() {
+        let transcript = """
+        Duo passcode:
+        Permission denied, please try again.
+        Password:
+        """
+
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: transcript), .sendPassword)
+    }
+
+    func testNewestOTPCodePromptWinsAfterPasswordRetry() {
+        let transcript = """
+        Password:
+        Authenticated with partial success.
+        OTP code:
+        """
+
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: transcript), .sendTOTP)
     }
 
     func testNonPromptOutputDoesNotRequestAction() {
