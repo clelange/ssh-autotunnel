@@ -29,6 +29,7 @@
 - Added a tested `ssh-auto2fa` preset importer and Settings action.
 - Added tested CLI argument parsing and `--json` output for automation.
 - Added local API and CLI actions for system PAC apply/restore, PAC reload, `ssh-auto2fa` preset import, and `ssh-auto2fa` Keychain checks.
+- Expanded Shortcuts/App Intents coverage to include reconnect, PAC reload, system PAC apply/restore, and `ssh-auto2fa` import/check actions.
 - Bound local PAC, status, API, and blocking proxy servers to the loopback interface by default.
 - Persisted system PAC snapshots for restore across app restarts and app termination.
 - Extracted SSH tunnel command construction into a tested builder.
@@ -70,7 +71,7 @@ All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite cu
 - Real CERN/PSI SSH login flows still need live validation with the user’s Keychain secrets and reachable networks.
 - The pseudo-terminal process boundary and prompt matcher are now unit-tested with fakes and mixed prompt transcripts, but still need live tuning after real CERN/PSI server tests.
 - System PAC restoration command planning, durable snapshot storage, and manager orchestration are unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
-- App Intents are present, but Shortcuts discovery and invocation need end-to-end validation from the Shortcuts app.
+- App Intents now cover the local control API actions, but Shortcuts discovery and invocation still need end-to-end validation from the Shortcuts app.
 - The local API token can be rotated from settings and is stored in a user-private config file; client authentication and error handling have integration coverage.
 - `ssh-auto2fa` service detection is unit-tested with fake readers; real Keychain availability still depends on the user's local items and access prompts.
 - The package script creates a local ad-hoc-signed zip; Developer ID signing and notarization still need signing credentials and distribution decisions.
