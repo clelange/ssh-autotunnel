@@ -4,10 +4,11 @@ public final class TunnelManager {
     public var onStatusChange: ((TunnelRuntimeStatus) -> Void)?
     public var onLog: ((UUID, String) -> Void)?
 
-    private let keychain: KeychainService
+    private let keychain: GenericPasswordReading
     private let processLauncher: SSHProcessLaunching
     private let socks5Probe: (Int) -> Bool
     private let reconnectDelay: (Int) -> TimeInterval
+    private let totpGenerator: (String) throws -> String
     private let queue = DispatchQueue(label: "dev.clange.ssh-autotunnel.tunnels")
     private var processes: [UUID: ManagedTunnel] = [:]
     private var statuses: [UUID: TunnelRuntimeStatus] = [:]
@@ -15,27 +16,30 @@ public final class TunnelManager {
     private var reconnectAttempts: [UUID: Int] = [:]
     private var healthTimer: DispatchSourceTimer?
 
-    public convenience init(keychain: KeychainService = KeychainService()) {
+    public convenience init(keychain: GenericPasswordReading = KeychainService()) {
         self.init(
             keychain: keychain,
             processLauncher: PTYSSHProcessLauncher(),
             socks5Probe: { SOCKS5Probe.probe(port: $0) },
             reconnectDelay: { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
+            totpGenerator: { try TOTPGenerator.generate(secretBase32: $0) },
             startsHealthTimer: true
         )
     }
 
     init(
-        keychain: KeychainService = KeychainService(),
+        keychain: GenericPasswordReading = KeychainService(),
         processLauncher: SSHProcessLaunching,
         socks5Probe: @escaping (Int) -> Bool = { SOCKS5Probe.probe(port: $0) },
         reconnectDelay: @escaping (Int) -> TimeInterval = { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
+        totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
         startsHealthTimer: Bool = true
     ) {
         self.keychain = keychain
         self.processLauncher = processLauncher
         self.socks5Probe = socks5Probe
         self.reconnectDelay = reconnectDelay
+        self.totpGenerator = totpGenerator
         if startsHealthTimer {
             startHealthTimer()
         }
@@ -116,7 +120,7 @@ public final class TunnelManager {
 
     private func credentials(for profile: TunnelProfile) throws -> TunnelCredentials {
         var password: String?
-        var totp: String?
+        var totp: KeychainSecretReference?
 
         if profile.authMode == .password || profile.authMode == .passwordAndTOTP {
             guard let service = profile.keychain.passwordService else {
@@ -129,8 +133,7 @@ public final class TunnelManager {
             guard let service = profile.keychain.totpService else {
                 throw NSError(domain: "TunnelManager", code: 3, userInfo: [NSLocalizedDescriptionKey: "TOTP service is not configured"])
             }
-            let seed = try keychain.readGenericPassword(service: service, account: profile.keychain.account)
-            totp = try TOTPGenerator.generate(secretBase32: seed)
+            totp = KeychainSecretReference(service: service, account: profile.keychain.account)
         }
 
         return TunnelCredentials(password: password, totp: totp)
@@ -202,9 +205,21 @@ public final class TunnelManager {
             }
         case .sendTOTP:
             guard !tunnel.sentTOTP else { return }
-            if let totp = tunnel.credentials.totp {
-                tunnel.sentTOTP = true
-                write(totp + "\n", to: tunnel)
+            if let totpReference = tunnel.credentials.totp {
+                do {
+                    let seed = try keychain.readGenericPassword(service: totpReference.service, account: totpReference.account)
+                    let totp = try totpGenerator(seed)
+                    tunnel.sentTOTP = true
+                    write(totp + "\n", to: tunnel)
+                } catch {
+                    updateStatusLocked(
+                        tunnel.profile.id,
+                        .failed,
+                        "Could not generate TOTP: \(error.localizedDescription)",
+                        pid: tunnel.session.processIdentifier
+                    )
+                    stopLocked(profileID: tunnel.profile.id, updateStatus: false, reason: .user)
+                }
             }
         }
     }
@@ -327,7 +342,12 @@ public final class TunnelManager {
 
 private struct TunnelCredentials {
     var password: String?
-    var totp: String?
+    var totp: KeychainSecretReference?
+}
+
+private struct KeychainSecretReference {
+    var service: String
+    var account: String
 }
 
 private final class ManagedTunnel {
