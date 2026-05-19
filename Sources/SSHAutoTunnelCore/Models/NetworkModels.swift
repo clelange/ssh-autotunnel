@@ -86,19 +86,22 @@ public struct NetworkPolicyRule: Identifiable, Codable, Equatable, Sendable {
     public var enabled: Bool
     public var match: NetworkMatch
     public var action: NetworkPolicyAction
+    public var profileID: UUID?
 
     public init(
         id: UUID = UUID(),
         name: String,
         enabled: Bool = true,
         match: NetworkMatch,
-        action: NetworkPolicyAction
+        action: NetworkPolicyAction,
+        profileID: UUID? = nil
     ) {
         self.id = id
         self.name = name
         self.enabled = enabled
         self.match = match
         self.action = action
+        self.profileID = profileID
     }
 
     public static func disableProxyRule(from fingerprint: NetworkFingerprint) -> NetworkPolicyRule? {
@@ -149,10 +152,12 @@ public struct NetworkPolicyRule: Identifiable, Codable, Equatable, Sendable {
 public struct NetworkPolicyDecision: Equatable, Sendable {
     public var shouldDisableProxy: Bool
     public var matchedRule: NetworkPolicyRule?
+    public var disabledProfileIDs: Set<UUID>
 
-    public init(shouldDisableProxy: Bool, matchedRule: NetworkPolicyRule?) {
+    public init(shouldDisableProxy: Bool, matchedRule: NetworkPolicyRule?, disabledProfileIDs: Set<UUID> = []) {
         self.shouldDisableProxy = shouldDisableProxy
         self.matchedRule = matchedRule
+        self.disabledProfileIDs = disabledProfileIDs
     }
 }
 

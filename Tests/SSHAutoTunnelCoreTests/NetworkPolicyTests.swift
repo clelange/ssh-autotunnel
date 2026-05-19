@@ -33,4 +33,48 @@ final class NetworkPolicyTests: XCTestCase {
     func testDisableRuleReturnsNilForEmptyFingerprint() {
         XCTAssertNil(NetworkPolicyRule.disableProxyRule(from: NetworkFingerprint()))
     }
+
+    func testScopedDisableRuleDisablesOnlyMatchedProfile() throws {
+        let profileID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
+        let configuration = AppConfiguration(
+            networkRules: [
+                NetworkPolicyRule(
+                    name: "Home disables profile",
+                    match: NetworkMatch(wifiSSID: "Home"),
+                    action: .disableProxy,
+                    profileID: profileID
+                )
+            ]
+        )
+        let decision = NetworkIdentityService(
+            commandRunner: { _, _ in ShellResult(exitCode: 0, stdout: "", stderr: "") },
+            wifiSSIDProvider: { nil },
+            wifiBSSIDProvider: { nil }
+        ).evaluate(configuration: configuration, fingerprint: NetworkFingerprint(wifiSSID: "Home"))
+
+        XCTAssertFalse(decision.shouldDisableProxy)
+        XCTAssertEqual(decision.matchedRule?.name, "Home disables profile")
+        XCTAssertEqual(decision.disabledProfileIDs, [profileID])
+    }
+
+    func testGlobalDisableRuleStillDisablesAllProxyRouting() {
+        let configuration = AppConfiguration(
+            networkRules: [
+                NetworkPolicyRule(
+                    name: "Trusted network",
+                    match: NetworkMatch(searchDomainContains: "cern.ch"),
+                    action: .disableProxy
+                )
+            ]
+        )
+        let decision = NetworkIdentityService(
+            commandRunner: { _, _ in ShellResult(exitCode: 0, stdout: "", stderr: "") },
+            wifiSSIDProvider: { nil },
+            wifiBSSIDProvider: { nil }
+        ).evaluate(configuration: configuration, fingerprint: NetworkFingerprint(searchDomains: ["cern.ch"]))
+
+        XCTAssertTrue(decision.shouldDisableProxy)
+        XCTAssertEqual(decision.matchedRule?.name, "Trusted network")
+        XCTAssertTrue(decision.disabledProfileIDs.isEmpty)
+    }
 }

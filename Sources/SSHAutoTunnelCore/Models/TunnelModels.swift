@@ -346,7 +346,12 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
                 PACRule(name: "PSI Tier-3", domainPattern: "*.psi.ch", profileID: tier3.id)
             ],
             networkRules: [
-                NetworkPolicyRule(name: "CERN trusted network", match: .init(searchDomainContains: "cern.ch"), action: .disableProxy)
+                NetworkPolicyRule(
+                    name: "CERN trusted network",
+                    match: .init(searchDomainContains: "cern.ch"),
+                    action: .disableProxy,
+                    profileID: lxplus.id
+                )
             ],
             proxyApplyMode: .manual
         )

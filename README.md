@@ -20,7 +20,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Automatic reconnect for unexpected SSH exits and repeated SOCKS5 health-check failures.
 - Optional macOS Automatic Proxy Configuration for the active network service.
 - Durable system PAC snapshots so the previous macOS proxy state can be restored after app restart or quit.
-- Network fingerprint rules to disable proxy/PAC behavior on trusted networks.
+- Network fingerprint rules to disable all proxy/PAC behavior or only selected profiles on trusted networks.
 - Settings and diagnostics windows.
 - Port validation for PAC/API/blocking/SOCKS settings, with local server restart when valid listener ports change.
 - Local API, CLI helper, and Shortcuts/App Intents for tunnel, PAC, diagnostics, system proxy, and `ssh-auto2fa` actions.

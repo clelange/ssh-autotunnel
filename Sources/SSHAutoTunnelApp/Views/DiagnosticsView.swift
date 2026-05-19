@@ -58,7 +58,8 @@ struct DiagnosticsView: View {
         let context = PACGenerationContext(
             configuration: appState.configuration,
             statuses: appState.statuses,
-            proxyDisabledByNetworkPolicy: appState.networkDecision.shouldDisableProxy
+            proxyDisabledByNetworkPolicy: appState.networkDecision.shouldDisableProxy,
+            networkDisabledProfileIDs: appState.networkDecision.disabledProfileIDs
         )
         return PACGenerator.generate(context: context)
     }

@@ -103,12 +103,28 @@ public final class NetworkIdentityService {
     }
 
     public func evaluate(configuration: AppConfiguration, fingerprint: NetworkFingerprint) -> NetworkPolicyDecision {
+        var disabledProfileIDs = Set<UUID>()
+        var firstScopedMatch: NetworkPolicyRule?
+
         for rule in configuration.networkRules where rule.enabled {
             if rule.match.matches(fingerprint) {
-                return NetworkPolicyDecision(shouldDisableProxy: rule.action == .disableProxy, matchedRule: rule)
+                guard let profileID = rule.profileID else {
+                    return NetworkPolicyDecision(shouldDisableProxy: rule.action == .disableProxy, matchedRule: rule)
+                }
+                firstScopedMatch = firstScopedMatch ?? rule
+                switch rule.action {
+                case .disableProxy:
+                    disabledProfileIDs.insert(profileID)
+                case .allowProxy:
+                    disabledProfileIDs.remove(profileID)
+                }
             }
         }
-        return NetworkPolicyDecision(shouldDisableProxy: false, matchedRule: nil)
+        return NetworkPolicyDecision(
+            shouldDisableProxy: false,
+            matchedRule: firstScopedMatch,
+            disabledProfileIDs: disabledProfileIDs
+        )
     }
 
     private func serviceName(forDevice device: String) -> String? {

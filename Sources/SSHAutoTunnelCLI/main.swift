@@ -66,6 +66,12 @@ struct SSHAutoTunnelCLI {
         if status.proxyDisabledByNetworkPolicy {
             print("Network policy disabled proxy: \(status.matchedNetworkRule ?? "unknown rule")")
         }
+        if !status.networkDisabledProfileIDs.isEmpty {
+            let disabledProfileNames = status.profiles
+                .filter { status.networkDisabledProfileIDs.contains($0.id) }
+                .map(\.name)
+            print("Network policy disabled profiles: \(disabledProfileNames.isEmpty ? "unknown" : disabledProfileNames.joined(separator: ", "))")
+        }
         for profile in status.profiles {
             let pid = profile.pid.map { " pid=\($0)" } ?? ""
             print("- \(profile.name): \(profile.health.rawValue)\(pid) - \(profile.message)")

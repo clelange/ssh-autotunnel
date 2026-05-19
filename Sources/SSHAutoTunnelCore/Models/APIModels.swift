@@ -48,17 +48,20 @@ public struct AppStatusSnapshot: Codable, Equatable, Sendable {
     public var pacURL: String
     public var proxyDisabledByNetworkPolicy: Bool
     public var matchedNetworkRule: String?
+    public var networkDisabledProfileIDs: [UUID]
     public var profiles: [ProfileStatusSnapshot]
 
     public init(
         pacURL: String,
         proxyDisabledByNetworkPolicy: Bool,
         matchedNetworkRule: String?,
+        networkDisabledProfileIDs: [UUID] = [],
         profiles: [ProfileStatusSnapshot]
     ) {
         self.pacURL = pacURL
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
         self.matchedNetworkRule = matchedNetworkRule
+        self.networkDisabledProfileIDs = networkDisabledProfileIDs
         self.profiles = profiles
     }
 }
@@ -93,6 +96,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
     public var proxyApplyMode: ProxyApplyMode
     public var proxyDisabledByNetworkPolicy: Bool
     public var matchedNetworkRule: String?
+    public var networkDisabledProfileIDs: [UUID]
     public var configuredPorts: LocalServerPorts
     public var activePorts: LocalServerPorts?
     public var currentNetwork: NetworkFingerprint
@@ -108,6 +112,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
         proxyApplyMode: ProxyApplyMode,
         proxyDisabledByNetworkPolicy: Bool,
         matchedNetworkRule: String?,
+        networkDisabledProfileIDs: [UUID] = [],
         configuredPorts: LocalServerPorts,
         activePorts: LocalServerPorts?,
         currentNetwork: NetworkFingerprint,
@@ -122,6 +127,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
         self.proxyApplyMode = proxyApplyMode
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
         self.matchedNetworkRule = matchedNetworkRule
+        self.networkDisabledProfileIDs = networkDisabledProfileIDs
         self.configuredPorts = configuredPorts
         self.activePorts = activePorts
         self.currentNetwork = currentNetwork

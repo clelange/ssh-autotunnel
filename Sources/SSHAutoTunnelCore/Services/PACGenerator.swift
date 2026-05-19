@@ -4,11 +4,18 @@ public struct PACGenerationContext: Sendable {
     public var configuration: AppConfiguration
     public var statuses: [UUID: TunnelRuntimeStatus]
     public var proxyDisabledByNetworkPolicy: Bool
+    public var networkDisabledProfileIDs: Set<UUID>
 
-    public init(configuration: AppConfiguration, statuses: [UUID: TunnelRuntimeStatus], proxyDisabledByNetworkPolicy: Bool = false) {
+    public init(
+        configuration: AppConfiguration,
+        statuses: [UUID: TunnelRuntimeStatus],
+        proxyDisabledByNetworkPolicy: Bool = false,
+        networkDisabledProfileIDs: Set<UUID> = []
+    ) {
         self.configuration = configuration
         self.statuses = statuses
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
+        self.networkDisabledProfileIDs = networkDisabledProfileIDs
     }
 }
 
@@ -36,7 +43,9 @@ public enum PACGenerator {
             guard let profile = profilesByID[rule.profileID] else { continue }
             let status = context.statuses[profile.id] ?? TunnelRuntimeStatus(profileID: profile.id)
             let target: String
-            if status.health.isUsableForPAC {
+            if context.networkDisabledProfileIDs.contains(profile.id) {
+                target = "DIRECT"
+            } else if status.health.isUsableForPAC {
                 target = "SOCKS5 127.0.0.1:\(profile.localSocksPort)"
             } else {
                 target = rule.failureMode == .directFallback ? "DIRECT" : blockingProxy(port: context.configuration.blockingHTTPProxyPort)

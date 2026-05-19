@@ -255,6 +255,10 @@ struct NetworkRulesView: View {
                     Text("Matched: \(rule.name)")
                         .foregroundStyle(.secondary)
                 }
+                if !appState.networkDecision.disabledProfileIDs.isEmpty {
+                    Text("Disabled profiles: \(disabledProfileNames())")
+                        .foregroundStyle(.secondary)
+                }
             }
 
             Section("Current Network") {
@@ -269,6 +273,12 @@ struct NetworkRulesView: View {
                     DisclosureGroup(rule.name) {
                         Toggle("Enabled", isOn: $rule.enabled)
                         TextField("Name", text: $rule.name)
+                        Picker("Scope", selection: $rule.profileID) {
+                            Text("All profiles").tag(Optional<UUID>.none)
+                            ForEach(appState.configuration.profiles) { profile in
+                                Text(profile.name).tag(Optional(profile.id))
+                            }
+                        }
                         TextField("Wi-Fi SSID", text: optionalRuleBinding($rule.match.wifiSSID))
                         TextField("Wi-Fi BSSID", text: optionalRuleBinding($rule.match.wifiBSSID))
                         TextField("Service contains", text: optionalRuleBinding($rule.match.serviceNameContains))
@@ -303,6 +313,13 @@ struct NetworkRulesView: View {
         } set: { newValue in
             value.wrappedValue = newValue.isEmpty ? nil : newValue
         }
+    }
+
+    private func disabledProfileNames() -> String {
+        let names = appState.configuration.profiles
+            .filter { appState.networkDecision.disabledProfileIDs.contains($0.id) }
+            .map(\.name)
+        return names.isEmpty ? "unknown" : names.joined(separator: ", ")
     }
 }
 

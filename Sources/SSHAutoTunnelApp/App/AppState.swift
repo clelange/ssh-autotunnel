@@ -207,6 +207,7 @@ final class AppState: ObservableObject {
             pacURL: pacURL,
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
             matchedNetworkRule: networkDecision.matchedRule?.name,
+            networkDisabledProfileIDs: sortedNetworkDisabledProfileIDs(),
             profiles: profileStatuses
         )
     }
@@ -224,6 +225,7 @@ final class AppState: ObservableObject {
             proxyApplyMode: configuration.proxyApplyMode,
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
             matchedNetworkRule: networkDecision.matchedRule?.name,
+            networkDisabledProfileIDs: sortedNetworkDisabledProfileIDs(),
             configuredPorts: LocalServerPorts(configuration: configuration),
             activePorts: localServers.activePorts,
             currentNetwork: currentNetworkFingerprint,
@@ -468,9 +470,14 @@ final class AppState: ObservableObject {
         let context = PACGenerationContext(
             configuration: configuration,
             statuses: statuses,
-            proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy
+            proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
+            networkDisabledProfileIDs: networkDecision.disabledProfileIDs
         )
         return PACGenerator.generate(context: context)
+    }
+
+    private func sortedNetworkDisabledProfileIDs() -> [UUID] {
+        networkDecision.disabledProfileIDs.sorted { $0.uuidString < $1.uuidString }
     }
 
     private func writePACCopy() {
