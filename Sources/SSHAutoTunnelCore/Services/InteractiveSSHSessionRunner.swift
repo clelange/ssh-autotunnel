@@ -95,8 +95,9 @@ public final class InteractiveSSHSessionRunner {
         let credentials = try credentials(for: profile)
         let controlMaster = try makeJumpHostControlMaster(profile: profile)
         try resetJumpHostControlMaster(controlMaster)
-        writeStatus("Opening jump host control connection to \(controlMaster.jumpHost)", to: output)
+        writeStatus("Opening jump host setup connection to \(controlMaster.jumpHost)", to: output)
         writeStatus("Keep this window open while using the final SSH session.", to: output)
+        writeStatus("Starting \(controlMaster.command.shellCommand)", to: output)
         let status = try runSession(
             command: controlMaster.command,
             profile: profile,
@@ -228,7 +229,7 @@ public final class InteractiveSSHSessionRunner {
 
         var masterArguments = [
             "-M",
-            "-N",
+            "-tt",
             "-S", controlPath,
             "-o", "ControlMaster=yes",
             "-o", "ControlPersist=no",

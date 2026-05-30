@@ -82,6 +82,7 @@
 - Added explicit profile deletion controls plus optional Keychain cleanup for profile password/TOTP items across Settings, local API, CLI, and Shortcuts.
 - Fixed the Settings profile deletion confirmation so it does not reopen for the next selected profile after deletion.
 - Added split-terminal interactive SSH for PSI jump-host profiles so the authenticated hop session stays open while the final host session connects through it.
+- Changed PSI General setup connections to use an interactive hopx session instead of a sessionless `ssh -N` ControlMaster.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
