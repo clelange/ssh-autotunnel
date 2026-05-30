@@ -81,6 +81,7 @@
 - Added optional PAC fallback composition from an existing HTTP(S) PAC URL or local PAC file, with Settings reload controls and generator coverage.
 - Added explicit profile deletion controls plus optional Keychain cleanup for profile password/TOTP items across Settings, local API, CLI, and Shortcuts.
 - Fixed the Settings profile deletion confirmation so it does not reopen for the next selected profile after deletion.
+- Added split-terminal interactive SSH for PSI jump-host profiles so the authenticated hop session stays open while the final host session connects through it.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -94,7 +95,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 196 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 209 XCTest cases.
 
 ## Known Gaps
 

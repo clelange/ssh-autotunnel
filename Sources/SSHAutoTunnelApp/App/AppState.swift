@@ -111,9 +111,22 @@ final class AppState: ObservableObject {
 
     func connectInteractiveSSH(_ profile: TunnelProfile) {
         do {
-            let command = try interactiveSSHHelperCommand(for: profile)
-            try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
-            lastProxyMessage = "\(profile.name): Opened interactive SSH in \(configuration.interactiveTerminal.app.displayName)"
+            let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
+            if InteractiveSSHJumpHostPolicy.requiresPersistentJumpHostSession(interactiveProfile) {
+                try terminalLauncher.launch(
+                    command: interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-jump"),
+                    preference: configuration.interactiveTerminal
+                )
+                try terminalLauncher.launch(
+                    command: interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-final"),
+                    preference: configuration.interactiveTerminal
+                )
+                lastProxyMessage = "\(profile.name): Opened jump host and final SSH sessions in \(configuration.interactiveTerminal.app.displayName)"
+            } else {
+                let command = try interactiveSSHHelperCommand(for: profile)
+                try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
+                lastProxyMessage = "\(profile.name): Opened interactive SSH in \(configuration.interactiveTerminal.app.displayName)"
+            }
         } catch {
             lastProxyMessage = "\(profile.name): Could not open interactive SSH: \(error.localizedDescription)"
         }
@@ -150,8 +163,12 @@ final class AppState: ObservableObject {
     }
 
     private func interactiveSSHHelperCommand(for profile: TunnelProfile) throws -> SSHCommand {
+        try interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh")
+    }
+
+    private func interactiveSSHHelperCommand(for profile: TunnelProfile, helperCommand: String) throws -> SSHCommand {
         let helperPath = try interactiveSSHHelperPath()
-        return SSHCommand(executable: helperPath, arguments: ["interactive-ssh", profile.name])
+        return SSHCommand(executable: helperPath, arguments: [helperCommand, profile.name])
     }
 
     private func interactiveSSHHelperPath() throws -> String {

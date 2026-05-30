@@ -41,4 +41,32 @@ final class InteractiveSSHProfileResolverTests: XCTestCase {
         XCTAssertEqual(resolved.host, "lxplus.cern.ch")
         XCTAssertNil(resolved.jumpHost)
     }
+
+    func testJumpHostPolicyRequiresPersistentSessionsForPSIJumpHosts() {
+        XCTAssertTrue(
+            InteractiveSSHJumpHostPolicy.requiresPersistentJumpHostSession(
+                TunnelProfile(
+                    name: "PSI General",
+                    host: "login.psi.ch",
+                    localSocksPort: 1083,
+                    jumpHost: "alice@hopx.psi.ch"
+                )
+            )
+        )
+        XCTAssertTrue(
+            InteractiveSSHJumpHostPolicy.requiresPersistentJumpHostSession(
+                TunnelProfile(
+                    name: "PSI CMS Tier-3",
+                    host: "t3ui07.psi.ch",
+                    localSocksPort: 1082,
+                    jumpHost: "alice@t3hop01.psi.ch"
+                )
+            )
+        )
+        XCTAssertFalse(
+            InteractiveSSHJumpHostPolicy.requiresPersistentJumpHostSession(
+                TunnelProfile(name: "CERN", host: "lxplus.cern.ch", localSocksPort: 1081)
+            )
+        )
+    }
 }

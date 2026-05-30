@@ -6,6 +6,7 @@ public final class InteractiveSSHSessionRunner {
     private let processLauncher: SSHProcessLaunching
     private let totpGenerator: (String) throws -> String
     private let runCommand: (String, [String]) throws -> Void
+    private let runStatusCommand: (String, [String]) throws -> Int32
 
     public convenience init(keychain: GenericPasswordReading = KeychainService()) {
         self.init(
@@ -14,6 +15,9 @@ public final class InteractiveSSHSessionRunner {
             totpGenerator: { try TOTPGenerator.generate(secretBase32: $0) },
             runCommand: { executable, arguments in
                 _ = try ShellRunner.run(executable, arguments)
+            },
+            runStatusCommand: { executable, arguments in
+                try ShellRunner.run(executable, arguments).exitCode
             }
         )
     }
@@ -24,16 +28,28 @@ public final class InteractiveSSHSessionRunner {
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
         runCommand: @escaping (String, [String]) throws -> Void = { executable, arguments in
             _ = try ShellRunner.run(executable, arguments)
+        },
+        runStatusCommand: @escaping (String, [String]) throws -> Int32 = { executable, arguments in
+            try ShellRunner.run(executable, arguments).exitCode
         }
     ) {
         self.keychain = keychain
         self.processLauncher = processLauncher
         self.totpGenerator = totpGenerator
         self.runCommand = runCommand
+        self.runStatusCommand = runStatusCommand
     }
 
     public func run(profile: TunnelProfile) throws -> Int32 {
         try run(profile: profile, input: .standardInput, output: .standardOutput, errorOutput: .standardError)
+    }
+
+    public func runJumpHostSession(profile: TunnelProfile) throws -> Int32 {
+        try runJumpHostSession(profile: profile, input: .standardInput, output: .standardOutput, errorOutput: .standardError)
+    }
+
+    public func runFinalSessionThroughJumpHost(profile: TunnelProfile) throws -> Int32 {
+        try runFinalSessionThroughJumpHost(profile: profile, input: .standardInput, output: .standardOutput, errorOutput: .standardError)
     }
 
     func run(
@@ -45,42 +61,74 @@ public final class InteractiveSSHSessionRunner {
         configureTerminal: Bool = true
     ) throws -> Int32 {
         writeStatus("Preparing interactive SSH for \(profile.name)", to: output)
-        let credentials = try credentials(for: profile)
         try runKerberosSwitchIfNeeded(profile: profile)
 
-        if shouldUseJumpHostControlMaster(profile) {
-            let controlMaster = try makeJumpHostControlMaster(profile: profile)
-            writeStatus("Opening jump host control connection to \(controlMaster.jumpHost)", to: output)
-            let masterStatus = try runSession(
-                command: controlMaster.command,
-                profile: profile,
-                credentials: credentials,
-                input: input,
-                output: output,
-                errorOutput: errorOutput,
-                bridgeInput: false,
-                configureTerminal: false
+        if InteractiveSSHJumpHostPolicy.requiresPersistentJumpHostSession(profile) {
+            writeStatus(
+                "This profile requires separate jump host and final SSH sessions. Use interactive-ssh-jump and interactive-ssh-final.",
+                to: errorOutput
             )
-            guard masterStatus == 0 else {
-                try? cleanupJumpHostControlMaster(controlMaster)
-                return masterStatus
-            }
-            defer {
-                try? cleanupJumpHostControlMaster(controlMaster)
-            }
-            return try runInteractiveSSH(
-                profile: controlMaster.finalProfile,
-                credentials: credentials,
-                input: input,
-                output: output,
-                errorOutput: errorOutput,
-                bridgeInput: bridgeInput,
-                configureTerminal: configureTerminal
-            )
+            return 2
         }
 
+        let credentials = try credentials(for: profile)
         return try runInteractiveSSH(
             profile: profile,
+            credentials: credentials,
+            input: input,
+            output: output,
+            errorOutput: errorOutput,
+            bridgeInput: bridgeInput,
+            configureTerminal: configureTerminal
+        )
+    }
+
+    func runJumpHostSession(
+        profile: TunnelProfile,
+        input: FileHandle,
+        output: FileHandle,
+        errorOutput: FileHandle,
+        bridgeInput: Bool = true,
+        configureTerminal: Bool = true
+    ) throws -> Int32 {
+        writeStatus("Preparing jump host connection for \(profile.name)", to: output)
+        let credentials = try credentials(for: profile)
+        let controlMaster = try makeJumpHostControlMaster(profile: profile)
+        try resetJumpHostControlMaster(controlMaster)
+        writeStatus("Opening jump host control connection to \(controlMaster.jumpHost)", to: output)
+        writeStatus("Keep this window open while using the final SSH session.", to: output)
+        let status = try runSession(
+            command: controlMaster.command,
+            profile: profile,
+            credentials: credentials,
+            input: input,
+            output: output,
+            errorOutput: errorOutput,
+            bridgeInput: bridgeInput,
+            configureTerminal: configureTerminal
+        )
+        try? FileManager.default.removeItem(at: controlMaster.directory)
+        return status
+    }
+
+    func runFinalSessionThroughJumpHost(
+        profile: TunnelProfile,
+        input: FileHandle,
+        output: FileHandle,
+        errorOutput: FileHandle,
+        bridgeInput: Bool = true,
+        configureTerminal: Bool = true
+    ) throws -> Int32 {
+        writeStatus("Preparing final SSH session for \(profile.name)", to: output)
+        let controlMaster = try makeJumpHostControlMaster(profile: profile)
+        writeStatus("Waiting for authenticated jump host connection to \(controlMaster.jumpHost)", to: output)
+        guard waitForJumpHostControlMaster(controlMaster) else {
+            writeStatus("Timed out waiting for jump host connection. Keep the jump host window open and try again.", to: errorOutput)
+            return 1
+        }
+        let credentials = try credentials(for: profile)
+        return try runInteractiveSSH(
+            profile: controlMaster.finalProfile,
             credentials: credentials,
             input: input,
             output: output,
@@ -167,33 +215,29 @@ public final class InteractiveSSHSessionRunner {
         return terminationStatus
     }
 
-    private func shouldUseJumpHostControlMaster(_ profile: TunnelProfile) -> Bool {
-        guard let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines), !jumpHost.isEmpty else {
-            return false
-        }
-        return jumpHost.localizedCaseInsensitiveContains("t3hop")
-            || jumpHost.localizedCaseInsensitiveContains("hopx.psi.ch")
-    }
-
     private func makeJumpHostControlMaster(profile: TunnelProfile) throws -> JumpHostControlMaster {
         let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let directory = URL(fileURLWithPath: "/tmp")
-            .appendingPathComponent("ssh-autotunnel-\(UUID().uuidString)", isDirectory: true)
+        guard !jumpHost.isEmpty else {
+            throw NSError(domain: "InteractiveSSHSessionRunner", code: 4, userInfo: [NSLocalizedDescriptionKey: "Jump host is not configured"])
+        }
+        let directory = URL(fileURLWithPath: "/tmp", isDirectory: true)
+            .appendingPathComponent("ssh-autotunnel-\(profile.id.uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let controlPath = directory.appendingPathComponent("control").path
 
         var masterArguments = [
-            "-MNf",
+            "-M",
+            "-N",
             "-S", controlPath,
             "-o", "ControlMaster=yes",
-            "-o", "ControlPersist=600",
+            "-o", "ControlPersist=no",
             "-p", "\(profile.sshPort)"
         ]
         if let strictHostKeyCheckingValue = profile.hostKeyPolicy.strictHostKeyCheckingValue {
             masterArguments += ["-o", "StrictHostKeyChecking=\(strictHostKeyCheckingValue)"]
         }
-        masterArguments += ["-o", "PreferredAuthentications=keyboard-interactive,password"]
+        masterArguments += ["-o", "PreferredAuthentications=keyboard-interactive"]
         masterArguments.append(jumpHost)
 
         var finalProfile = profile
@@ -215,9 +259,22 @@ public final class InteractiveSSHSessionRunner {
         )
     }
 
-    private func cleanupJumpHostControlMaster(_ controlMaster: JumpHostControlMaster) throws {
+    private func resetJumpHostControlMaster(_ controlMaster: JumpHostControlMaster) throws {
         try? runCommand("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "exit", controlMaster.jumpHost])
         try? FileManager.default.removeItem(at: controlMaster.directory)
+        try FileManager.default.createDirectory(at: controlMaster.directory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: controlMaster.directory.path)
+    }
+
+    private func waitForJumpHostControlMaster(_ controlMaster: JumpHostControlMaster, timeoutSeconds: TimeInterval = 120) -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if (try? runStatusCommand("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "check", controlMaster.jumpHost])) == 0 {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
     }
 
     private func writeStatus(_ message: String, to output: FileHandle) {

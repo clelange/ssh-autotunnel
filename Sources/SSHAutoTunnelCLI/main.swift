@@ -30,6 +30,18 @@ struct SSHAutoTunnelCLI {
                 let status = try InteractiveSSHSessionRunner().run(profile: interactiveProfile)
                 exit(status == 0 ? 0 : status)
             }
+            if invocation.command == "interactive-ssh-jump" {
+                let profile = try profile(named: invocation.profileName, in: configuration)
+                let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
+                let status = try InteractiveSSHSessionRunner().runJumpHostSession(profile: interactiveProfile)
+                exit(status == 0 ? 0 : status)
+            }
+            if invocation.command == "interactive-ssh-final" {
+                let profile = try profile(named: invocation.profileName, in: configuration)
+                let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
+                let status = try InteractiveSSHSessionRunner().runFinalSessionThroughJumpHost(profile: interactiveProfile)
+                exit(status == 0 ? 0 : status)
+            }
 
             let client = ControlAPIClient(configuration: configuration)
             let response: ControlResponse
@@ -324,6 +336,8 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl trust-current-network [profile name]
           ssh-autotunnelctl connect <profile name>
           ssh-autotunnelctl interactive-ssh <profile name>
+          ssh-autotunnelctl interactive-ssh-jump <profile name>
+          ssh-autotunnelctl interactive-ssh-final <profile name>
           ssh-autotunnelctl disconnect <profile name>
           ssh-autotunnelctl reconnect <profile name>
         """)

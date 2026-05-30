@@ -94,32 +94,28 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
         XCTAssertEqual(launcher.command?.arguments.last, "alice@lxplus.cern.ch")
     }
 
-    func testRunnerOpensTier3JumpHostControlMasterBeforeFinalSession() throws {
-        try assertRunnerOpensJumpHostControlMasterBeforeFinalSession(
-            profileName: "PSI CMS Tier-3",
-            host: "t3ui07.psi.ch",
-            jumpHost: "alice@t3hop01.psi.ch",
-            secondFactorPrompt: "One-time code:"
+    func testRunnerDeclinesSingleCommandForPersistentJumpHostProfile() throws {
+        let launcher = FakeInteractiveSSHProcessLauncher()
+        let outputPipe = Pipe()
+        let runner = InteractiveSSHSessionRunner(
+            keychain: FakeInteractiveKeychain(values: [:]),
+            processLauncher: launcher
         )
+
+        let status = try runner.run(
+            profile: psiGeneralProfile(),
+            input: FileHandle.standardInput,
+            output: outputPipe.fileHandleForWriting,
+            errorOutput: outputPipe.fileHandleForWriting,
+            bridgeInput: false,
+            configureTerminal: false
+        )
+
+        XCTAssertEqual(status, 2)
+        XCTAssertTrue(launcher.commands.isEmpty)
     }
 
-    func testRunnerOpensPSIGeneralJumpHostControlMasterBeforeFinalSession() throws {
-        try assertRunnerOpensJumpHostControlMasterBeforeFinalSession(
-            profileName: "PSI General",
-            host: "login.psi.ch",
-            jumpHost: "alice@hopx.psi.ch",
-            secondFactorPrompt: "Enter Your Microsoft verification code:"
-        )
-    }
-
-    private func assertRunnerOpensJumpHostControlMasterBeforeFinalSession(
-        profileName: String,
-        host: String,
-        jumpHost: String,
-        secondFactorPrompt: String,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) throws {
+    func testRunnerKeepsPersistentJumpHostSessionOpen() throws {
         let launcher = FakeInteractiveSSHProcessLauncher()
         let outputPipe = Pipe()
         let runner = InteractiveSSHSessionRunner(
@@ -131,26 +127,14 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
             totpGenerator: { _ in "654321" },
             runCommand: { _, _ in }
         )
-        let profile = TunnelProfile(
-            name: profileName,
-            host: host,
-            user: "alice",
-            localSocksPort: 1082,
-            jumpHost: jumpHost,
-            authMode: .passwordAndTOTP,
-            keychain: KeychainReference(
-                account: "alice",
-                passwordService: "password-service",
-                totpService: "totp-service"
-            )
-        )
+        let profile = psiGeneralProfile()
 
-        let runQueue = DispatchQueue(label: "interactive-tier3-test")
+        let runQueue = DispatchQueue(label: "interactive-hop-test")
         var runResult: Result<Int32, Error>?
-        let finished = expectation(description: "runner finished")
+        let finished = expectation(description: "jump host runner finished")
         runQueue.async {
             runResult = Result {
-                try runner.run(
+                try runner.runJumpHostSession(
                     profile: profile,
                     input: FileHandle.standardInput,
                     output: outputPipe.fileHandleForWriting,
@@ -162,22 +146,65 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
             finished.fulfill()
         }
 
-        let masterSession = try waitForSession(launcher, at: 0)
-        launcher.output("Password:", sessionIndex: 0)
-        launcher.output(secondFactorPrompt, sessionIndex: 0)
-        masterSession.finish(status: 0)
-
-        let finalSession = try waitForSession(launcher, at: 1)
-        finalSession.finish(status: 0)
+        let session = try waitForSession(launcher)
+        launcher.output("Password:")
+        launcher.output("Enter Your Microsoft verification code:")
+        session.finish(status: 0)
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(try runResult?.get(), 0, file: file, line: line)
-        XCTAssertEqual(masterSession.writtenStrings, ["secret-password\n", "654321\n"], file: file, line: line)
-        XCTAssertEqual(launcher.commands.first?.arguments.first, "-MNf", file: file, line: line)
-        XCTAssertEqual(launcher.commands.first?.arguments.last, jumpHost, file: file, line: line)
-        XCTAssertTrue(launcher.commands[1].arguments.contains { $0.hasPrefix("ProxyCommand=/usr/bin/ssh -S ") }, file: file, line: line)
-        XCTAssertFalse(launcher.commands[1].arguments.contains("-J"), file: file, line: line)
-        XCTAssertEqual(launcher.commands[1].arguments.last, "alice@\(host)", file: file, line: line)
+        XCTAssertEqual(try runResult?.get(), 0)
+        XCTAssertEqual(session.writtenStrings, ["secret-password\n", "654321\n"])
+        XCTAssertEqual(launcher.commands.first?.arguments.first, "-M")
+        XCTAssertTrue(launcher.commands.first?.arguments.contains("-N") == true)
+        XCTAssertFalse(launcher.commands.first?.arguments.contains("-f") == true)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains("ControlPersist=no") == true)
+        XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@hopx.psi.ch")
+    }
+
+    func testRunnerFinalSessionWaitsForPersistentJumpHost() throws {
+        let launcher = FakeInteractiveSSHProcessLauncher()
+        let outputPipe = Pipe()
+        var statusChecks: [[String]] = []
+        let runner = InteractiveSSHSessionRunner(
+            keychain: FakeInteractiveKeychain(values: [
+                "password-service|alice": "secret-password",
+                "totp-service|alice": "SEED"
+            ]),
+            processLauncher: launcher,
+            runCommand: { _, _ in },
+            runStatusCommand: { _, arguments in
+                statusChecks.append(arguments)
+                return 0
+            }
+        )
+        let profile = psiGeneralProfile()
+
+        let runQueue = DispatchQueue(label: "interactive-final-test")
+        var runResult: Result<Int32, Error>?
+        let finished = expectation(description: "final runner finished")
+        runQueue.async {
+            runResult = Result {
+                try runner.runFinalSessionThroughJumpHost(
+                    profile: profile,
+                    input: FileHandle.standardInput,
+                    output: outputPipe.fileHandleForWriting,
+                    errorOutput: outputPipe.fileHandleForWriting,
+                    bridgeInput: false,
+                    configureTerminal: false
+                )
+            }
+            finished.fulfill()
+        }
+
+        let session = try waitForSession(launcher)
+        session.finish(status: 0)
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try runResult?.get(), 0)
+        XCTAssertEqual(statusChecks.first.map { Array($0.suffix(2)) }, ["check", "alice@hopx.psi.ch"])
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.hasPrefix("ProxyCommand=/usr/bin/ssh -S ") } == true)
+        XCTAssertFalse(launcher.commands.first?.arguments.contains("-J") == true)
+        XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@login.psi.ch")
     }
 
     private func waitForSession(_ launcher: FakeInteractiveSSHProcessLauncher, at index: Int = 0) throws -> FakeInteractiveSSHProcessSession {
@@ -189,6 +216,22 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
             usleep(1_000)
         }
         return try XCTUnwrap(launcher.session(at: index))
+    }
+
+    private func psiGeneralProfile() -> TunnelProfile {
+        TunnelProfile(
+            name: "PSI General",
+            host: "login.psi.ch",
+            user: "alice",
+            localSocksPort: 1083,
+            jumpHost: "alice@hopx.psi.ch",
+            authMode: .passwordAndTOTP,
+            keychain: KeychainReference(
+                account: "alice",
+                passwordService: "password-service",
+                totpService: "totp-service"
+            )
+        )
     }
 }
 
