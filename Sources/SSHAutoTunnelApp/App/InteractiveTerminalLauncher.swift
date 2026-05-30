@@ -51,13 +51,13 @@ struct InteractiveTerminalLauncher {
               NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil else {
             throw InteractiveTerminalLaunchError.terminalUnavailable(InteractiveTerminalApp.terminal.displayName)
         }
-        let script = """
-        tell application id "\(bundleIdentifier)"
-            activate
-            do script \(appleScriptString(command.shellCommand))
-        end tell
-        """
-        try runAppleScript(script)
+        let scriptURL = try writeCommandScript(for: command)
+        do {
+            try runOpen(arguments: ["-b", bundleIdentifier, scriptURL.path])
+        } catch {
+            try? FileManager.default.removeItem(at: scriptURL)
+            throw error
+        }
     }
 
     private func launchITerm2(_ command: SSHCommand) throws {
@@ -70,7 +70,7 @@ struct InteractiveTerminalLauncher {
             activate
             set newWindow to (create window with default profile)
             tell current session of newWindow
-                write text \(appleScriptString(command.shellCommand))
+                write text \(appleScriptString(shellSessionCommand(for: command)))
             end tell
         end tell
         """
@@ -133,13 +133,26 @@ struct InteractiveTerminalLauncher {
         ]
     }
 
-    private func shellSessionCommand(for command: SSHCommand) -> String {
-        """
-        \(command.shellCommand)
-        status=$?
-        printf '\\nSSH session ended with exit status %d. Press Ctrl-D to close this window.\\n' "$status"
-        exec "${SHELL:-/bin/zsh}" -l
-        """
+    private func writeCommandScript(for command: SSHCommand) throws -> URL {
+        let scriptURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SSHAutoTunnel-\(UUID().uuidString).command")
+        let source = "#!/bin/zsh\n\(shellSessionCommand(for: command, cleanupPath: scriptURL.path))\n"
+        try source.write(to: scriptURL, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
+        return scriptURL
+    }
+
+    private func shellSessionCommand(for command: SSHCommand, cleanupPath: String? = nil) -> String {
+        var lines = [
+            command.shellCommand,
+            "status=$?",
+            "printf '\\nSSH session ended with exit status %d. Press Ctrl-D to close this window.\\n' \"$status\""
+        ]
+        if let cleanupPath {
+            lines.append("rm -f \(SSHCommand.shellQuoted(cleanupPath))")
+        }
+        lines.append("exec \"${SHELL:-/bin/zsh}\" -l")
+        return lines.joined(separator: "\n")
     }
 
     private func appleScriptString(_ value: String) -> String {

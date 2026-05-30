@@ -57,6 +57,8 @@ cat >"$INFO_PLIST" <<PLIST
   <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>SSH AutoTunnel opens interactive SSH sessions in the terminal app you select.</string>
 </dict>
 </plist>
 PLIST
