@@ -27,7 +27,7 @@ public enum ConfigurationExportError: LocalizedError, Equatable, Sendable {
 }
 
 public enum ConfigurationExportService {
-    public static let schemaVersion = 1
+    public static let schemaVersion = 2
     public static let bundleVersion = 1
 
     public static func decodeExportDocument(
@@ -56,6 +56,7 @@ public enum ConfigurationExportService {
             schemaVersion: schemaVersion,
             exportedAt: exportedAt,
             appIdentifier: appIdentifier,
+            accounts: configuration.accounts,
             profiles: configuration.profiles,
             pacRules: configuration.pacRules,
             networkRules: configuration.networkRules,
@@ -73,6 +74,7 @@ public enum ConfigurationExportService {
     ) throws -> AppConfiguration {
         try validate(export)
         let imported = AppConfiguration(
+            accounts: export.accounts,
             profiles: export.profiles,
             pacRules: export.pacRules,
             networkRules: export.networkRules,
@@ -142,7 +144,7 @@ public enum ConfigurationExportService {
     }
 
     public static func validate(_ export: ConfigurationExport) throws {
-        guard export.schemaVersion == schemaVersion else {
+        guard (1...schemaVersion).contains(export.schemaVersion) else {
             throw ConfigurationExportError.unsupportedSchemaVersion(export.schemaVersion)
         }
 

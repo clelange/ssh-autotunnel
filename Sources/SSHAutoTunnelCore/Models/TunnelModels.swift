@@ -288,7 +288,56 @@ public enum ProxyApplyMode: String, Codable, CaseIterable, Identifiable, Sendabl
     public var id: String { rawValue }
 }
 
+public enum AccountPresetID: String, Codable, CaseIterable, Identifiable, Sendable {
+    case cernLxPlus
+    case psiTier3
+    case psiGeneral
+
+    public var id: String { rawValue }
+}
+
+public struct AccountConfiguration: Identifiable, Codable, Equatable, Sendable {
+    public var id: AccountPresetID
+    public var displayName: String
+    public var username: String
+    public var credentialHost: String
+    public var interactiveHost: String?
+    public var tunnelEnabled: Bool
+    public var tunnelHost: String?
+    public var jumpHost: String?
+    public var localSocksPort: Int?
+    public var pacDomainPattern: String?
+    public var keychain: KeychainReference
+
+    public init(
+        id: AccountPresetID,
+        displayName: String,
+        username: String,
+        credentialHost: String,
+        interactiveHost: String? = nil,
+        tunnelEnabled: Bool = false,
+        tunnelHost: String? = nil,
+        jumpHost: String? = nil,
+        localSocksPort: Int? = nil,
+        pacDomainPattern: String? = nil,
+        keychain: KeychainReference = KeychainReference()
+    ) {
+        self.id = id
+        self.displayName = displayName
+        self.username = username
+        self.credentialHost = credentialHost
+        self.interactiveHost = interactiveHost
+        self.tunnelEnabled = tunnelEnabled
+        self.tunnelHost = tunnelHost
+        self.jumpHost = jumpHost
+        self.localSocksPort = localSocksPort
+        self.pacDomainPattern = pacDomainPattern
+        self.keychain = keychain
+    }
+}
+
 public struct AppConfiguration: Codable, Equatable, Sendable {
+    public var accounts: [AccountConfiguration]
     public var profiles: [TunnelProfile]
     public var pacRules: [PACRule]
     public var networkRules: [NetworkPolicyRule]
@@ -300,6 +349,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var pacAppendSource: PACAppendSource
 
     private enum CodingKeys: String, CodingKey {
+        case accounts
         case profiles
         case pacRules
         case networkRules
@@ -312,6 +362,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     }
 
     public init(
+        accounts: [AccountConfiguration] = [],
         profiles: [TunnelProfile] = [],
         pacRules: [PACRule] = [],
         networkRules: [NetworkPolicyRule] = [],
@@ -322,6 +373,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         proxyApplyMode: ProxyApplyMode = .manual,
         pacAppendSource: PACAppendSource = PACAppendSource()
     ) {
+        self.accounts = accounts
         self.profiles = profiles
         self.pacRules = pacRules
         self.networkRules = networkRules
@@ -335,6 +387,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        accounts = try container.decodeIfPresent([AccountConfiguration].self, forKey: .accounts) ?? []
         profiles = try container.decodeIfPresent([TunnelProfile].self, forKey: .profiles) ?? []
         pacRules = try container.decodeIfPresent([PACRule].self, forKey: .pacRules) ?? []
         networkRules = try container.decodeIfPresent([NetworkPolicyRule].self, forKey: .networkRules) ?? []
@@ -348,6 +401,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(accounts, forKey: .accounts)
         try container.encode(profiles, forKey: .profiles)
         try container.encode(pacRules, forKey: .pacRules)
         try container.encode(networkRules, forKey: .networkRules)
@@ -360,46 +414,6 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     }
 
     public static func defaultConfiguration() -> AppConfiguration {
-        let lxplus = TunnelProfile(
-            name: "CERN lxplus",
-            host: "lxplus.cern.ch",
-            user: NSUserName(),
-            localSocksPort: 1081,
-            authMode: .kerberosAndTOTP,
-            keychain: KeychainReference(account: NSUserName(), totpService: SSHAuto2FAPresets.cernLxplusTOTPService),
-            healthProbe: HealthProbe(host: "lxplus.cern.ch", port: 22)
-        )
-
-        let tier3 = TunnelProfile(
-            name: "PSI Tier-3",
-            host: "t3ui07.psi.ch",
-            user: NSUserName(),
-            localSocksPort: 1082,
-            jumpHost: "\(NSUserName())@t3hop01.psi.ch",
-            authMode: .passwordAndTOTP,
-            keychain: KeychainReference(
-                account: NSUserName(),
-                passwordService: SSHAuto2FAPresets.psiTier3PasswordService,
-                totpService: SSHAuto2FAPresets.psiTier3TOTPService
-            ),
-            healthProbe: HealthProbe(host: "t3ui07.psi.ch", port: 22)
-        )
-
-        return AppConfiguration(
-            profiles: [lxplus, tier3],
-            pacRules: [
-                PACRule(name: "CERN", domainPattern: "*.cern.ch", profileID: lxplus.id),
-                PACRule(name: "PSI Tier-3", domainPattern: "*.psi.ch", profileID: tier3.id)
-            ],
-            networkRules: [
-                NetworkPolicyRule(
-                    name: "CERN trusted network",
-                    match: .init(searchDomainContains: "cern.ch"),
-                    action: .disableProxy,
-                    profileID: lxplus.id
-                )
-            ],
-            proxyApplyMode: .manual
-        )
+        AppConfiguration(proxyApplyMode: .manual)
     }
 }

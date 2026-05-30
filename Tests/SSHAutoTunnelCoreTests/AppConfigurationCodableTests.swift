@@ -18,6 +18,7 @@ final class AppConfigurationCodableTests: XCTestCase {
 
         let config = try JSONDecoder().decode(AppConfiguration.self, from: json)
 
+        XCTAssertEqual(config.accounts, [])
         XCTAssertEqual(config.blockingHTTPProxyPort, 18485)
         XCTAssertEqual(config.apiToken, "token")
     }
@@ -66,6 +67,26 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(appendSource["location"] as? String, "/tmp/existing.pac")
     }
 
+    func testEncodesAccounts() throws {
+        let account = AccountConfiguration(
+            id: .cernLxPlus,
+            displayName: "CERN LxPlus",
+            username: "clange",
+            credentialHost: "lxplus.cern.ch",
+            interactiveHost: "lxplus.cern.ch",
+            tunnelEnabled: true,
+            tunnelHost: "lxtunnel.cern.ch",
+            localSocksPort: 1081,
+            pacDomainPattern: "*.cern.ch",
+            keychain: KeychainReference(account: "clange", passwordService: "cern-lxplus-password")
+        )
+        let config = AppConfiguration(accounts: [account])
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(AppConfiguration.self, from: data)
+
+        XCTAssertEqual(decoded.accounts, [account])
+    }
+
     func testDecodesLegacyProfileWithoutHostKeyPolicy() throws {
         let json = Data("""
         {
@@ -95,13 +116,12 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(object["hostKeyPolicy"] as? String, "strict")
     }
 
-    func testDefaultPresetProfilesSetSSHUsers() throws {
+    func testDefaultConfigurationStartsWithoutAccountProfiles() throws {
         let config = AppConfiguration.defaultConfiguration()
-        let lxplus = try XCTUnwrap(config.profiles.first { $0.name == "CERN lxplus" })
-        let tier3 = try XCTUnwrap(config.profiles.first { $0.name == "PSI Tier-3" })
 
-        XCTAssertEqual(lxplus.user, NSUserName())
-        XCTAssertEqual(tier3.user, NSUserName())
-        XCTAssertEqual(tier3.jumpHost, "\(NSUserName())@t3hop01.psi.ch")
+        XCTAssertTrue(config.accounts.isEmpty)
+        XCTAssertTrue(config.profiles.isEmpty)
+        XCTAssertTrue(config.pacRules.isEmpty)
+        XCTAssertEqual(config.proxyApplyMode, .manual)
     }
 }

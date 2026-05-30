@@ -74,6 +74,24 @@ public final class KeychainService {
         return value
     }
 
+    public func genericPasswordExists(service: String, account: String) throws -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account,
+            kSecMatchLimit as String: kSecMatchLimitOne
+        ]
+
+        let status = SecItemCopyMatching(query as CFDictionary, nil)
+        if status == errSecItemNotFound {
+            return false
+        }
+        guard status == errSecSuccess else {
+            throw KeychainServiceError.unexpectedStatus(status)
+        }
+        return true
+    }
+
     public func writeGenericPassword(_ value: String, service: String, account: String) throws {
         let data = Data(value.utf8)
         let query: [String: Any] = [

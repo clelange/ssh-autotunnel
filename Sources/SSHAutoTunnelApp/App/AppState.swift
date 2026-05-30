@@ -165,6 +165,59 @@ final class AppState: ObservableObject {
         }
     }
 
+    func defaultAccountSetupInputs() -> [AccountSetupInput] {
+        AccountSetupService.defaultInputs(in: configuration)
+    }
+
+    func accountSetupCredentialStatus(for input: AccountSetupInput) -> AccountSetupCredentialStatus {
+        restoringWindowFocus {
+            AccountSetupService.credentialStatus(for: input, checker: keychain)
+        }
+    }
+
+    @discardableResult
+    func applyAccountSetup(
+        inputs: [AccountSetupInput],
+        passwords: [AccountPresetID: String],
+        totpSeeds: [AccountPresetID: String]
+    ) throws -> AccountSetupResult {
+        let resolvedInputs = try restoringWindowFocus {
+            try inputs.map { input in
+                guard input.isSelected, let preset = AccountSetupService.preset(for: input.id) else {
+                    return input
+                }
+
+                var resolved = input
+                let account = input.username.trimmingCharacters(in: .whitespacesAndNewlines)
+                let password = passwords[input.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                let totpSeed = totpSeeds[input.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+
+                guard !account.isEmpty else { return resolved }
+
+                if !password.isEmpty {
+                    try keychain.writeGenericPassword(password, service: preset.passwordService, account: account)
+                    resolved.passwordAvailable = true
+                } else {
+                    resolved.passwordAvailable = try keychain.genericPasswordExists(service: preset.passwordService, account: account)
+                }
+
+                if !totpSeed.isEmpty {
+                    try keychain.writeGenericPassword(totpSeed, service: preset.totpService, account: account)
+                    resolved.totpSeedAvailable = true
+                } else {
+                    resolved.totpSeedAvailable = try keychain.genericPasswordExists(service: preset.totpService, account: account)
+                }
+
+                return resolved
+            }
+        }
+        let (updated, result) = try AccountSetupService.apply(inputs: resolvedInputs, to: configuration)
+        configuration = updated
+        saveConfiguration()
+        lastProxyMessage = "Setup saved: \(result.configuredAccounts) accounts, \(configuration.profiles.count) tunnel profiles"
+        return result
+    }
+
     func rotateAPIToken() {
         configuration.apiToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         saveConfiguration()
@@ -242,12 +295,15 @@ final class AppState: ObservableObject {
         guard let index = configuration.profiles.firstIndex(where: { $0.id == profileID }) else { return }
         let accountByService = sshAuto2FAPresetAccounts()
         switch configuration.profiles[index].name {
-        case "CERN lxplus":
+        case "CERN lxplus", "CERN LxPlus":
             let account = accountByService[SSHAuto2FAPresets.cernLxplusTOTPService] ?? NSUserName()
             configuration.profiles[index].user = account
             configuration.profiles[index].keychain.account = account
+            if configuration.profiles[index].name == "CERN LxPlus" {
+                configuration.profiles[index].keychain.passwordService = SSHAuto2FAPresets.cernLxplusPasswordService
+            }
             configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.cernLxplusTOTPService
-        case "PSI Tier-3":
+        case "PSI Tier-3", "PSI CMS Tier-3":
             let account = sharedPresetAccount(
                 services: [SSHAuto2FAPresets.psiTier3PasswordService, SSHAuto2FAPresets.psiTier3TOTPService],
                 accountByService: accountByService
@@ -257,6 +313,12 @@ final class AppState: ObservableObject {
             configuration.profiles[index].keychain.account = account
             configuration.profiles[index].keychain.passwordService = SSHAuto2FAPresets.psiTier3PasswordService
             configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.psiTier3TOTPService
+        case "PSI General":
+            let account = configuration.profiles[index].keychain.account
+            configuration.profiles[index].user = account
+            configuration.profiles[index].jumpHost = "\(account)@hopx.psi.ch"
+            configuration.profiles[index].keychain.passwordService = SSHAuto2FAPresets.psiGeneralPasswordService
+            configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.psiGeneralTOTPService
         default:
             break
         }

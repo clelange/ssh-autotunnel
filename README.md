@@ -4,15 +4,15 @@
 
 SSH AutoTunnel is a macOS menu-bar app for starting SSH SOCKS5 tunnels with automatic password/TOTP handling, health-aware PAC routing, network-aware proxy policy, and local automation.
 
-The app is designed for SSH servers that require interactive 2FA, including CERN lxplus and PSI Tier-3 style workflows.
+The app is designed for SSH servers that require interactive 2FA, including CERN LxPlus/lxtunnel and PSI Hop NG or Tier-3 style workflows.
 
 ## Features
 
 - Menu-bar controls for connecting and disconnecting tunnel profiles.
-- First-launch setup window with quick access to imports, settings, PAC URL, and diagnostics.
+- First-launch account setup for CERN LxPlus, PSI CMS Tier-3, and PSI General credentials with optional tunnel target creation.
 - Native Keychain-backed password and TOTP support.
 - Configurable SSH host-key policy per profile, defaulting to accepting new keys while rejecting changed keys.
-- `ssh-auto2fa` Keychain service checks before importing preset profiles.
+- `ssh-auto2fa` Keychain service checks before importing legacy preset profiles.
 - `~/.ssh/config` import for literal `Host` entries, including common user, port, jump-host, and identity options.
 - SSH SOCKS5 tunnels using `/usr/bin/ssh -N -D`.
 - Local PAC server with fail-closed routing when a tunnel is unhealthy.
@@ -100,9 +100,9 @@ swift run ssh-autotunnelctl network-rule-template > network-rule.json
 swift run ssh-autotunnelctl create-network-rule ./network-rule.json
 swift run ssh-autotunnelctl update-network-rule ./network-rule.json
 swift run ssh-autotunnelctl delete-network-rule "Old trusted network"
-swift run ssh-autotunnelctl trust-current-network "CERN lxplus"
-swift run ssh-autotunnelctl connect "CERN lxplus"
-swift run ssh-autotunnelctl disconnect "CERN lxplus"
+swift run ssh-autotunnelctl trust-current-network "CERN LxPlus"
+swift run ssh-autotunnelctl connect "CERN LxPlus"
+swift run ssh-autotunnelctl disconnect "CERN LxPlus"
 ```
 
 ## Configuration
@@ -127,7 +127,18 @@ When `export-config` or `support-bundle` writes to a file path, the CLI applies 
 
 The Settings window exposes the same configuration export, validation, import, and support-bundle workflows with native macOS open/save panels. Settings imports also validate first and create a private pre-import backup before replacing the current configuration.
 
-The app seeds CERN lxplus and PSI Tier-3 profiles. Existing `ssh-auto2fa` Keychain service names can be checked and imported from setup or settings:
+First launch starts with an account setup wizard. CERN LxPlus credentials can create a tunnel profile targeting `lxtunnel.cern.ch`, PSI General credentials can create a `login.psi.ch` tunnel through `hopx.psi.ch`, and PSI CMS Tier-3 credentials can be stored without a tunnel until a final worker/UI host is known.
+
+Setup-created credentials use these Keychain service names:
+
+- `cern-lxplus-password`
+- `cern-lxplus-otp-secret`
+- `psit3-password`
+- `psit3-otp-secret`
+- `psi-general-password`
+- `psi-general-otp-secret`
+
+Existing `ssh-auto2fa` Keychain service names can still be checked and imported from settings:
 
 - `cern-lxplus-otp-secret`
 - `psit3-password`

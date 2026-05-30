@@ -10,7 +10,7 @@ struct ConnectTunnelIntent: AppIntent {
     var profileName: String
 
     init() {
-        profileName = "CERN lxplus"
+        profileName = "CERN LxPlus"
     }
 
     init(profileName: String) {
@@ -31,7 +31,7 @@ struct DisconnectTunnelIntent: AppIntent {
     var profileName: String
 
     init() {
-        profileName = "CERN lxplus"
+        profileName = "CERN LxPlus"
     }
 
     init(profileName: String) {
@@ -52,7 +52,7 @@ struct ReconnectTunnelIntent: AppIntent {
     var profileName: String
 
     init() {
-        profileName = "CERN lxplus"
+        profileName = "CERN LxPlus"
     }
 
     init(profileName: String) {
@@ -229,7 +229,7 @@ struct UpdateProfileIntent: AppIntent {
     var jumpHost: String
 
     init() {
-        profileName = "CERN lxplus"
+        profileName = "CERN LxPlus"
         host = "lxplus.cern.ch"
         localSocksPort = 1081
         sshPort = 22
@@ -300,7 +300,7 @@ struct CreatePACRuleIntent: AppIntent {
     init() {
         name = "New routing"
         domainPattern = "*.example.org"
-        profileName = "CERN lxplus"
+        profileName = "CERN LxPlus"
         failureMode = PACFailureMode.failClosed.rawValue
     }
 
@@ -346,7 +346,7 @@ struct UpdatePACRuleIntent: AppIntent {
     init() {
         ruleName = "CERN"
         domainPattern = "*.cern.ch"
-        profileName = "CERN lxplus"
+        profileName = "CERN LxPlus"
         failureMode = PACFailureMode.failClosed.rawValue
         enabled = true
     }
@@ -660,19 +660,19 @@ struct SupportBundleIntent: AppIntent {
 struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
     static var appShortcuts: [AppShortcut] {
         AppShortcut(
-            intent: ConnectTunnelIntent(profileName: "CERN lxplus"),
+            intent: ConnectTunnelIntent(profileName: "CERN LxPlus"),
             phrases: ["Connect \(.applicationName) tunnel"],
             shortTitle: "Connect Tunnel",
             systemImageName: "server.rack"
         )
         AppShortcut(
-            intent: DisconnectTunnelIntent(profileName: "CERN lxplus"),
+            intent: DisconnectTunnelIntent(profileName: "CERN LxPlus"),
             phrases: ["Disconnect \(.applicationName) tunnel"],
             shortTitle: "Disconnect Tunnel",
             systemImageName: "xmark.circle"
         )
         AppShortcut(
-            intent: ReconnectTunnelIntent(profileName: "CERN lxplus"),
+            intent: ReconnectTunnelIntent(profileName: "CERN LxPlus"),
             phrases: ["Reconnect \(.applicationName) tunnel"],
             shortTitle: "Reconnect Tunnel",
             systemImageName: "arrow.clockwise"

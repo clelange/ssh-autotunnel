@@ -18,10 +18,12 @@ final class ConfigurationStoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: backupURL, encoding: .utf8), "{ invalid json")
         XCTAssertEqual(try posixPermissions(of: backupURL), FileProtection.privateFilePermissions)
         XCTAssertEqual(try posixPermissions(of: url), FileProtection.privateFilePermissions)
-        XCTAssertEqual(result.configuration.profiles.map(\.name), ["CERN lxplus", "PSI Tier-3"])
+        XCTAssertTrue(result.configuration.accounts.isEmpty)
+        XCTAssertTrue(result.configuration.profiles.isEmpty)
 
         let recovered = try store.load()
-        XCTAssertEqual(recovered.profiles.map(\.name), ["CERN lxplus", "PSI Tier-3"])
+        XCTAssertTrue(recovered.accounts.isEmpty)
+        XCTAssertTrue(recovered.profiles.isEmpty)
     }
 
     func testLoadRecoveringKeepsValidConfiguration() throws {

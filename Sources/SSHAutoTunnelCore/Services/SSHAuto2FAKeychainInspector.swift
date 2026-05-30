@@ -8,13 +8,21 @@ public protocol GenericPasswordAccountDiscovering {
     func genericPasswordAccounts(service: String) throws -> [String]
 }
 
+public protocol GenericPasswordExistenceChecking {
+    func genericPasswordExists(service: String, account: String) throws -> Bool
+}
+
 extension KeychainService: GenericPasswordReading {}
 extension KeychainService: GenericPasswordAccountDiscovering {}
+extension KeychainService: GenericPasswordExistenceChecking {}
 
 public enum SSHAuto2FAPresets {
+    public static let cernLxplusPasswordService = "cern-lxplus-password"
     public static let cernLxplusTOTPService = "cern-lxplus-otp-secret"
     public static let psiTier3PasswordService = "psit3-password"
     public static let psiTier3TOTPService = "psit3-otp-secret"
+    public static let psiGeneralPasswordService = "psi-general-password"
+    public static let psiGeneralTOTPService = "psi-general-otp-secret"
 }
 
 public enum KeychainSecretKind: String, Codable, Equatable, Sendable {

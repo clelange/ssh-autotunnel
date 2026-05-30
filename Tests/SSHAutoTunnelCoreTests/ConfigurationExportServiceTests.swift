@@ -18,6 +18,8 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertNil(object["apiToken"])
         XCTAssertFalse(json.contains("secret-local-token"))
         XCTAssertEqual(export.redaction.omittedFields, ["apiToken"])
+        XCTAssertEqual(export.schemaVersion, 2)
+        XCTAssertEqual(export.accounts, configuration.accounts)
         XCTAssertEqual(export.profiles, configuration.profiles)
         XCTAssertEqual(export.pacRules, configuration.pacRules)
         XCTAssertEqual(export.networkRules, configuration.networkRules)
@@ -37,6 +39,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         let exportedJSON = try XCTUnwrap(String(data: exportedData, encoding: .utf8))
 
         XCTAssertEqual(export.profiles, configuration.profiles)
+        XCTAssertEqual(export.accounts, configuration.accounts)
         XCTAssertEqual(export.pacRules, configuration.pacRules)
         XCTAssertEqual(export.networkRules, configuration.networkRules)
         XCTAssertEqual(export.apiHTTPPort, configuration.apiHTTPPort)
@@ -57,6 +60,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         let imported = try ConfigurationExportService.importConfiguration(from: export, preservingLocalValuesFrom: current)
 
         XCTAssertEqual(imported.apiToken, "local-token")
+        XCTAssertEqual(imported.accounts, source.accounts)
         XCTAssertEqual(imported.profiles, source.profiles)
         XCTAssertEqual(imported.pacRules, source.pacRules)
         XCTAssertEqual(imported.networkRules, source.networkRules)
@@ -85,7 +89,34 @@ final class ConfigurationExportServiceTests: XCTestCase {
 
         let export = try JSONDecoder().decode(ConfigurationExport.self, from: json)
 
+        XCTAssertEqual(export.accounts, [])
         XCTAssertEqual(export.pacAppendSource, PACAppendSource())
+    }
+
+    func testImportsSchemaOneExportWithEmptyAccounts() throws {
+        let json = Data("""
+        {
+          "schemaVersion": 1,
+          "exportedAt": 0,
+          "appIdentifier": "test.app",
+          "profiles": [],
+          "pacRules": [],
+          "networkRules": [],
+          "pacHTTPPort": 18483,
+          "blockingHTTPProxyPort": 18485,
+          "apiHTTPPort": 18484,
+          "proxyApplyMode": "manual"
+        }
+        """.utf8)
+        let export = try JSONDecoder().decode(ConfigurationExport.self, from: json)
+
+        let imported = try ConfigurationExportService.importConfiguration(
+            from: export,
+            preservingLocalValuesFrom: AppConfiguration(apiToken: "local-token")
+        )
+
+        XCTAssertEqual(imported.accounts, [])
+        XCTAssertEqual(imported.apiToken, "local-token")
     }
 
     func testImportRejectsInvalidPorts() throws {
@@ -176,6 +207,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         let exportedConfiguration = try XCTUnwrap(object["configuration"] as? [String: Any])
 
         XCTAssertEqual(bundle.configuration.profiles, configuration.profiles)
+        XCTAssertEqual(bundle.configuration.accounts, configuration.accounts)
         XCTAssertEqual(bundle.diagnostics, diagnostics)
         XCTAssertNil(exportedConfiguration["apiToken"])
         XCTAssertFalse(json.contains("secret-local-token"))
@@ -233,7 +265,20 @@ final class ConfigurationExportServiceTests: XCTestCase {
             authMode: .kerberosAndTOTP,
             keychain: KeychainReference(account: "user", totpService: "cern-lxplus-otp-secret")
         )
+        let account = AccountConfiguration(
+            id: .cernLxPlus,
+            displayName: "CERN LxPlus",
+            username: "user",
+            credentialHost: "lxplus.cern.ch",
+            interactiveHost: "lxplus.cern.ch",
+            tunnelEnabled: true,
+            tunnelHost: "lxtunnel.cern.ch",
+            localSocksPort: 1081,
+            pacDomainPattern: "*.cern.ch",
+            keychain: KeychainReference(account: "user", passwordService: "cern-lxplus-password", totpService: "cern-lxplus-otp-secret")
+        )
         return AppConfiguration(
+            accounts: [account],
             profiles: [profile],
             pacRules: [
                 PACRule(

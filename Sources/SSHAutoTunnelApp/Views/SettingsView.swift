@@ -523,7 +523,7 @@ struct AppPreferencesView: View {
                         .font(.caption)
                     }
                 }
-                Text("Creates or updates CERN lxplus and PSI Tier-3 profiles using existing Keychain service names, or imports literal hosts from ~/.ssh/config.")
+                Text("Imports legacy ssh-auto2fa CERN and PSI Tier-3 service names, or imports literal hosts from ~/.ssh/config.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
