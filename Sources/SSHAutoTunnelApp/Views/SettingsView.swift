@@ -71,7 +71,7 @@ struct ProfileEditorView: View {
     @State private var passwordSecret = ""
     @State private var totpSecret = ""
     @State private var secretMessage = ""
-    @State private var isConfirmingDelete = false
+    @State private var deleteCandidate: TunnelProfile?
 
     private var index: Int? {
         appState.configuration.profiles.firstIndex { $0.id == profileID }
@@ -139,7 +139,7 @@ struct ProfileEditorView: View {
                             }
                         }
                         Button(role: .destructive) {
-                            isConfirmingDelete = true
+                            deleteCandidate = profile
                         } label: {
                             Label("Delete Profile", systemImage: "trash")
                         }
@@ -165,17 +165,22 @@ struct ProfileEditorView: View {
             }
             .formStyle(.grouped)
             .confirmationDialog(
-                "Delete \(profile.name)?",
-                isPresented: $isConfirmingDelete,
+                deleteConfirmationTitle,
+                isPresented: Binding(
+                    get: { deleteCandidate != nil },
+                    set: { isPresented in
+                        if !isPresented {
+                            deleteCandidate = nil
+                        }
+                    }
+                ),
                 titleVisibility: .visible
             ) {
                 Button("Delete Profile", role: .destructive) {
-                    appState.deleteProfile(id: profile.id)
-                    onDelete(profile.id)
+                    confirmDelete(deleteKeychainItems: false)
                 }
                 Button("Delete Profile and Keychain Items", role: .destructive) {
-                    appState.deleteProfile(id: profile.id, deleteKeychainItems: true)
-                    onDelete(profile.id)
+                    confirmDelete(deleteKeychainItems: true)
                 }
                 Button("Cancel", role: .cancel) {}
             } message: {
@@ -187,6 +192,20 @@ struct ProfileEditorView: View {
         } else {
             PlaceholderView(title: "Profile Not Found", systemImage: "questionmark.folder")
         }
+    }
+
+    private var deleteConfirmationTitle: String {
+        guard let deleteCandidate else {
+            return "Delete Profile?"
+        }
+        return "Delete \(deleteCandidate.name)?"
+    }
+
+    private func confirmDelete(deleteKeychainItems: Bool) {
+        guard let candidate = deleteCandidate else { return }
+        deleteCandidate = nil
+        appState.deleteProfile(id: candidate.id, deleteKeychainItems: deleteKeychainItems)
+        onDelete(candidate.id)
     }
 
     private func binding<T>(_ index: Int, _ keyPath: WritableKeyPath<TunnelProfile, T>) -> Binding<T> {
