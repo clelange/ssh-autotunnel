@@ -145,8 +145,8 @@ struct InteractiveTerminalLauncher {
     private func shellSessionCommand(for command: SSHCommand, cleanupPath: String? = nil) -> String {
         var lines = [
             command.shellCommand,
-            "status=$?",
-            "printf '\\nSSH session ended with exit status %d. Press Ctrl-D to close this window.\\n' \"$status\""
+            "ssh_autotunnel_status=$?",
+            "printf '\\nSSH session ended with exit status %d. Press Ctrl-D to close this window.\\n' \"$ssh_autotunnel_status\""
         ]
         if let cleanupPath {
             lines.append("rm -f \(SSHCommand.shellQuoted(cleanupPath))")

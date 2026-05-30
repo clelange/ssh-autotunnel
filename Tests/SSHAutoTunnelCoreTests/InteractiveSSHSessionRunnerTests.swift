@@ -94,23 +94,85 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
         XCTAssertEqual(launcher.command?.arguments.last, "alice@lxplus.cern.ch")
     }
 
-    private func waitForSession(_ launcher: FakeInteractiveSSHProcessLauncher) throws -> FakeInteractiveSSHProcessSession {
+    func testRunnerOpensTier3JumpHostControlMasterBeforeFinalSession() throws {
+        let launcher = FakeInteractiveSSHProcessLauncher()
+        let outputPipe = Pipe()
+        let runner = InteractiveSSHSessionRunner(
+            keychain: FakeInteractiveKeychain(values: [
+                "password-service|alice": "secret-password",
+                "totp-service|alice": "SEED"
+            ]),
+            processLauncher: launcher,
+            totpGenerator: { _ in "654321" },
+            runCommand: { _, _ in }
+        )
+        let profile = TunnelProfile(
+            name: "PSI CMS Tier-3",
+            host: "t3ui07.psi.ch",
+            user: "alice",
+            localSocksPort: 1082,
+            jumpHost: "alice@t3hop01.psi.ch",
+            authMode: .passwordAndTOTP,
+            keychain: KeychainReference(
+                account: "alice",
+                passwordService: "password-service",
+                totpService: "totp-service"
+            )
+        )
+
+        let runQueue = DispatchQueue(label: "interactive-tier3-test")
+        var runResult: Result<Int32, Error>?
+        let finished = expectation(description: "runner finished")
+        runQueue.async {
+            runResult = Result {
+                try runner.run(
+                    profile: profile,
+                    input: FileHandle.standardInput,
+                    output: outputPipe.fileHandleForWriting,
+                    errorOutput: outputPipe.fileHandleForWriting,
+                    bridgeInput: false,
+                    configureTerminal: false
+                )
+            }
+            finished.fulfill()
+        }
+
+        let masterSession = try waitForSession(launcher, at: 0)
+        launcher.output("Password:", sessionIndex: 0)
+        launcher.output("One-time code:", sessionIndex: 0)
+        masterSession.finish(status: 0)
+
+        let finalSession = try waitForSession(launcher, at: 1)
+        finalSession.finish(status: 0)
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try runResult?.get(), 0)
+        XCTAssertEqual(masterSession.writtenStrings, ["secret-password\n", "654321\n"])
+        XCTAssertEqual(launcher.commands.first?.arguments.first, "-MNf")
+        XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@t3hop01.psi.ch")
+        XCTAssertTrue(launcher.commands[1].arguments.contains { $0.hasPrefix("ProxyCommand=/usr/bin/ssh -S ") })
+        XCTAssertFalse(launcher.commands[1].arguments.contains("-J"))
+        XCTAssertEqual(launcher.commands[1].arguments.last, "alice@t3ui07.psi.ch")
+    }
+
+    private func waitForSession(_ launcher: FakeInteractiveSSHProcessLauncher, at index: Int = 0) throws -> FakeInteractiveSSHProcessSession {
         let deadline = Date().addingTimeInterval(1)
         while Date() < deadline {
-            if let session = launcher.session {
+            if let session = launcher.session(at: index) {
                 return session
             }
             usleep(1_000)
         }
-        return try XCTUnwrap(launcher.session)
+        return try XCTUnwrap(launcher.session(at: index))
     }
 }
 
 private final class FakeInteractiveSSHProcessLauncher: SSHProcessLaunching {
     private let lock = NSLock()
     private(set) var command: SSHCommand?
-    private var onOutput: ((Data) -> Void)?
-    private(set) var session: FakeInteractiveSSHProcessSession?
+    private(set) var commands: [SSHCommand] = []
+    private var onOutputs: [(Data) -> Void] = []
+    private var sessions: [FakeInteractiveSSHProcessSession] = []
 
     func launch(
         command: SSHCommand,
@@ -120,16 +182,24 @@ private final class FakeInteractiveSSHProcessLauncher: SSHProcessLaunching {
         lock.lock()
         defer { lock.unlock() }
         self.command = command
-        self.onOutput = onOutput
+        self.commands.append(command)
+        self.onOutputs.append(onOutput)
         let session = FakeInteractiveSSHProcessSession(onTermination: onTermination)
-        self.session = session
+        self.sessions.append(session)
         return session
     }
 
-    func output(_ text: String) {
+    func session(at index: Int) -> FakeInteractiveSSHProcessSession? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard sessions.indices.contains(index) else { return nil }
+        return sessions[index]
+    }
+
+    func output(_ text: String, sessionIndex: Int = 0) {
         let data = Data(text.utf8)
         lock.lock()
-        let onOutput = onOutput
+        let onOutput = onOutputs.indices.contains(sessionIndex) ? onOutputs[sessionIndex] : nil
         lock.unlock()
         onOutput?(data)
     }

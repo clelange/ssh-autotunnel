@@ -14,12 +14,21 @@ public enum SSHPromptResponder {
     }
 
     private static func latestPromptMatch(in text: String) -> PromptMatch? {
-        promptPatterns
+        let latest = promptPatterns
             .compactMap { pattern -> PromptMatch? in
                 guard let range = text.range(of: pattern.text, options: pattern.options.union(.backwards)) else { return nil }
                 return PromptMatch(action: pattern.action, range: range)
             }
             .max { lhs, rhs in lhs.range.lowerBound < rhs.range.lowerBound }
+        guard let latest else { return nil }
+
+        if let microsoftRange = text.range(of: "microsoft verification code", options: .backwards),
+           latest.range.lowerBound >= microsoftRange.lowerBound,
+           latest.range.lowerBound < microsoftRange.upperBound {
+            return PromptMatch(action: nil, range: latest.range)
+        }
+
+        return latest
     }
 
     private static let promptPatterns: [PromptPattern] = [
@@ -27,6 +36,7 @@ public enum SSHPromptResponder {
         PromptPattern("password:", .sendPassword),
         PromptPattern("password for ", .sendPassword),
         PromptPattern("'s password:", .sendPassword),
+        PromptPattern("microsoft verification code", nil),
         PromptPattern("one-time code:", .sendTOTP),
         PromptPattern("one time code:", .sendTOTP),
         PromptPattern("verification code", .sendTOTP),
@@ -44,10 +54,10 @@ public enum SSHPromptResponder {
 
 private struct PromptPattern {
     var text: String
-    var action: SSHPromptAction
+    var action: SSHPromptAction?
     var options: String.CompareOptions
 
-    init(_ text: String, _ action: SSHPromptAction, options: String.CompareOptions = []) {
+    init(_ text: String, _ action: SSHPromptAction?, options: String.CompareOptions = []) {
         self.text = text
         self.action = action
         self.options = options
@@ -55,6 +65,6 @@ private struct PromptPattern {
 }
 
 private struct PromptMatch {
-    var action: SSHPromptAction
+    var action: SSHPromptAction?
     var range: Range<String.Index>
 }

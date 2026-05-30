@@ -48,8 +48,81 @@ public final class InteractiveSSHSessionRunner {
         let credentials = try credentials(for: profile)
         try runKerberosSwitchIfNeeded(profile: profile)
 
+        if shouldUseJumpHostControlMaster(profile) {
+            let controlMaster = try makeJumpHostControlMaster(profile: profile)
+            writeStatus("Opening jump host control connection to \(controlMaster.jumpHost)", to: output)
+            let masterStatus = try runSession(
+                command: controlMaster.command,
+                profile: profile,
+                credentials: credentials,
+                input: input,
+                output: output,
+                errorOutput: errorOutput,
+                bridgeInput: false,
+                configureTerminal: false
+            )
+            guard masterStatus == 0 else {
+                try? cleanupJumpHostControlMaster(controlMaster)
+                return masterStatus
+            }
+            defer {
+                try? cleanupJumpHostControlMaster(controlMaster)
+            }
+            return try runInteractiveSSH(
+                profile: controlMaster.finalProfile,
+                credentials: credentials,
+                input: input,
+                output: output,
+                errorOutput: errorOutput,
+                bridgeInput: bridgeInput,
+                configureTerminal: configureTerminal
+            )
+        }
+
+        return try runInteractiveSSH(
+            profile: profile,
+            credentials: credentials,
+            input: input,
+            output: output,
+            errorOutput: errorOutput,
+            bridgeInput: bridgeInput,
+            configureTerminal: configureTerminal
+        )
+    }
+
+    private func runInteractiveSSH(
+        profile: TunnelProfile,
+        credentials: InteractiveSSHCredentials,
+        input: FileHandle,
+        output: FileHandle,
+        errorOutput: FileHandle,
+        bridgeInput: Bool,
+        configureTerminal: Bool
+    ) throws -> Int32 {
         let command = SSHCommandBuilder.interactiveCommand(for: profile)
         writeStatus("Starting \(command.shellCommand)", to: output)
+        return try runSession(
+            command: command,
+            profile: profile,
+            credentials: credentials,
+            input: input,
+            output: output,
+            errorOutput: errorOutput,
+            bridgeInput: bridgeInput,
+            configureTerminal: configureTerminal
+        )
+    }
+
+    private func runSession(
+        command: SSHCommand,
+        profile: TunnelProfile,
+        credentials: InteractiveSSHCredentials,
+        input: FileHandle,
+        output: FileHandle,
+        errorOutput: FileHandle,
+        bridgeInput: Bool,
+        configureTerminal: Bool
+    ) throws -> Int32 {
         let promptState = InteractivePromptState(
             profile: profile,
             credentials: credentials,
@@ -94,6 +167,58 @@ public final class InteractiveSSHSessionRunner {
         return terminationStatus
     }
 
+    private func shouldUseJumpHostControlMaster(_ profile: TunnelProfile) -> Bool {
+        guard let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines), !jumpHost.isEmpty else {
+            return false
+        }
+        return jumpHost.localizedCaseInsensitiveContains("t3hop")
+    }
+
+    private func makeJumpHostControlMaster(profile: TunnelProfile) throws -> JumpHostControlMaster {
+        let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let directory = URL(fileURLWithPath: "/tmp")
+            .appendingPathComponent("ssh-autotunnel-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+        let controlPath = directory.appendingPathComponent("control").path
+
+        var masterArguments = [
+            "-MNf",
+            "-S", controlPath,
+            "-o", "ControlMaster=yes",
+            "-o", "ControlPersist=600",
+            "-p", "\(profile.sshPort)"
+        ]
+        if let strictHostKeyCheckingValue = profile.hostKeyPolicy.strictHostKeyCheckingValue {
+            masterArguments += ["-o", "StrictHostKeyChecking=\(strictHostKeyCheckingValue)"]
+        }
+        masterArguments += ["-o", "PreferredAuthentications=keyboard-interactive,password"]
+        masterArguments.append(jumpHost)
+
+        var finalProfile = profile
+        finalProfile.jumpHost = nil
+        let proxyCommand = [
+            "/usr/bin/ssh",
+            "-S", SSHCommand.shellQuoted(controlPath),
+            "-W", "%h:%p",
+            SSHCommand.shellQuoted(jumpHost)
+        ].joined(separator: " ")
+        finalProfile.extraSSHOptions += ["-o", "ProxyCommand=\(proxyCommand)"]
+
+        return JumpHostControlMaster(
+            jumpHost: jumpHost,
+            controlPath: controlPath,
+            directory: directory,
+            command: SSHCommand(arguments: masterArguments),
+            finalProfile: finalProfile
+        )
+    }
+
+    private func cleanupJumpHostControlMaster(_ controlMaster: JumpHostControlMaster) throws {
+        try? runCommand("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "exit", controlMaster.jumpHost])
+        try? FileManager.default.removeItem(at: controlMaster.directory)
+    }
+
     private func writeStatus(_ message: String, to output: FileHandle) {
         guard let data = "\(message)\n".data(using: .utf8) else { return }
         output.write(data)
@@ -127,6 +252,14 @@ public final class InteractiveSSHSessionRunner {
         let principal = "\(profile.user ?? profile.keychain.account)@CERN.CH"
         try runCommand("/usr/bin/kswitch", ["-p", principal])
     }
+}
+
+private struct JumpHostControlMaster {
+    var jumpHost: String
+    var controlPath: String
+    var directory: URL
+    var command: SSHCommand
+    var finalProfile: TunnelProfile
 }
 
 private struct InteractiveSSHCredentials {
