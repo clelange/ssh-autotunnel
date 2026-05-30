@@ -26,46 +26,51 @@ final class PTYSSHProcessLauncher: SSHProcessLaunching {
         onTermination: @escaping (SSHProcessSession) -> Void
     ) throws -> SSHProcessSession {
         var master: Int32 = -1
-        var slave: Int32 = -1
-        guard openpty(&master, &slave, nil, nil, nil) == 0 else {
-            throw Self.posixError(message: "Could not allocate pseudo-terminal")
-        }
+        let argvStorage = ([command.executable] + command.arguments).map { strdup($0) }
         defer {
             if master >= 0 {
                 close(master)
             }
-            if slave >= 0 {
-                close(slave)
+            for pointer in argvStorage {
+                free(pointer)
             }
         }
+        guard argvStorage.allSatisfy({ $0 != nil }) else {
+            throw Self.posixError(message: "Could not prepare SSH command arguments")
+        }
+        var argv = argvStorage.map { $0 }
+        argv.append(nil)
 
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: command.executable)
-        process.arguments = command.arguments
-        process.standardInput = try Self.duplicatedFileHandle(slave)
-        process.standardOutput = try Self.duplicatedFileHandle(slave)
-        process.standardError = try Self.duplicatedFileHandle(slave)
-        close(slave)
-        slave = -1
+        let pid = withCurrentWindowSize { windowSizePointer in
+            forkpty(&master, nil, nil, windowSizePointer)
+        }
+        guard pid >= 0 else {
+            throw Self.posixError(message: "Could not launch SSH pseudo-terminal")
+        }
+        if pid == 0 {
+            _ = argv.withUnsafeMutableBufferPointer { buffer in
+                execv(argvStorage[0], buffer.baseAddress)
+            }
+            _exit(127)
+        }
 
         let masterHandle = FileHandle(fileDescriptor: master, closeOnDealloc: true)
         master = -1
-        let session = PTYSSHProcessSession(process: process, master: masterHandle, onOutput: onOutput, onTermination: onTermination)
-        process.terminationHandler = { [weak session] _ in
-            session?.notifyTermination()
-        }
-
-        try process.run()
+        let session = PTYSSHProcessSession(pid: pid, master: masterHandle, onOutput: onOutput, onTermination: onTermination)
         session.startReadLoop()
+        session.startWaitLoop()
         return session
     }
 
-    private static func duplicatedFileHandle(_ fileDescriptor: Int32) throws -> FileHandle {
-        let duplicated = dup(fileDescriptor)
-        guard duplicated >= 0 else {
-            throw posixError(message: "Could not duplicate pseudo-terminal file descriptor")
+    private func withCurrentWindowSize<T>(_ body: (UnsafeMutablePointer<winsize>?) -> T) -> T {
+        var windowSize = winsize()
+        guard isatty(STDIN_FILENO) == 1,
+              ioctl(STDIN_FILENO, TIOCGWINSZ, &windowSize) == 0 else {
+            return body(nil)
         }
-        return FileHandle(fileDescriptor: duplicated, closeOnDealloc: true)
+        return withUnsafeMutablePointer(to: &windowSize) { pointer in
+            body(pointer)
+        }
     }
 
     private static func posixError(message: String) -> NSError {
@@ -78,28 +83,35 @@ final class PTYSSHProcessLauncher: SSHProcessLaunching {
 }
 
 private final class PTYSSHProcessSession: SSHProcessSession {
-    private let process: Process
+    private let pid: Int32
     private let master: FileHandle
     private let onOutput: (Data) -> Void
     private let onTermination: (SSHProcessSession) -> Void
+    private let stateLock = NSLock()
+    private var didFinish = false
+    private var status: Int32 = 1
 
-    init(process: Process, master: FileHandle, onOutput: @escaping (Data) -> Void, onTermination: @escaping (SSHProcessSession) -> Void) {
-        self.process = process
+    init(pid: Int32, master: FileHandle, onOutput: @escaping (Data) -> Void, onTermination: @escaping (SSHProcessSession) -> Void) {
+        self.pid = pid
         self.master = master
         self.onOutput = onOutput
         self.onTermination = onTermination
     }
 
     var processIdentifier: Int32 {
-        process.processIdentifier
+        pid
     }
 
     var terminationStatus: Int32 {
-        process.terminationStatus
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return status
     }
 
     var isRunning: Bool {
-        process.isRunning
+        stateLock.lock()
+        defer { stateLock.unlock() }
+        return !didFinish
     }
 
     func write(_ data: Data) {
@@ -107,18 +119,19 @@ private final class PTYSSHProcessSession: SSHProcessSession {
     }
 
     func terminate() {
-        process.terminate()
+        guard isRunning else { return }
+        kill(pid, SIGTERM)
     }
 
     func forceKill() {
-        guard process.isRunning else { return }
-        kill(process.processIdentifier, SIGKILL)
+        guard isRunning else { return }
+        kill(pid, SIGKILL)
     }
 
     func startReadLoop() {
         DispatchQueue.global(qos: .utility).async { [weak self] in
             guard let self else { return }
-            while self.process.isRunning {
+            while true {
                 let data = self.master.availableData
                 if data.isEmpty { break }
                 self.onOutput(data)
@@ -126,7 +139,36 @@ private final class PTYSSHProcessSession: SSHProcessSession {
         }
     }
 
-    func notifyTermination() {
-        onTermination(self)
+    func startWaitLoop() {
+        DispatchQueue.global(qos: .utility).async { [weak self] in
+            guard let self else { return }
+            var waitStatus: Int32 = 0
+            while waitpid(self.pid, &waitStatus, 0) < 0 {
+                guard errno == EINTR else {
+                    waitStatus = 1
+                    break
+                }
+            }
+            self.finish(status: Self.exitStatus(from: waitStatus))
+        }
+    }
+
+    private func finish(status: Int32) {
+        stateLock.lock()
+        let shouldNotify = !didFinish
+        didFinish = true
+        self.status = status
+        stateLock.unlock()
+
+        if shouldNotify {
+            onTermination(self)
+        }
+    }
+
+    private static func exitStatus(from waitStatus: Int32) -> Int32 {
+        if waitStatus & 0x7f == 0 {
+            return (waitStatus >> 8) & 0xff
+        }
+        return 128 + (waitStatus & 0x7f)
     }
 }

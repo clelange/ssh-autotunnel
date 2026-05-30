@@ -60,6 +60,7 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
 
     func testRunnerUsesInteractiveHostInSSHCommand() throws {
         let launcher = FakeInteractiveSSHProcessLauncher()
+        let outputPipe = Pipe()
         let runner = InteractiveSSHSessionRunner(
             keychain: FakeInteractiveKeychain(values: [:]),
             processLauncher: launcher
@@ -78,8 +79,8 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
             _ = try? runner.run(
                 profile: profile,
                 input: FileHandle.standardInput,
-                output: Pipe().fileHandleForWriting,
-                errorOutput: Pipe().fileHandleForWriting,
+                output: outputPipe.fileHandleForWriting,
+                errorOutput: outputPipe.fileHandleForWriting,
                 bridgeInput: false,
                 configureTerminal: false
             )

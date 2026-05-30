@@ -44,10 +44,12 @@ public final class InteractiveSSHSessionRunner {
         bridgeInput: Bool = true,
         configureTerminal: Bool = true
     ) throws -> Int32 {
+        writeStatus("Preparing interactive SSH for \(profile.name)", to: output)
         let credentials = try credentials(for: profile)
         try runKerberosSwitchIfNeeded(profile: profile)
 
         let command = SSHCommandBuilder.interactiveCommand(for: profile)
+        writeStatus("Starting \(command.shellCommand)", to: output)
         let promptState = InteractivePromptState(
             profile: profile,
             credentials: credentials,
@@ -90,6 +92,11 @@ public final class InteractiveSSHSessionRunner {
 
         termination.wait()
         return terminationStatus
+    }
+
+    private func writeStatus(_ message: String, to output: FileHandle) {
+        guard let data = "\(message)\n".data(using: .utf8) else { return }
+        output.write(data)
     }
 
     private func credentials(for profile: TunnelProfile) throws -> InteractiveSSHCredentials {
