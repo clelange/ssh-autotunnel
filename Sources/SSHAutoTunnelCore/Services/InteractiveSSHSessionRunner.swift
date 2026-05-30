@@ -95,6 +95,7 @@ public final class InteractiveSSHSessionRunner {
         let credentials = try credentials(for: profile)
         let controlMaster = try makeJumpHostControlMaster(profile: profile)
         try resetJumpHostControlMaster(controlMaster)
+        let readinessMarker = JumpHostReadinessMarker(controlMaster: controlMaster)
         writeStatus("Opening jump host setup connection to \(controlMaster.jumpHost)", to: output)
         writeStatus("Keep this window open while using the final SSH session.", to: output)
         writeStatus("Starting \(controlMaster.command.shellCommand)", to: output)
@@ -106,7 +107,10 @@ public final class InteractiveSSHSessionRunner {
             output: output,
             errorOutput: errorOutput,
             bridgeInput: bridgeInput,
-            configureTerminal: configureTerminal
+            configureTerminal: configureTerminal,
+            onOutput: { data in
+                readinessMarker?.handle(data)
+            }
         )
         try? FileManager.default.removeItem(at: controlMaster.directory)
         return status
@@ -127,6 +131,13 @@ public final class InteractiveSSHSessionRunner {
             writeStatus("Timed out waiting for jump host connection. Keep the jump host window open and try again.", to: errorOutput)
             return 1
         }
+        if JumpHostReadinessMarker.requiresReadyMarker(for: controlMaster) {
+            writeStatus("Waiting for jump host setup prompt from \(controlMaster.jumpHost)", to: output)
+            guard waitForJumpHostReadiness(controlMaster) else {
+                writeStatus("Timed out waiting for jump host setup prompt. Keep the jump host window open and try again.", to: errorOutput)
+                return 1
+            }
+        }
         let credentials = try credentials(for: profile)
         return try runInteractiveSSH(
             profile: controlMaster.finalProfile,
@@ -146,7 +157,8 @@ public final class InteractiveSSHSessionRunner {
         output: FileHandle,
         errorOutput: FileHandle,
         bridgeInput: Bool,
-        configureTerminal: Bool
+        configureTerminal: Bool,
+        onOutput: ((Data) -> Void)? = nil
     ) throws -> Int32 {
         let command = SSHCommandBuilder.interactiveCommand(for: profile)
         writeStatus("Starting \(command.shellCommand)", to: output)
@@ -170,7 +182,8 @@ public final class InteractiveSSHSessionRunner {
         output: FileHandle,
         errorOutput: FileHandle,
         bridgeInput: Bool,
-        configureTerminal: Bool
+        configureTerminal: Bool,
+        onOutput: ((Data) -> Void)? = nil
     ) throws -> Int32 {
         let promptState = InteractivePromptState(
             profile: profile,
@@ -193,6 +206,7 @@ public final class InteractiveSSHSessionRunner {
             command: command,
             onOutput: { [promptState, sessionBox] data in
                 promptState.handle(data, sessionBox: sessionBox)
+                onOutput?(data)
             },
             onTermination: { session in
                 terminationStatus = session.terminationStatus
@@ -226,6 +240,7 @@ public final class InteractiveSSHSessionRunner {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
         let controlPath = directory.appendingPathComponent("control").path
+        let readyPath = directory.appendingPathComponent("ready")
 
         var masterArguments = [
             "-M",
@@ -254,6 +269,7 @@ public final class InteractiveSSHSessionRunner {
         return JumpHostControlMaster(
             jumpHost: jumpHost,
             controlPath: controlPath,
+            readyPath: readyPath,
             directory: directory,
             command: SSHCommand(arguments: masterArguments),
             finalProfile: finalProfile
@@ -271,6 +287,17 @@ public final class InteractiveSSHSessionRunner {
         let deadline = Date().addingTimeInterval(timeoutSeconds)
         while Date() < deadline {
             if (try? runStatusCommand("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "check", controlMaster.jumpHost])) == 0 {
+                return true
+            }
+            Thread.sleep(forTimeInterval: 0.5)
+        }
+        return false
+    }
+
+    private func waitForJumpHostReadiness(_ controlMaster: JumpHostControlMaster, timeoutSeconds: TimeInterval = 120) -> Bool {
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if FileManager.default.fileExists(atPath: controlMaster.readyPath.path) {
                 return true
             }
             Thread.sleep(forTimeInterval: 0.5)
@@ -316,9 +343,53 @@ public final class InteractiveSSHSessionRunner {
 private struct JumpHostControlMaster {
     var jumpHost: String
     var controlPath: String
+    var readyPath: URL
     var directory: URL
     var command: SSHCommand
     var finalProfile: TunnelProfile
+}
+
+private final class JumpHostReadinessMarker {
+    private let lock = NSLock()
+    private let readyPath: URL
+    private let patterns: [String]
+    private var outputBuffer = Data()
+    private var didMarkReady = false
+
+    init?(controlMaster: JumpHostControlMaster) {
+        let patterns = Self.readyPatterns(for: controlMaster.jumpHost)
+        guard !patterns.isEmpty else { return nil }
+        self.readyPath = controlMaster.readyPath
+        self.patterns = patterns
+    }
+
+    static func requiresReadyMarker(for controlMaster: JumpHostControlMaster) -> Bool {
+        !readyPatterns(for: controlMaster.jumpHost).isEmpty
+    }
+
+    func handle(_ data: Data) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard !didMarkReady else { return }
+        outputBuffer.append(data)
+        if outputBuffer.count > 4096 {
+            outputBuffer.removeFirst(outputBuffer.count - 2048)
+        }
+        guard let text = String(data: outputBuffer, encoding: .utf8)?.lowercased(),
+              patterns.contains(where: { text.contains($0) }) else {
+            return
+        }
+        didMarkReady = true
+        FileManager.default.createFile(atPath: readyPath.path, contents: Data(), attributes: [.posixPermissions: 0o600])
+    }
+
+    private static func readyPatterns(for jumpHost: String) -> [String] {
+        guard jumpHost.localizedCaseInsensitiveContains("t3hop") else { return [] }
+        return [
+            "options (choose number):",
+            "#?"
+        ]
+    }
 }
 
 private struct InteractiveSSHCredentials {

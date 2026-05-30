@@ -162,6 +162,54 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
         XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@hopx.psi.ch")
     }
 
+    func testRunnerMarksTier3JumpHostReadyWhenSetupPromptAppears() throws {
+        let launcher = FakeInteractiveSSHProcessLauncher()
+        let outputPipe = Pipe()
+        let runner = InteractiveSSHSessionRunner(
+            keychain: FakeInteractiveKeychain(values: [
+                "password-service|alice": "secret-password",
+                "totp-service|alice": "SEED"
+            ]),
+            processLauncher: launcher,
+            totpGenerator: { _ in "654321" },
+            runCommand: { _, _ in }
+        )
+        let profile = tier3Profile()
+        let readyPath = jumpHostReadyPath(for: profile)
+        try? FileManager.default.removeItem(at: readyPath.deletingLastPathComponent())
+        defer {
+            try? FileManager.default.removeItem(at: readyPath.deletingLastPathComponent())
+        }
+
+        let runQueue = DispatchQueue(label: "interactive-tier3-hop-test")
+        var runResult: Result<Int32, Error>?
+        let finished = expectation(description: "tier3 jump host runner finished")
+        runQueue.async {
+            runResult = Result {
+                try runner.runJumpHostSession(
+                    profile: profile,
+                    input: FileHandle.standardInput,
+                    output: outputPipe.fileHandleForWriting,
+                    errorOutput: outputPipe.fileHandleForWriting,
+                    bridgeInput: false,
+                    configureTerminal: false
+                )
+            }
+            finished.fulfill()
+        }
+
+        let session = try waitForSession(launcher)
+        launcher.output("Password:")
+        launcher.output("One-time code:")
+        launcher.output("Options (choose number):\n#? ")
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: readyPath.path))
+        session.finish(status: 0)
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try runResult?.get(), 0)
+    }
+
     func testRunnerFinalSessionWaitsForPersistentJumpHost() throws {
         let launcher = FakeInteractiveSSHProcessLauncher()
         let outputPipe = Pipe()
@@ -208,6 +256,68 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
         XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@login.psi.ch")
     }
 
+    func testRunnerFinalSessionWaitsForTier3SetupPromptMarker() throws {
+        let launcher = FakeInteractiveSSHProcessLauncher()
+        let outputPipe = Pipe()
+        var statusChecks: [[String]] = []
+        let statusLock = NSLock()
+        let runner = InteractiveSSHSessionRunner(
+            keychain: FakeInteractiveKeychain(values: [
+                "password-service|alice": "secret-password",
+                "totp-service|alice": "SEED"
+            ]),
+            processLauncher: launcher,
+            runCommand: { _, _ in },
+            runStatusCommand: { _, arguments in
+                statusLock.lock()
+                statusChecks.append(arguments)
+                statusLock.unlock()
+                return 0
+            }
+        )
+        let profile = tier3Profile()
+        let readyPath = jumpHostReadyPath(for: profile)
+        try? FileManager.default.removeItem(at: readyPath.deletingLastPathComponent())
+        defer {
+            try? FileManager.default.removeItem(at: readyPath.deletingLastPathComponent())
+        }
+
+        let runQueue = DispatchQueue(label: "interactive-tier3-final-test")
+        var runResult: Result<Int32, Error>?
+        let finished = expectation(description: "tier3 final runner finished")
+        runQueue.async {
+            runResult = Result {
+                try runner.runFinalSessionThroughJumpHost(
+                    profile: profile,
+                    input: FileHandle.standardInput,
+                    output: outputPipe.fileHandleForWriting,
+                    errorOutput: outputPipe.fileHandleForWriting,
+                    bridgeInput: false,
+                    configureTerminal: false
+                )
+            }
+            finished.fulfill()
+        }
+
+        try waitUntil {
+            statusLock.lock()
+            defer { statusLock.unlock() }
+            return !statusChecks.isEmpty
+        }
+        usleep(100_000)
+        XCTAssertNil(launcher.session(at: 0))
+        try FileManager.default.createDirectory(at: readyPath.deletingLastPathComponent(), withIntermediateDirectories: true)
+        FileManager.default.createFile(atPath: readyPath.path, contents: Data())
+
+        let session = try waitForSession(launcher)
+        session.finish(status: 0)
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try runResult?.get(), 0)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.hasPrefix("ProxyCommand=/usr/bin/ssh -S ") } == true)
+        XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@t3ui07.psi.ch")
+    }
+
     private func waitForSession(_ launcher: FakeInteractiveSSHProcessLauncher, at index: Int = 0) throws -> FakeInteractiveSSHProcessSession {
         let deadline = Date().addingTimeInterval(1)
         while Date() < deadline {
@@ -217,6 +327,17 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
             usleep(1_000)
         }
         return try XCTUnwrap(launcher.session(at: index))
+    }
+
+    private func waitUntil(_ condition: () -> Bool) throws {
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            if condition() {
+                return
+            }
+            usleep(1_000)
+        }
+        XCTAssertTrue(condition())
     }
 
     private func psiGeneralProfile() -> TunnelProfile {
@@ -233,6 +354,28 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
                 totpService: "totp-service"
             )
         )
+    }
+
+    private func tier3Profile() -> TunnelProfile {
+        TunnelProfile(
+            name: "PSI CMS Tier-3",
+            host: "t3ui07.psi.ch",
+            user: "alice",
+            localSocksPort: 1082,
+            jumpHost: "alice@t3hop01.psi.ch",
+            authMode: .passwordAndTOTP,
+            keychain: KeychainReference(
+                account: "alice",
+                passwordService: "password-service",
+                totpService: "totp-service"
+            )
+        )
+    }
+
+    private func jumpHostReadyPath(for profile: TunnelProfile) -> URL {
+        URL(fileURLWithPath: "/tmp", isDirectory: true)
+            .appendingPathComponent("ssh-autotunnel-\(profile.id.uuidString)", isDirectory: true)
+            .appendingPathComponent("ready")
     }
 }
 

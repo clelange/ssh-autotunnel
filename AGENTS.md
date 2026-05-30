@@ -83,6 +83,7 @@
 - Fixed the Settings profile deletion confirmation so it does not reopen for the next selected profile after deletion.
 - Added split-terminal interactive SSH for PSI jump-host profiles so the authenticated hop session stays open while the final host session connects through it.
 - Changed PSI General setup connections to use an interactive hopx session instead of a sessionless `ssh -N` ControlMaster.
+- Made PSI Tier-3 final interactive sessions wait for the bastion setup prompt before launching the UI-node SSH command.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -96,7 +97,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 209 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 211 XCTest cases.
 
 ## Known Gaps
 
