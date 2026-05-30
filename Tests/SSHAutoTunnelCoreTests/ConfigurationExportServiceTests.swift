@@ -18,7 +18,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertNil(object["apiToken"])
         XCTAssertFalse(json.contains("secret-local-token"))
         XCTAssertEqual(export.redaction.omittedFields, ["apiToken"])
-        XCTAssertEqual(export.schemaVersion, 2)
+        XCTAssertEqual(export.schemaVersion, 3)
         XCTAssertEqual(export.accounts, configuration.accounts)
         XCTAssertEqual(export.profiles, configuration.profiles)
         XCTAssertEqual(export.pacRules, configuration.pacRules)
@@ -44,6 +44,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertEqual(export.networkRules, configuration.networkRules)
         XCTAssertEqual(export.apiHTTPPort, configuration.apiHTTPPort)
         XCTAssertEqual(export.pacAppendSource, configuration.pacAppendSource)
+        XCTAssertEqual(export.interactiveTerminal, configuration.interactiveTerminal)
         XCTAssertFalse(exportedJSON.contains("secret-local-token"))
     }
 
@@ -69,6 +70,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertEqual(imported.apiHTTPPort, source.apiHTTPPort)
         XCTAssertEqual(imported.proxyApplyMode, source.proxyApplyMode)
         XCTAssertEqual(imported.pacAppendSource, source.pacAppendSource)
+        XCTAssertEqual(imported.interactiveTerminal, source.interactiveTerminal)
     }
 
     func testDecodesLegacyExportWithoutPACAppendSource() throws {
@@ -91,6 +93,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
 
         XCTAssertEqual(export.accounts, [])
         XCTAssertEqual(export.pacAppendSource, PACAppendSource())
+        XCTAssertEqual(export.interactiveTerminal, InteractiveTerminalPreference())
     }
 
     func testImportsSchemaOneExportWithEmptyAccounts() throws {
@@ -301,7 +304,8 @@ final class ConfigurationExportServiceTests: XCTestCase {
             blockingHTTPProxyPort: 18485,
             apiHTTPPort: 18484,
             apiToken: apiToken,
-            proxyApplyMode: .activeNetworkServicePAC
+            proxyApplyMode: .activeNetworkServicePAC,
+            interactiveTerminal: InteractiveTerminalPreference(app: .iTerm2)
         )
     }
 }

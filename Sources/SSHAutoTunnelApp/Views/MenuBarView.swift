@@ -22,6 +22,18 @@ struct MenuBarView: View {
                 .help(status.message)
             }
 
+            if !appState.configuration.profiles.isEmpty {
+                Menu {
+                    ForEach(appState.configuration.profiles) { profile in
+                        Button(profile.name) {
+                            appState.connectInteractiveSSH(profile)
+                        }
+                    }
+                } label: {
+                    Label("Interactive SSH", systemImage: "terminal")
+                }
+            }
+
             Divider()
 
             Button {

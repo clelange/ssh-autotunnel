@@ -21,6 +21,7 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(config.accounts, [])
         XCTAssertEqual(config.blockingHTTPProxyPort, 18485)
         XCTAssertEqual(config.apiToken, "token")
+        XCTAssertEqual(config.interactiveTerminal, InteractiveTerminalPreference())
     }
 
     func testEncodesBlockingProxyPort() throws {
@@ -65,6 +66,21 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(appendSource["enabled"] as? Bool, true)
         XCTAssertEqual(appendSource["kind"] as? String, "file")
         XCTAssertEqual(appendSource["location"] as? String, "/tmp/existing.pac")
+    }
+
+    func testEncodesInteractiveTerminalPreference() throws {
+        let config = AppConfiguration(
+            interactiveTerminal: InteractiveTerminalPreference(
+                app: .ghostty,
+                customApplicationPath: "/Applications/Ghostty.app"
+            )
+        )
+        let data = try JSONEncoder().encode(config)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let terminal = try XCTUnwrap(object["interactiveTerminal"] as? [String: Any])
+
+        XCTAssertEqual(terminal["app"] as? String, "ghostty")
+        XCTAssertEqual(terminal["customApplicationPath"] as? String, "/Applications/Ghostty.app")
     }
 
     func testEncodesAccounts() throws {

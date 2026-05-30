@@ -35,6 +35,43 @@ final class SSHCommandBuilderTests: XCTestCase {
         XCTAssertEqual(command.arguments.last, "target.example.org")
     }
 
+    func testInteractiveCommandOmitsTunnelForwarding() {
+        let profile = TunnelProfile(
+            name: "Interactive",
+            host: "target.example.org",
+            user: "alice",
+            sshPort: 2222,
+            localSocksPort: 1091,
+            jumpHost: "alice@bastion.example.org",
+            authMode: .passwordAndTOTP
+        )
+
+        let command = SSHCommandBuilder.interactiveCommand(for: profile)
+
+        XCTAssertEqual(command.executable, "/usr/bin/ssh")
+        XCTAssertFalse(command.arguments.contains("-N"))
+        XCTAssertFalse(command.arguments.contains("-D"))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-p", "2222"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-J", "alice@bastion.example.org"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "PreferredAuthentications=keyboard-interactive,password"]))
+        XCTAssertEqual(command.arguments.last, "alice@target.example.org")
+    }
+
+    func testShellCommandQuotesUnsafeArguments() {
+        let command = SSHCommand(arguments: [
+            "-J",
+            "alice@jump.example.org",
+            "alice@host with spaces.example.org",
+            "-o",
+            "ProxyCommand=echo 'quoted'"
+        ])
+
+        XCTAssertEqual(
+            command.shellCommand,
+            "/usr/bin/ssh -J alice@jump.example.org 'alice@host with spaces.example.org' -o 'ProxyCommand=echo '\\''quoted'\\'''"
+        )
+    }
+
     func testPasswordAuthRequestsKeyboardInteractive() {
         let profile = TunnelProfile(
             name: "Password",

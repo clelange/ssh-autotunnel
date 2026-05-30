@@ -30,6 +30,7 @@ final class AppState: ObservableObject {
     private let proxyManager = SystemProxyManager()
     private let notifications = AppNotificationService()
     private let sshLogStore = SSHLogStore()
+    private let terminalLauncher = InteractiveTerminalLauncher()
     private var pathMonitor: NWPathMonitor?
     private var pendingConfigurationSaveTask: Task<Void, Never>?
     private var pendingPACAppendSourceTask: Task<Void, Never>?
@@ -108,6 +109,23 @@ final class AppState: ObservableObject {
         tunnelManager.reconnect(profile: profile)
     }
 
+    func connectInteractiveSSH(_ profile: TunnelProfile) {
+        do {
+            let interactiveProfile = profileForInteractiveSSH(from: profile)
+            let command = SSHCommandBuilder.interactiveCommand(for: interactiveProfile)
+            try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
+            lastProxyMessage = "\(profile.name): Opened interactive SSH in \(configuration.interactiveTerminal.app.displayName)"
+        } catch {
+            lastProxyMessage = "\(profile.name): Could not open interactive SSH: \(error.localizedDescription)"
+        }
+    }
+
+    func interactiveTerminalAvailabilityMessage() -> String {
+        terminalLauncher.isAvailable(configuration.interactiveTerminal)
+            ? "\(configuration.interactiveTerminal.app.displayName) is available"
+            : "\(configuration.interactiveTerminal.app.displayName) is not available"
+    }
+
     func connectWithVerboseSSHLogging(profileID: UUID) {
         guard var profile = configuration.profiles.first(where: { $0.id == profileID }) else { return }
         if !profile.extraSSHOptions.contains("-vvv") {
@@ -130,6 +148,22 @@ final class AppState: ObservableObject {
     func clearSSHLog(for profileID: UUID) {
         logs[profileID] = ""
         try? sshLogStore.clearLog(profileID: profileID)
+    }
+
+    private func profileForInteractiveSSH(from profile: TunnelProfile) -> TunnelProfile {
+        guard let account = configuration.accounts.first(where: { account in
+            guard account.tunnelEnabled, account.tunnelHost == profile.host else { return false }
+            return AccountSetupService.preset(for: account.id)?.profileName == profile.name
+        }),
+              let interactiveHost = account.interactiveHost?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !interactiveHost.isEmpty else {
+            return profile
+        }
+
+        var interactiveProfile = profile
+        interactiveProfile.host = interactiveHost
+        interactiveProfile.jumpHost = nil
+        return interactiveProfile
     }
 
     func saveConfiguration() {

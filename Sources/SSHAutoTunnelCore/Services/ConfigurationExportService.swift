@@ -27,7 +27,7 @@ public enum ConfigurationExportError: LocalizedError, Equatable, Sendable {
 }
 
 public enum ConfigurationExportService {
-    public static let schemaVersion = 2
+    public static let schemaVersion = 3
     public static let bundleVersion = 1
 
     public static func decodeExportDocument(
@@ -64,7 +64,8 @@ public enum ConfigurationExportService {
             blockingHTTPProxyPort: configuration.blockingHTTPProxyPort,
             apiHTTPPort: configuration.apiHTTPPort,
             proxyApplyMode: configuration.proxyApplyMode,
-            pacAppendSource: configuration.pacAppendSource
+            pacAppendSource: configuration.pacAppendSource,
+            interactiveTerminal: configuration.interactiveTerminal
         )
     }
 
@@ -83,7 +84,8 @@ public enum ConfigurationExportService {
             apiHTTPPort: export.apiHTTPPort,
             apiToken: currentConfiguration.apiToken,
             proxyApplyMode: export.proxyApplyMode,
-            pacAppendSource: export.pacAppendSource
+            pacAppendSource: export.pacAppendSource,
+            interactiveTerminal: export.interactiveTerminal
         )
         try PortConfigurationValidator.validate(imported)
         return imported

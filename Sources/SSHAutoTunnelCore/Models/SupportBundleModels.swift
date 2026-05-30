@@ -26,6 +26,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
     public var apiHTTPPort: Int
     public var proxyApplyMode: ProxyApplyMode
     public var pacAppendSource: PACAppendSource
+    public var interactiveTerminal: InteractiveTerminalPreference
     public var redaction: ConfigurationExportRedaction
 
     private enum CodingKeys: String, CodingKey {
@@ -41,11 +42,12 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         case apiHTTPPort
         case proxyApplyMode
         case pacAppendSource
+        case interactiveTerminal
         case redaction
     }
 
     public init(
-        schemaVersion: Int = 2,
+        schemaVersion: Int = 3,
         exportedAt: Date = Date(),
         appIdentifier: String,
         accounts: [AccountConfiguration] = [],
@@ -57,6 +59,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         apiHTTPPort: Int,
         proxyApplyMode: ProxyApplyMode,
         pacAppendSource: PACAppendSource = PACAppendSource(),
+        interactiveTerminal: InteractiveTerminalPreference = InteractiveTerminalPreference(),
         redaction: ConfigurationExportRedaction = ConfigurationExportRedaction()
     ) {
         self.schemaVersion = schemaVersion
@@ -71,6 +74,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         self.apiHTTPPort = apiHTTPPort
         self.proxyApplyMode = proxyApplyMode
         self.pacAppendSource = pacAppendSource
+        self.interactiveTerminal = interactiveTerminal
         self.redaction = redaction
     }
 
@@ -88,6 +92,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         apiHTTPPort = try container.decode(Int.self, forKey: .apiHTTPPort)
         proxyApplyMode = try container.decode(ProxyApplyMode.self, forKey: .proxyApplyMode)
         pacAppendSource = try container.decodeIfPresent(PACAppendSource.self, forKey: .pacAppendSource) ?? PACAppendSource()
+        interactiveTerminal = try container.decodeIfPresent(InteractiveTerminalPreference.self, forKey: .interactiveTerminal) ?? InteractiveTerminalPreference()
         redaction = try container.decodeIfPresent(ConfigurationExportRedaction.self, forKey: .redaction) ?? ConfigurationExportRedaction()
     }
 }

@@ -288,6 +288,46 @@ public enum ProxyApplyMode: String, Codable, CaseIterable, Identifiable, Sendabl
     public var id: String { rawValue }
 }
 
+public enum InteractiveTerminalApp: String, Codable, CaseIterable, Identifiable, Sendable {
+    case terminal
+    case iTerm2
+    case ghostty
+    case custom
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .terminal: "Terminal"
+        case .iTerm2: "iTerm2"
+        case .ghostty: "Ghostty"
+        case .custom: "Custom app"
+        }
+    }
+
+    public var bundleIdentifier: String? {
+        switch self {
+        case .terminal: "com.apple.Terminal"
+        case .iTerm2: "com.googlecode.iterm2"
+        case .ghostty: "com.mitchellh.ghostty"
+        case .custom: nil
+        }
+    }
+}
+
+public struct InteractiveTerminalPreference: Codable, Equatable, Sendable {
+    public var app: InteractiveTerminalApp
+    public var customApplicationPath: String
+
+    public init(
+        app: InteractiveTerminalApp = .terminal,
+        customApplicationPath: String = ""
+    ) {
+        self.app = app
+        self.customApplicationPath = customApplicationPath
+    }
+}
+
 public enum AccountPresetID: String, Codable, CaseIterable, Identifiable, Sendable {
     case cernLxPlus
     case psiTier3
@@ -347,6 +387,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var apiToken: String
     public var proxyApplyMode: ProxyApplyMode
     public var pacAppendSource: PACAppendSource
+    public var interactiveTerminal: InteractiveTerminalPreference
 
     private enum CodingKeys: String, CodingKey {
         case accounts
@@ -359,6 +400,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         case apiToken
         case proxyApplyMode
         case pacAppendSource
+        case interactiveTerminal
     }
 
     public init(
@@ -371,7 +413,8 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         apiHTTPPort: Int = 18484,
         apiToken: String = UUID().uuidString.replacingOccurrences(of: "-", with: ""),
         proxyApplyMode: ProxyApplyMode = .manual,
-        pacAppendSource: PACAppendSource = PACAppendSource()
+        pacAppendSource: PACAppendSource = PACAppendSource(),
+        interactiveTerminal: InteractiveTerminalPreference = InteractiveTerminalPreference()
     ) {
         self.accounts = accounts
         self.profiles = profiles
@@ -383,6 +426,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         self.apiToken = apiToken
         self.proxyApplyMode = proxyApplyMode
         self.pacAppendSource = pacAppendSource
+        self.interactiveTerminal = interactiveTerminal
     }
 
     public init(from decoder: Decoder) throws {
@@ -397,6 +441,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         apiToken = try container.decodeIfPresent(String.self, forKey: .apiToken) ?? UUID().uuidString.replacingOccurrences(of: "-", with: "")
         proxyApplyMode = try container.decodeIfPresent(ProxyApplyMode.self, forKey: .proxyApplyMode) ?? .manual
         pacAppendSource = try container.decodeIfPresent(PACAppendSource.self, forKey: .pacAppendSource) ?? PACAppendSource()
+        interactiveTerminal = try container.decodeIfPresent(InteractiveTerminalPreference.self, forKey: .interactiveTerminal) ?? InteractiveTerminalPreference()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -411,6 +456,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         try container.encode(apiToken, forKey: .apiToken)
         try container.encode(proxyApplyMode, forKey: .proxyApplyMode)
         try container.encode(pacAppendSource, forKey: .pacAppendSource)
+        try container.encode(interactiveTerminal, forKey: .interactiveTerminal)
     }
 
     public static func defaultConfiguration() -> AppConfiguration {
