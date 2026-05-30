@@ -423,9 +423,12 @@ private struct TunnelTargetRow: View {
                 GridRow {
                     Text("Final server")
                         .foregroundStyle(.secondary)
-                    TextField("Server", text: $input.tunnelHost)
-                        .textFieldStyle(.roundedBorder)
-                        .disabled(!input.useForTunnelling)
+                    EditableSuggestionField(
+                        placeholder: "Server",
+                        text: $input.tunnelHost,
+                        suggestions: preset.suggestedTunnelHosts
+                    )
+                    .disabled(!input.useForTunnelling)
                 }
                 if let jumpHost = preset.jumpHost(username: input.username.trimmingCharacters(in: .whitespacesAndNewlines)) {
                     GridRow {
@@ -448,6 +451,34 @@ private struct TunnelTargetRow: View {
         }
         .padding(12)
         .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+    }
+}
+
+private struct EditableSuggestionField: View {
+    var placeholder: String
+    @Binding var text: String
+    var suggestions: [String]
+
+    var body: some View {
+        HStack(spacing: 6) {
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.roundedBorder)
+
+            if !suggestions.isEmpty {
+                Menu {
+                    ForEach(suggestions, id: \.self) { suggestion in
+                        Button(suggestion) {
+                            text = suggestion
+                        }
+                    }
+                } label: {
+                    Image(systemName: "chevron.down")
+                        .frame(width: 18, height: 18)
+                }
+                .menuStyle(.borderlessButton)
+                .help("Choose a suggested server")
+            }
+        }
     }
 }
 

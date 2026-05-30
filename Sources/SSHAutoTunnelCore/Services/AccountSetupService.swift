@@ -6,6 +6,7 @@ public struct AccountSetupPreset: Identifiable, Equatable, Sendable {
     public var credentialHost: String
     public var interactiveHost: String?
     public var defaultTunnelHost: String
+    public var suggestedTunnelHosts: [String]
     public var defaultTunnelEnabled: Bool
     public var tunnelHostRequired: Bool
     public var defaultLocalSocksPort: Int
@@ -19,6 +20,7 @@ public struct AccountSetupPreset: Identifiable, Equatable, Sendable {
         credentialHost: String,
         interactiveHost: String? = nil,
         defaultTunnelHost: String,
+        suggestedTunnelHosts: [String] = [],
         defaultTunnelEnabled: Bool,
         tunnelHostRequired: Bool,
         defaultLocalSocksPort: Int,
@@ -31,6 +33,7 @@ public struct AccountSetupPreset: Identifiable, Equatable, Sendable {
         self.credentialHost = credentialHost
         self.interactiveHost = interactiveHost
         self.defaultTunnelHost = defaultTunnelHost
+        self.suggestedTunnelHosts = suggestedTunnelHosts
         self.defaultTunnelEnabled = defaultTunnelEnabled
         self.tunnelHostRequired = tunnelHostRequired
         self.defaultLocalSocksPort = defaultLocalSocksPort
@@ -190,6 +193,7 @@ public enum AccountSetupService {
             displayName: "PSI CMS Tier-3",
             credentialHost: "t3hop01.psi.ch",
             defaultTunnelHost: "",
+            suggestedTunnelHosts: ["t3ui06.psi.ch", "t3ui07.psi.ch"],
             defaultTunnelEnabled: false,
             tunnelHostRequired: true,
             defaultLocalSocksPort: 1082,

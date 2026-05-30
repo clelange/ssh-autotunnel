@@ -14,6 +14,7 @@ final class AccountSetupServiceTests: XCTestCase {
 
         XCTAssertEqual(tier3.credentialHost, "t3hop01.psi.ch")
         XCTAssertEqual(tier3.defaultTunnelHost, "")
+        XCTAssertEqual(tier3.suggestedTunnelHosts, ["t3ui06.psi.ch", "t3ui07.psi.ch"])
         XCTAssertFalse(tier3.defaultTunnelEnabled)
 
         XCTAssertEqual(psi.credentialHost, "hopx.psi.ch")
