@@ -143,6 +143,7 @@ struct OnboardingView: View {
         }
         .padding(28)
         .frame(minWidth: 760, minHeight: 620)
+        .background(SetupWindowLevelConfigurator())
         .onAppear {
             loadInputsIfNeeded()
         }
@@ -297,6 +298,63 @@ struct OnboardingView: View {
             dictionary.wrappedValue[id, default: ""]
         } set: { value in
             dictionary.wrappedValue[id] = value
+        }
+    }
+}
+
+private struct SetupWindowLevelConfigurator: NSViewRepresentable {
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
+    }
+
+    func makeNSView(context: Context) -> NSView {
+        let view = NSView(frame: .zero)
+        DispatchQueue.main.async {
+            context.coordinator.configure(window: view.window)
+        }
+        return view
+    }
+
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async {
+            context.coordinator.configure(window: view.window)
+        }
+    }
+
+    final class Coordinator {
+        private weak var configuredWindow: NSWindow?
+        private var originalLevel: NSWindow.Level?
+        private var originalCollectionBehavior: NSWindow.CollectionBehavior?
+
+        deinit {
+            restore()
+        }
+
+        func configure(window: NSWindow?) {
+            guard let window else { return }
+            if configuredWindow !== window {
+                restore()
+                configuredWindow = window
+                originalLevel = window.level
+                originalCollectionBehavior = window.collectionBehavior
+            }
+
+            window.level = .floating
+            window.collectionBehavior.insert([.fullScreenAuxiliary, .moveToActiveSpace])
+            window.orderFrontRegardless()
+        }
+
+        private func restore() {
+            guard let window = configuredWindow else { return }
+            if let originalLevel {
+                window.level = originalLevel
+            }
+            if let originalCollectionBehavior {
+                window.collectionBehavior = originalCollectionBehavior
+            }
+            configuredWindow = nil
+            originalLevel = nil
+            originalCollectionBehavior = nil
         }
     }
 }
