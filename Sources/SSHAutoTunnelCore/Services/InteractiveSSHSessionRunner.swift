@@ -172,6 +172,7 @@ public final class InteractiveSSHSessionRunner {
             return false
         }
         return jumpHost.localizedCaseInsensitiveContains("t3hop")
+            || jumpHost.localizedCaseInsensitiveContains("hopx.psi.ch")
     }
 
     private func makeJumpHostControlMaster(profile: TunnelProfile) throws -> JumpHostControlMaster {

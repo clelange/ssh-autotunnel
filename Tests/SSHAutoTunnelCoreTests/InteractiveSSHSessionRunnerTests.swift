@@ -95,6 +95,31 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
     }
 
     func testRunnerOpensTier3JumpHostControlMasterBeforeFinalSession() throws {
+        try assertRunnerOpensJumpHostControlMasterBeforeFinalSession(
+            profileName: "PSI CMS Tier-3",
+            host: "t3ui07.psi.ch",
+            jumpHost: "alice@t3hop01.psi.ch",
+            secondFactorPrompt: "One-time code:"
+        )
+    }
+
+    func testRunnerOpensPSIGeneralJumpHostControlMasterBeforeFinalSession() throws {
+        try assertRunnerOpensJumpHostControlMasterBeforeFinalSession(
+            profileName: "PSI General",
+            host: "login.psi.ch",
+            jumpHost: "alice@hopx.psi.ch",
+            secondFactorPrompt: "Enter Your Microsoft verification code:"
+        )
+    }
+
+    private func assertRunnerOpensJumpHostControlMasterBeforeFinalSession(
+        profileName: String,
+        host: String,
+        jumpHost: String,
+        secondFactorPrompt: String,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) throws {
         let launcher = FakeInteractiveSSHProcessLauncher()
         let outputPipe = Pipe()
         let runner = InteractiveSSHSessionRunner(
@@ -107,11 +132,11 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
             runCommand: { _, _ in }
         )
         let profile = TunnelProfile(
-            name: "PSI CMS Tier-3",
-            host: "t3ui07.psi.ch",
+            name: profileName,
+            host: host,
             user: "alice",
             localSocksPort: 1082,
-            jumpHost: "alice@t3hop01.psi.ch",
+            jumpHost: jumpHost,
             authMode: .passwordAndTOTP,
             keychain: KeychainReference(
                 account: "alice",
@@ -139,20 +164,20 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
 
         let masterSession = try waitForSession(launcher, at: 0)
         launcher.output("Password:", sessionIndex: 0)
-        launcher.output("One-time code:", sessionIndex: 0)
+        launcher.output(secondFactorPrompt, sessionIndex: 0)
         masterSession.finish(status: 0)
 
         let finalSession = try waitForSession(launcher, at: 1)
         finalSession.finish(status: 0)
 
         wait(for: [finished], timeout: 2)
-        XCTAssertEqual(try runResult?.get(), 0)
-        XCTAssertEqual(masterSession.writtenStrings, ["secret-password\n", "654321\n"])
-        XCTAssertEqual(launcher.commands.first?.arguments.first, "-MNf")
-        XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@t3hop01.psi.ch")
-        XCTAssertTrue(launcher.commands[1].arguments.contains { $0.hasPrefix("ProxyCommand=/usr/bin/ssh -S ") })
-        XCTAssertFalse(launcher.commands[1].arguments.contains("-J"))
-        XCTAssertEqual(launcher.commands[1].arguments.last, "alice@t3ui07.psi.ch")
+        XCTAssertEqual(try runResult?.get(), 0, file: file, line: line)
+        XCTAssertEqual(masterSession.writtenStrings, ["secret-password\n", "654321\n"], file: file, line: line)
+        XCTAssertEqual(launcher.commands.first?.arguments.first, "-MNf", file: file, line: line)
+        XCTAssertEqual(launcher.commands.first?.arguments.last, jumpHost, file: file, line: line)
+        XCTAssertTrue(launcher.commands[1].arguments.contains { $0.hasPrefix("ProxyCommand=/usr/bin/ssh -S ") }, file: file, line: line)
+        XCTAssertFalse(launcher.commands[1].arguments.contains("-J"), file: file, line: line)
+        XCTAssertEqual(launcher.commands[1].arguments.last, "alice@\(host)", file: file, line: line)
     }
 
     private func waitForSession(_ launcher: FakeInteractiveSSHProcessLauncher, at index: Int = 0) throws -> FakeInteractiveSSHProcessSession {

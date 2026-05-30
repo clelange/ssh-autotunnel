@@ -29,8 +29,8 @@ final class SSHPromptResponderTests: XCTestCase {
         XCTAssertEqual(SSHPromptResponder.nextAction(for: "Duo passcode:"), .sendTOTP)
     }
 
-    func testMicrosoftVerificationCodePromptStaysManual() {
-        XCTAssertNil(SSHPromptResponder.nextAction(for: "(user@hopx.psi.ch) Enter Your Microsoft verification code:"))
+    func testMicrosoftVerificationCodePromptRequestsTOTP() {
+        XCTAssertEqual(SSHPromptResponder.nextAction(for: "(user@hopx.psi.ch) Enter Your Microsoft verification code:"), .sendTOTP)
     }
 
     func testNewestPasswordPromptWinsAfterHostKeyPrompt() {
