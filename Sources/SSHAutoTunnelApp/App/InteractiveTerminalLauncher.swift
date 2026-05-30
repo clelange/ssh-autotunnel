@@ -79,10 +79,10 @@ struct InteractiveTerminalLauncher {
 
     private func launchGhostty(_ command: SSHCommand) throws {
         guard let bundleIdentifier = InteractiveTerminalApp.ghostty.bundleIdentifier,
-              NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil else {
+              let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
             throw InteractiveTerminalLaunchError.terminalUnavailable(InteractiveTerminalApp.ghostty.displayName)
         }
-        try runOpen(arguments: ["-b", bundleIdentifier, "--args", "-e", command.executable] + command.arguments)
+        try runOpen(arguments: ["-n", applicationURL.path, "--args"] + terminalEmulatorArguments(for: command))
     }
 
     private func launchCustom(_ command: SSHCommand, applicationPath: String) throws {
@@ -90,7 +90,7 @@ struct InteractiveTerminalLauncher {
         guard !trimmedPath.isEmpty, FileManager.default.fileExists(atPath: trimmedPath) else {
             throw InteractiveTerminalLaunchError.customApplicationMissing
         }
-        try runOpen(arguments: [trimmedPath, "--args", "-e", command.executable] + command.arguments)
+        try runOpen(arguments: ["-n", trimmedPath, "--args"] + terminalEmulatorArguments(for: command))
     }
 
     private func runAppleScript(_ source: String) throws {
@@ -122,6 +122,24 @@ struct InteractiveTerminalLauncher {
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             throw InteractiveTerminalLaunchError.openFailed(message?.isEmpty == false ? message! : "open exited with status \(process.terminationStatus)")
         }
+    }
+
+    private func terminalEmulatorArguments(for command: SSHCommand) -> [String] {
+        [
+            "-e",
+            "/bin/zsh",
+            "-lc",
+            shellSessionCommand(for: command)
+        ]
+    }
+
+    private func shellSessionCommand(for command: SSHCommand) -> String {
+        """
+        \(command.shellCommand)
+        status=$?
+        printf '\\nSSH session ended with exit status %d. Press Ctrl-D to close this window.\\n' "$status"
+        exec "${SHELL:-/bin/zsh}" -l
+        """
     }
 
     private func appleScriptString(_ value: String) -> String {

@@ -531,7 +531,7 @@ struct AppPreferencesView: View {
                             chooseTerminalApplication()
                         }
                     }
-                    Text("Custom terminal apps must accept command launches with `-e /usr/bin/ssh ...`.")
+                    Text("Custom terminal apps must accept command launches with `-e /bin/zsh -lc ...`.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
