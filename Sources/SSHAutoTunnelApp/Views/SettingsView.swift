@@ -16,7 +16,11 @@ struct SettingsView: View {
                             .tag(profile.id)
                     }
                     .onDelete { offsets in
+                        let deletedIDs = Set(offsets.map { appState.configuration.profiles[$0].id })
                         appState.deleteProfiles(at: offsets)
+                        if let selectedProfileID, deletedIDs.contains(selectedProfileID) {
+                            self.selectedProfileID = appState.configuration.profiles.first?.id
+                        }
                     }
                 }
             }
@@ -32,7 +36,11 @@ struct SettingsView: View {
         } detail: {
             TabView {
                 if let selectedProfileID, appState.configuration.profiles.contains(where: { $0.id == selectedProfileID }) {
-                    ProfileEditorView(profileID: selectedProfileID)
+                    ProfileEditorView(profileID: selectedProfileID) { deletedProfileID in
+                        if selectedProfileID == deletedProfileID {
+                            self.selectedProfileID = appState.configuration.profiles.first?.id
+                        }
+                    }
                         .tabItem { Label("Profile", systemImage: "server.rack") }
                 } else {
                     PlaceholderView(title: "Select a Profile", systemImage: "server.rack")
@@ -59,9 +67,11 @@ struct SettingsView: View {
 struct ProfileEditorView: View {
     @EnvironmentObject private var appState: AppState
     let profileID: UUID
+    var onDelete: (UUID) -> Void = { _ in }
     @State private var passwordSecret = ""
     @State private var totpSecret = ""
     @State private var secretMessage = ""
+    @State private var isConfirmingDelete = false
 
     private var index: Int? {
         appState.configuration.profiles.firstIndex { $0.id == profileID }
@@ -123,6 +133,11 @@ struct ProfileEditorView: View {
                             Button("Disconnect") { appState.disconnect(profile) }
                             Button("Reconnect") { appState.reconnect(profile) }
                         }
+                        Button(role: .destructive) {
+                            isConfirmingDelete = true
+                        } label: {
+                            Label("Delete Profile", systemImage: "trash")
+                        }
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(status.health.rawValue.capitalized)
@@ -144,6 +159,23 @@ struct ProfileEditorView: View {
                 }
             }
             .formStyle(.grouped)
+            .confirmationDialog(
+                "Delete \(profile.name)?",
+                isPresented: $isConfirmingDelete,
+                titleVisibility: .visible
+            ) {
+                Button("Delete Profile", role: .destructive) {
+                    appState.deleteProfile(id: profile.id)
+                    onDelete(profile.id)
+                }
+                Button("Delete Profile and Keychain Items", role: .destructive) {
+                    appState.deleteProfile(id: profile.id, deleteKeychainItems: true)
+                    onDelete(profile.id)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Keychain cleanup removes configured password and TOTP items only when no remaining profile references the same service and account.")
+            }
             .onChange(of: appState.configuration) { _ in
                 appState.scheduleConfigurationSave()
             }

@@ -79,6 +79,7 @@
 - Added CI artifact upload for the verified local app/CLI package zip.
 - Added SHA-256 checksum generation and verification for local package archives.
 - Added optional PAC fallback composition from an existing HTTP(S) PAC URL or local PAC file, with Settings reload controls and generator coverage.
+- Added explicit profile deletion controls plus optional Keychain cleanup for profile password/TOTP items across Settings, local API, CLI, and Shortcuts.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -92,7 +93,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 177 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 193 XCTest cases.
 
 ## Known Gaps
 

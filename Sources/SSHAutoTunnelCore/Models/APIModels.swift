@@ -33,6 +33,7 @@ public struct ControlRequest: Codable, Sendable {
     public var action: ControlAction
     public var profileName: String?
     public var profileID: UUID?
+    public var deleteKeychainItems: Bool?
     public var profile: TunnelProfile?
     public var pacRuleName: String?
     public var pacRuleID: UUID?
@@ -46,6 +47,7 @@ public struct ControlRequest: Codable, Sendable {
         action: ControlAction,
         profileName: String? = nil,
         profileID: UUID? = nil,
+        deleteKeychainItems: Bool? = nil,
         profile: TunnelProfile? = nil,
         pacRuleName: String? = nil,
         pacRuleID: UUID? = nil,
@@ -58,6 +60,7 @@ public struct ControlRequest: Codable, Sendable {
         self.action = action
         self.profileName = profileName
         self.profileID = profileID
+        self.deleteKeychainItems = deleteKeychainItems
         self.profile = profile
         self.pacRuleName = pacRuleName
         self.pacRuleID = pacRuleID

@@ -267,16 +267,27 @@ struct DeleteProfileIntent: AppIntent {
     @Parameter(title: "Profile Name")
     var profileName: String
 
+    @Parameter(title: "Delete Keychain Items")
+    var deleteKeychainItems: Bool
+
     init() {
         profileName = "Old tunnel"
+        deleteKeychainItems = false
     }
 
-    init(profileName: String) {
+    init(profileName: String, deleteKeychainItems: Bool = false) {
         self.profileName = profileName
+        self.deleteKeychainItems = deleteKeychainItems
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let response = try await api().send(ControlRequest(action: .deleteProfile, profileName: profileName))
+        let response = try await api().send(
+            ControlRequest(
+                action: .deleteProfile,
+                profileName: profileName,
+                deleteKeychainItems: deleteKeychainItems
+            )
+        )
         return .result(dialog: IntentDialog(stringLiteral: response.message))
     }
 }

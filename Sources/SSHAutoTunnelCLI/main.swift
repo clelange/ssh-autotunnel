@@ -68,7 +68,13 @@ struct SSHAutoTunnelCLI {
                 let profile = try readProfile(from: invocation.profileName)
                 response = try await client.send(ControlRequest(action: .updateProfile, profileName: profile.name, profileID: profile.id, profile: profile))
             case "delete-profile":
-                response = try await client.send(ControlRequest(action: .deleteProfile, profileName: invocation.profileName))
+                response = try await client.send(
+                    ControlRequest(
+                        action: .deleteProfile,
+                        profileName: invocation.profileName,
+                        deleteKeychainItems: invocation.deleteKeychainItems ? true : nil
+                    )
+                )
             case "create-pac-rule":
                 let rule = try readPACRule(from: invocation.profileName)
                 response = try await client.send(ControlRequest(action: .createPACRule, pacRule: rule))
@@ -289,7 +295,7 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl profile-template
           ssh-autotunnelctl create-profile <profile.json|->
           ssh-autotunnelctl update-profile <profile.json|->
-          ssh-autotunnelctl delete-profile <profile name>
+          ssh-autotunnelctl delete-profile [--delete-keychain] <profile name>
           ssh-autotunnelctl pac-rule-template
           ssh-autotunnelctl create-pac-rule <pac-rule.json|->
           ssh-autotunnelctl update-pac-rule <pac-rule.json|->

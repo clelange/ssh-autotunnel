@@ -59,6 +59,10 @@ final class CLIArgumentsTests: XCTestCase {
             CLIArguments.parse(["delete-profile", "CERN", "lxplus"]),
             CLIInvocation(command: "delete-profile", profileName: "CERN lxplus")
         )
+        XCTAssertEqual(
+            CLIArguments.parse(["delete-profile", "--delete-keychain", "CERN", "lxplus"]),
+            CLIInvocation(command: "delete-profile", profileName: "CERN lxplus", deleteKeychainItems: true)
+        )
     }
 
     func testParsesProfileTemplateCommand() {

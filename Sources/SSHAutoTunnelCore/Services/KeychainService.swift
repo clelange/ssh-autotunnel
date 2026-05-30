@@ -18,6 +18,11 @@ public enum KeychainServiceError: Error, LocalizedError {
     }
 }
 
+public protocol GenericPasswordDeleting {
+    @discardableResult
+    func deleteGenericPassword(service: String, account: String) throws -> Bool
+}
+
 public final class KeychainService {
     public init() {}
 
@@ -121,4 +126,24 @@ public final class KeychainService {
             throw KeychainServiceError.unexpectedStatus(addStatus)
         }
     }
+
+    @discardableResult
+    public func deleteGenericPassword(service: String, account: String) throws -> Bool {
+        let query: [String: Any] = [
+            kSecClass as String: kSecClassGenericPassword,
+            kSecAttrService as String: service,
+            kSecAttrAccount as String: account
+        ]
+
+        let status = SecItemDelete(query as CFDictionary)
+        if status == errSecItemNotFound {
+            return false
+        }
+        guard status == errSecSuccess else {
+            throw KeychainServiceError.unexpectedStatus(status)
+        }
+        return true
+    }
 }
+
+extension KeychainService: GenericPasswordDeleting {}

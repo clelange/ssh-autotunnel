@@ -4,6 +4,13 @@ import Network
 import SSHAutoTunnelCore
 import SwiftUI
 
+private struct ProfileDeletionResult {
+    var profileCount: Int
+    var requestedKeychainCleanup: Bool
+    var deletedKeychainItemCount: Int
+    var keychainCleanupError: Error?
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var configuration: AppConfiguration
@@ -367,21 +374,96 @@ final class AppState: ObservableObject {
         saveConfiguration()
     }
 
-    func deleteProfiles(at offsets: IndexSet) {
-        let ids = offsets.map { configuration.profiles[$0].id }
-        for id in ids {
-            tunnelManager.stop(profileID: id)
-        }
+    func deleteProfile(id: UUID, deleteKeychainItems: Bool = false) {
+        let profileName = configuration.profiles.first { $0.id == id }?.name
         do {
-            var updated = configuration
-            for id in ids {
-                updated = try ProfileConfigurationEditor.delete(profileID: id, in: updated)
-            }
-            configuration = updated
-            saveConfiguration()
+            let result = try performProfileDeletion(
+                ids: [id],
+                deleteKeychainItems: deleteKeychainItems
+            )
+            lastProxyMessage = profileDeletionMessage(profileName: profileName, result: result)
         } catch {
             lastProxyMessage = "Could not delete profile: \(error.localizedDescription)"
         }
+    }
+
+    func deleteProfiles(at offsets: IndexSet, deleteKeychainItems: Bool = false) {
+        let ids = offsets.map { configuration.profiles[$0].id }
+        let profileName = ids.count == 1 ? configuration.profiles.first { $0.id == ids[0] }?.name : nil
+        do {
+            let result = try performProfileDeletion(
+                ids: ids,
+                deleteKeychainItems: deleteKeychainItems
+            )
+            lastProxyMessage = profileDeletionMessage(profileName: profileName, result: result)
+        } catch {
+            lastProxyMessage = "Could not delete profile: \(error.localizedDescription)"
+        }
+    }
+
+    private func performProfileDeletion(ids: [UUID], deleteKeychainItems: Bool) throws -> ProfileDeletionResult {
+        let idSet = Set(ids)
+        let keychainItems = deleteKeychainItems
+            ? ProfileKeychainCleanupPlanner.removableItems(removingProfileIDs: idSet, from: configuration)
+            : []
+
+        for id in ids {
+            tunnelManager.stop(profileID: id)
+        }
+
+        var updated = configuration
+        for id in ids {
+            updated = try ProfileConfigurationEditor.delete(profileID: id, in: updated)
+        }
+        configuration = updated
+        statuses = statuses.filter { !idSet.contains($0.key) }
+        saveConfiguration()
+
+        var deletedKeychainItemCount = 0
+        var keychainCleanupError: Error?
+        if deleteKeychainItems {
+            do {
+                deletedKeychainItemCount = try removeKeychainItems(keychainItems)
+            } catch {
+                keychainCleanupError = error
+            }
+        }
+
+        return ProfileDeletionResult(
+            profileCount: ids.count,
+            requestedKeychainCleanup: deleteKeychainItems,
+            deletedKeychainItemCount: deletedKeychainItemCount,
+            keychainCleanupError: keychainCleanupError
+        )
+    }
+
+    private func removeKeychainItems(_ items: [GenericPasswordItemReference]) throws -> Int {
+        var deletedCount = 0
+        for item in items {
+            if try keychain.deleteGenericPassword(service: item.service, account: item.account) {
+                deletedCount += 1
+            }
+        }
+        return deletedCount
+    }
+
+    private func profileDeletionMessage(profileName: String?, result: ProfileDeletionResult) -> String {
+        let base: String
+        if let profileName {
+            base = "Deleted profile \(profileName)"
+        } else if result.profileCount == 1 {
+            base = "Deleted profile"
+        } else {
+            base = "Deleted \(result.profileCount) profiles"
+        }
+
+        if let keychainCleanupError = result.keychainCleanupError {
+            return "\(base), but could not delete Keychain items: \(keychainCleanupError.localizedDescription)"
+        }
+        if result.requestedKeychainCleanup {
+            return "\(base). Deleted \(result.deletedKeychainItemCount) Keychain item(s)."
+        }
+        return base
     }
 
     func addDisableRuleForCurrentNetwork() {
@@ -710,10 +792,16 @@ final class AppState: ObservableObject {
         case .deleteProfile:
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
             do {
-                tunnelManager.stop(profileID: profile.id)
-                configuration = try ProfileConfigurationEditor.delete(profileID: profile.id, in: configuration)
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Deleted profile \(profile.name)", status: snapshot())
+                let result = try performProfileDeletion(
+                    ids: [profile.id],
+                    deleteKeychainItems: request.deleteKeychainItems == true
+                )
+                let message = profileDeletionMessage(profileName: profile.name, result: result)
+                return ControlResponse(
+                    ok: result.keychainCleanupError == nil,
+                    message: message,
+                    status: snapshot()
+                )
             } catch {
                 return ControlResponse(ok: false, message: "Could not delete profile: \(error.localizedDescription)", status: snapshot())
             }

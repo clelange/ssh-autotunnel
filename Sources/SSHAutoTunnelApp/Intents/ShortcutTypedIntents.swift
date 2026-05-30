@@ -72,16 +72,28 @@ struct DeleteSelectedProfileIntent: AppIntent {
     @Parameter(title: "Profile")
     var profile: ShortcutTunnelProfileEntity
 
+    @Parameter(title: "Delete Keychain Items")
+    var deleteKeychainItems: Bool
+
     init() {
         profile = .placeholder
+        deleteKeychainItems = false
     }
 
-    init(profile: ShortcutTunnelProfileEntity) {
+    init(profile: ShortcutTunnelProfileEntity, deleteKeychainItems: Bool = false) {
         self.profile = profile
+        self.deleteKeychainItems = deleteKeychainItems
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
-        let response = try await shortcutAPI().send(ControlRequest(action: .deleteProfile, profileName: profile.name, profileID: try shortcutUUID(profile.id)))
+        let response = try await shortcutAPI().send(
+            ControlRequest(
+                action: .deleteProfile,
+                profileName: profile.name,
+                profileID: try shortcutUUID(profile.id),
+                deleteKeychainItems: deleteKeychainItems
+            )
+        )
         return .result(dialog: IntentDialog(stringLiteral: response.message))
     }
 }
