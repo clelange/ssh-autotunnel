@@ -12,6 +12,11 @@ final class CLIArgumentsTests: XCTestCase {
         XCTAssertEqual(invocation, CLIInvocation(command: "connect", profileName: "CERN lxplus", outputJSON: true))
     }
 
+    func testParsesInteractiveSSHCommand() {
+        let invocation = CLIArguments.parse(["interactive-ssh", "CERN", "LxPlus"])
+        XCTAssertEqual(invocation, CLIInvocation(command: "interactive-ssh", profileName: "CERN LxPlus"))
+    }
+
     func testReturnsNilForEmptyArguments() {
         XCTAssertNil(CLIArguments.parse([]))
     }

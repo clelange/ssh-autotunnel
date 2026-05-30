@@ -11,20 +11,25 @@ DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_HELPERS="$APP_CONTENTS/Helpers"
 APP_BINARY="$APP_MACOS/$APP_NAME"
+CLI_HELPER="$APP_HELPERS/ssh-autotunnelctl"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 
 cd "$ROOT_DIR"
 
 pkill -x "$APP_NAME" >/dev/null 2>&1 || true
 
-swift build
+swift build --product "$APP_NAME"
+swift build --product ssh-autotunnelctl
 BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
+BUILD_CLI="$(swift build --show-bin-path)/ssh-autotunnelctl"
 
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_MACOS"
+mkdir -p "$APP_MACOS" "$APP_HELPERS"
 cp "$BUILD_BINARY" "$APP_BINARY"
-chmod +x "$APP_BINARY"
+cp "$BUILD_CLI" "$CLI_HELPER"
+chmod +x "$APP_BINARY" "$CLI_HELPER"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>

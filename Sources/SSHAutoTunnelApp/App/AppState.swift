@@ -111,8 +111,7 @@ final class AppState: ObservableObject {
 
     func connectInteractiveSSH(_ profile: TunnelProfile) {
         do {
-            let interactiveProfile = profileForInteractiveSSH(from: profile)
-            let command = SSHCommandBuilder.interactiveCommand(for: interactiveProfile)
+            let command = try interactiveSSHHelperCommand(for: profile)
             try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
             lastProxyMessage = "\(profile.name): Opened interactive SSH in \(configuration.interactiveTerminal.app.displayName)"
         } catch {
@@ -150,26 +149,33 @@ final class AppState: ObservableObject {
         try? sshLogStore.clearLog(profileID: profileID)
     }
 
-    private func profileForInteractiveSSH(from profile: TunnelProfile) -> TunnelProfile {
-        if profile.resolvedInteractiveHost != profile.host {
-            var interactiveProfile = profile
-            interactiveProfile.host = profile.resolvedInteractiveHost
-            return interactiveProfile
+    private func interactiveSSHHelperCommand(for profile: TunnelProfile) throws -> SSHCommand {
+        let helperPath = try interactiveSSHHelperPath()
+        return SSHCommand(executable: helperPath, arguments: ["interactive-ssh", profile.name])
+    }
+
+    private func interactiveSSHHelperPath() throws -> String {
+        if let helperURL = Bundle.main.url(forAuxiliaryExecutable: "ssh-autotunnelctl"),
+           FileManager.default.isExecutableFile(atPath: helperURL.path) {
+            return helperURL.path
         }
 
-        guard let account = configuration.accounts.first(where: { account in
-            guard account.tunnelEnabled, account.tunnelHost == profile.host else { return false }
-            return AccountSetupService.preset(for: account.id)?.profileName == profile.name
-        }),
-              let interactiveHost = account.interactiveHost?.trimmingCharacters(in: .whitespacesAndNewlines),
-              !interactiveHost.isEmpty else {
-            return profile
+        let bundleHelperURL = Bundle.main.bundleURL
+            .appendingPathComponent("Contents")
+            .appendingPathComponent("Helpers")
+            .appendingPathComponent("ssh-autotunnelctl")
+        if FileManager.default.isExecutableFile(atPath: bundleHelperURL.path) {
+            return bundleHelperURL.path
         }
 
-        var interactiveProfile = profile
-        interactiveProfile.host = interactiveHost
-        interactiveProfile.jumpHost = account.jumpHost
-        return interactiveProfile
+        let siblingHelperURL = Bundle.main.bundleURL
+            .deletingLastPathComponent()
+            .appendingPathComponent("ssh-autotunnelctl")
+        if FileManager.default.isExecutableFile(atPath: siblingHelperURL.path) {
+            return siblingHelperURL.path
+        }
+
+        throw NSError(domain: "AppState", code: 20, userInfo: [NSLocalizedDescriptionKey: "Could not find ssh-autotunnelctl helper in the app bundle"])
     }
 
     func saveConfiguration() {

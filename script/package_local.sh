@@ -12,7 +12,9 @@ ARCHIVE_ROOT="$DIST_DIR/SSH AutoTunnel"
 APP_BUNDLE="$ARCHIVE_ROOT/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
+APP_HELPERS="$APP_CONTENTS/Helpers"
 APP_BINARY="$APP_MACOS/$APP_NAME"
+CLI_HELPER="$APP_HELPERS/$CLI_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 ZIP_PATH="$DIST_DIR/SSH-AutoTunnel-local.zip"
 CHECKSUM_PATH="$ZIP_PATH.sha256"
@@ -28,11 +30,12 @@ swift build -c release --product "$CLI_NAME"
 BIN_DIR="$(swift build -c release --show-bin-path)"
 
 rm -rf "$ARCHIVE_ROOT" "$ZIP_PATH" "$CHECKSUM_PATH"
-mkdir -p "$APP_MACOS"
+mkdir -p "$APP_MACOS" "$APP_HELPERS"
 
 cp "$BIN_DIR/$APP_NAME" "$APP_BINARY"
 cp "$BIN_DIR/$CLI_NAME" "$ARCHIVE_ROOT/$CLI_NAME"
-chmod +x "$APP_BINARY" "$ARCHIVE_ROOT/$CLI_NAME"
+cp "$BIN_DIR/$CLI_NAME" "$CLI_HELPER"
+chmod +x "$APP_BINARY" "$ARCHIVE_ROOT/$CLI_NAME" "$CLI_HELPER"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -68,6 +71,8 @@ PLIST
 if [[ "${SKIP_CODESIGN:-0}" != "1" ]]; then
   /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" "$ARCHIVE_ROOT/$CLI_NAME"
   /usr/bin/codesign --verify --strict "$ARCHIVE_ROOT/$CLI_NAME"
+  /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" "$CLI_HELPER"
+  /usr/bin/codesign --verify --strict "$CLI_HELPER"
   /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
   /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
 fi
@@ -85,6 +90,7 @@ case "$MODE" in
   verify|--verify)
     test -d "$APP_BUNDLE"
     test -x "$APP_BINARY"
+    test -x "$CLI_HELPER"
     test -x "$ARCHIVE_ROOT/$CLI_NAME"
     test -f "$ZIP_PATH"
     test -f "$CHECKSUM_PATH"

@@ -24,6 +24,13 @@ struct SSHAutoTunnelCLI {
             }
 
             let configuration = try ConfigurationStore().load()
+            if invocation.command == "interactive-ssh" {
+                let profile = try profile(named: invocation.profileName, in: configuration)
+                let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
+                let status = try InteractiveSSHSessionRunner().run(profile: interactiveProfile)
+                exit(status == 0 ? 0 : status)
+            }
+
             let client = ControlAPIClient(configuration: configuration)
             let response: ControlResponse
 
@@ -202,6 +209,16 @@ struct SSHAutoTunnelCLI {
         try readJSON(from: argument, missingMessage: "Profile JSON path is required")
     }
 
+    private static func profile(named name: String?, in configuration: AppConfiguration) throws -> TunnelProfile {
+        guard let name, !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw NSError(domain: "ssh-autotunnelctl", code: 4, userInfo: [NSLocalizedDescriptionKey: "Profile name is required"])
+        }
+        guard let profile = configuration.profiles.first(where: { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }) else {
+            throw NSError(domain: "ssh-autotunnelctl", code: 5, userInfo: [NSLocalizedDescriptionKey: "Profile '\(name)' was not found"])
+        }
+        return profile
+    }
+
     private static func readPACRule(from argument: String?) throws -> PACRule {
         try readJSON(from: argument, missingMessage: "PAC rule JSON path is required")
     }
@@ -306,6 +323,7 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl delete-network-rule <network rule name>
           ssh-autotunnelctl trust-current-network [profile name]
           ssh-autotunnelctl connect <profile name>
+          ssh-autotunnelctl interactive-ssh <profile name>
           ssh-autotunnelctl disconnect <profile name>
           ssh-autotunnelctl reconnect <profile name>
         """)
