@@ -10,13 +10,16 @@ final class SSHAuto2FAImporterTests: XCTestCase {
         XCTAssertEqual(result.createdPACRules, 2)
 
         let lxplus = configuration.profiles.first { $0.name == "CERN lxplus" }
-        XCTAssertEqual(lxplus?.host, "lxplus.cern.ch")
+        XCTAssertEqual(lxplus?.host, "lxtunnel.cern.ch")
+        XCTAssertEqual(lxplus?.interactiveHost, "lxplus.cern.ch")
         XCTAssertEqual(lxplus?.user, "lange_c")
         XCTAssertEqual(lxplus?.authMode, .kerberosAndTOTP)
         XCTAssertEqual(lxplus?.keychain.account, "lange_c")
         XCTAssertEqual(lxplus?.keychain.totpService, "cern-lxplus-otp-secret")
 
         let tier3 = configuration.profiles.first { $0.name == "PSI Tier-3" }
+        XCTAssertEqual(tier3?.host, "t3ui07.psi.ch")
+        XCTAssertEqual(tier3?.interactiveHost, "t3ui07.psi.ch")
         XCTAssertEqual(tier3?.user, "lange_c")
         XCTAssertEqual(tier3?.jumpHost, "lange_c@t3hop01.psi.ch")
         XCTAssertEqual(tier3?.keychain.passwordService, "psit3-password")
@@ -42,7 +45,8 @@ final class SSHAuto2FAImporterTests: XCTestCase {
         XCTAssertEqual(result.updatedProfiles, 1)
         XCTAssertEqual(lxplus.id, existing.id)
         XCTAssertEqual(lxplus.localSocksPort, 1200)
-        XCTAssertEqual(lxplus.host, "lxplus.cern.ch")
+        XCTAssertEqual(lxplus.host, "lxtunnel.cern.ch")
+        XCTAssertEqual(lxplus.interactiveHost, "lxplus.cern.ch")
         XCTAssertEqual(lxplus.user, "lange_c")
         XCTAssertEqual(lxplus.keychain.totpService, "cern-lxplus-otp-secret")
     }
@@ -65,6 +69,8 @@ final class SSHAuto2FAImporterTests: XCTestCase {
         XCTAssertEqual(tier3.keychain.account, "lange_c")
         XCTAssertEqual(lxplus.user, "clange")
         XCTAssertEqual(tier3.user, "lange_c")
+        XCTAssertEqual(lxplus.interactiveHost, "lxplus.cern.ch")
+        XCTAssertEqual(tier3.interactiveHost, "t3ui07.psi.ch")
         XCTAssertEqual(tier3.jumpHost, "lange_c@t3hop01.psi.ch")
     }
 
@@ -99,6 +105,9 @@ final class SSHAuto2FAImporterTests: XCTestCase {
         XCTAssertEqual(configuration.profiles[0].user, "clange")
         XCTAssertEqual(configuration.profiles[1].user, "lange_c")
         XCTAssertEqual(configuration.profiles[1].jumpHost, "lange_c@t3hop01.psi.ch")
+        XCTAssertEqual(configuration.profiles[0].host, "lxtunnel.cern.ch")
+        XCTAssertEqual(configuration.profiles[0].interactiveHost, "lxplus.cern.ch")
+        XCTAssertEqual(configuration.profiles[1].interactiveHost, "t3ui07.psi.ch")
         XCTAssertEqual(configuration.profiles[2].user, "alice")
     }
 }

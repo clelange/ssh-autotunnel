@@ -117,19 +117,33 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(profile.name, "Legacy")
         XCTAssertEqual(profile.sshPort, 22)
         XCTAssertEqual(profile.hostKeyPolicy, .acceptNew)
+        XCTAssertNil(profile.interactiveHost)
     }
 
-    func testEncodesProfileHostKeyPolicy() throws {
+    func testEncodesProfileInteractiveHostAndHostKeyPolicy() throws {
         let profile = TunnelProfile(
             name: "Strict",
             host: "ssh.example.org",
             localSocksPort: 1080,
+            interactiveHost: "login.example.org",
             hostKeyPolicy: .strict
         )
         let data = try JSONEncoder().encode(profile)
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
 
         XCTAssertEqual(object["hostKeyPolicy"] as? String, "strict")
+        XCTAssertEqual(object["interactiveHost"] as? String, "login.example.org")
+    }
+
+    func testProfileResolvedInteractiveHostFallsBackToTunnelHost() {
+        let profile = TunnelProfile(
+            name: "Default interactive",
+            host: "ssh.example.org",
+            localSocksPort: 1080,
+            interactiveHost: " "
+        )
+
+        XCTAssertEqual(profile.resolvedInteractiveHost, "ssh.example.org")
     }
 
     func testDefaultConfigurationStartsWithoutAccountProfiles() throws {

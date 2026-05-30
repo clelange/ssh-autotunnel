@@ -281,6 +281,7 @@ public enum AccountSetupService {
             let username = trimmed(input.username)
             let tunnelHost = trimmed(input.tunnelHost)
             let jumpHost = input.useForTunnelling ? preset.jumpHost(username: username) : nil
+            let interactiveHost = interactiveHost(for: preset, tunnelHost: tunnelHost)
             let pacDomainPattern = input.useForTunnelling ? preset.pacDomainPattern(tunnelHost: tunnelHost) : nil
             let keychain = KeychainReference(
                 account: username,
@@ -292,7 +293,7 @@ public enum AccountSetupService {
                 displayName: preset.displayName,
                 username: username,
                 credentialHost: preset.credentialHost,
-                interactiveHost: preset.interactiveHost,
+                interactiveHost: interactiveHost,
                 tunnelEnabled: input.useForTunnelling,
                 tunnelHost: input.useForTunnelling ? tunnelHost : nil,
                 jumpHost: jumpHost,
@@ -307,6 +308,7 @@ public enum AccountSetupService {
                     preset: preset,
                     username: username,
                     tunnelHost: tunnelHost,
+                    interactiveHost: interactiveHost,
                     jumpHost: jumpHost,
                     keychain: keychain,
                     hasTOTPSeed: input.totpSeedAvailable,
@@ -377,6 +379,7 @@ public enum AccountSetupService {
         preset: AccountSetupPreset,
         username: String,
         tunnelHost: String,
+        interactiveHost: String?,
         jumpHost: String?,
         keychain: KeychainReference,
         hasTOTPSeed: Bool,
@@ -386,6 +389,7 @@ public enum AccountSetupService {
         if let index = configuration.profiles.firstIndex(where: { $0.name == preset.profileName }) {
             configuration.profiles[index].host = tunnelHost
             configuration.profiles[index].user = username
+            configuration.profiles[index].interactiveHost = interactiveHost
             configuration.profiles[index].jumpHost = jumpHost
             configuration.profiles[index].authMode = hasTOTPSeed ? .passwordAndTOTP : .password
             configuration.profiles[index].keychain = keychain
@@ -399,6 +403,7 @@ public enum AccountSetupService {
             host: tunnelHost,
             user: username,
             localSocksPort: nextFreePort(preferred: preset.defaultLocalSocksPort, profiles: configuration.profiles),
+            interactiveHost: interactiveHost,
             jumpHost: jumpHost,
             authMode: hasTOTPSeed ? .passwordAndTOTP : .password,
             keychain: keychain,
@@ -407,6 +412,14 @@ public enum AccountSetupService {
         configuration.profiles.append(profile)
         result.createdProfiles += 1
         return profile.id
+    }
+
+    private static func interactiveHost(for preset: AccountSetupPreset, tunnelHost: String) -> String? {
+        if let interactiveHost = preset.interactiveHost.map(trimmed), !interactiveHost.isEmpty {
+            return interactiveHost
+        }
+        let tunnelHost = trimmed(tunnelHost)
+        return tunnelHost.isEmpty ? nil : tunnelHost
     }
 
     private static func ensurePACRule(

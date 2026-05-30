@@ -162,6 +162,9 @@ struct CreateProfileIntent: AppIntent {
     @Parameter(title: "Host")
     var host: String
 
+    @Parameter(title: "Interactive Host")
+    var interactiveHost: String
+
     @Parameter(title: "Local SOCKS Port")
     var localSocksPort: Int
 
@@ -177,15 +180,17 @@ struct CreateProfileIntent: AppIntent {
     init() {
         name = "New tunnel"
         host = "example.org"
+        interactiveHost = ""
         localSocksPort = 1083
         sshPort = 22
         user = ""
         jumpHost = ""
     }
 
-    init(name: String, host: String, localSocksPort: Int, sshPort: Int = 22, user: String = "", jumpHost: String = "") {
+    init(name: String, host: String, interactiveHost: String = "", localSocksPort: Int, sshPort: Int = 22, user: String = "", jumpHost: String = "") {
         self.name = name
         self.host = host
+        self.interactiveHost = interactiveHost
         self.localSocksPort = localSocksPort
         self.sshPort = sshPort
         self.user = user
@@ -199,6 +204,7 @@ struct CreateProfileIntent: AppIntent {
             user: optionalString(user),
             sshPort: sshPort,
             localSocksPort: localSocksPort,
+            interactiveHost: optionalString(interactiveHost),
             jumpHost: optionalString(jumpHost)
         )
         let response = try await api().send(ControlRequest(action: .createProfile, profile: profile))
@@ -216,6 +222,9 @@ struct UpdateProfileIntent: AppIntent {
     @Parameter(title: "Host")
     var host: String
 
+    @Parameter(title: "Interactive Host")
+    var interactiveHost: String
+
     @Parameter(title: "Local SOCKS Port")
     var localSocksPort: Int
 
@@ -231,15 +240,17 @@ struct UpdateProfileIntent: AppIntent {
     init() {
         profileName = "CERN LxPlus"
         host = "lxplus.cern.ch"
+        interactiveHost = ""
         localSocksPort = 1081
         sshPort = 22
         user = ""
         jumpHost = ""
     }
 
-    init(profileName: String, host: String, localSocksPort: Int, sshPort: Int = 22, user: String = "", jumpHost: String = "") {
+    init(profileName: String, host: String, interactiveHost: String = "", localSocksPort: Int, sshPort: Int = 22, user: String = "", jumpHost: String = "") {
         self.profileName = profileName
         self.host = host
+        self.interactiveHost = interactiveHost
         self.localSocksPort = localSocksPort
         self.sshPort = sshPort
         self.user = user
@@ -253,6 +264,7 @@ struct UpdateProfileIntent: AppIntent {
             user: optionalString(user),
             sshPort: sshPort,
             localSocksPort: localSocksPort,
+            interactiveHost: optionalString(interactiveHost),
             jumpHost: optionalString(jumpHost)
         )
         let response = try await api().send(ControlRequest(action: .updateProfile, profileName: profileName, profile: profile))

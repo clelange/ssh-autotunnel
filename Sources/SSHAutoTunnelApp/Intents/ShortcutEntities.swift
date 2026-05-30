@@ -56,6 +56,9 @@ struct ShortcutTunnelProfileEntity: AppEntity {
     @Property(title: "Host")
     var host: String
 
+    @Property(title: "Interactive Host")
+    var interactiveHost: String
+
     @Property(title: "Local SOCKS Port")
     var localSocksPort: Int
 
@@ -79,6 +82,7 @@ struct ShortcutTunnelProfileEntity: AppEntity {
         id: String,
         name: String,
         host: String,
+        interactiveHost: String,
         localSocksPort: Int,
         sshPort: Int,
         user: String,
@@ -87,6 +91,7 @@ struct ShortcutTunnelProfileEntity: AppEntity {
         self.id = id
         self.name = name
         self.host = host
+        self.interactiveHost = interactiveHost
         self.localSocksPort = localSocksPort
         self.sshPort = sshPort
         self.user = user
@@ -98,6 +103,7 @@ struct ShortcutTunnelProfileEntity: AppEntity {
             id: profile.id.uuidString,
             name: profile.name,
             host: profile.host,
+            interactiveHost: profile.interactiveHost ?? "",
             localSocksPort: profile.localSocksPort,
             sshPort: profile.sshPort,
             user: profile.user ?? "",
@@ -110,6 +116,7 @@ struct ShortcutTunnelProfileEntity: AppEntity {
             id: "",
             name: "Select profile",
             host: "",
+            interactiveHost: "",
             localSocksPort: 0,
             sshPort: 22,
             user: "",

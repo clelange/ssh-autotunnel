@@ -59,6 +59,8 @@ public enum SSHCommandBuilder {
     }
 
     public static func interactiveCommand(for profile: TunnelProfile) -> SSHCommand {
+        var profile = profile
+        profile.host = profile.resolvedInteractiveHost
         var arguments = [
             "-p", "\(profile.sshPort)"
         ]

@@ -95,6 +95,7 @@ final class AccountSetupServiceTests: XCTestCase {
         XCTAssertEqual(account.tunnelHost, "lxtunnel.cern.ch")
         XCTAssertEqual(profile.name, "CERN LxPlus")
         XCTAssertEqual(profile.host, "lxtunnel.cern.ch")
+        XCTAssertEqual(profile.interactiveHost, "lxplus.cern.ch")
         XCTAssertEqual(profile.user, "clange")
         XCTAssertEqual(profile.authMode, .password)
         XCTAssertEqual(profile.keychain.passwordService, "cern-lxplus-password")
@@ -117,6 +118,7 @@ final class AccountSetupServiceTests: XCTestCase {
 
         XCTAssertEqual(profile.name, "PSI General")
         XCTAssertEqual(profile.host, "login.psi.ch")
+        XCTAssertEqual(profile.interactiveHost, "login.psi.ch")
         XCTAssertEqual(profile.jumpHost, "psiuser@hopx.psi.ch")
         XCTAssertEqual(profile.authMode, .passwordAndTOTP)
         XCTAssertEqual(profile.keychain.passwordService, "psi-general-password")
@@ -159,9 +161,11 @@ final class AccountSetupServiceTests: XCTestCase {
         )
 
         let (configuration, _) = try AccountSetupService.apply(inputs: [psi, tier3], to: AppConfiguration())
+        let tier3Profile = try XCTUnwrap(configuration.profiles.first { $0.name == "PSI CMS Tier-3" })
 
         XCTAssertEqual(configuration.pacRules.map(\.domainPattern), ["worker01.psi.ch", "*.psi.ch"])
         XCTAssertEqual(configuration.pacRules.map(\.name), ["PSI Tier-3", "PSI"])
+        XCTAssertEqual(tier3Profile.interactiveHost, "worker01.psi.ch")
     }
 
     func testSkippingPreviouslyConfiguredPresetRemovesGeneratedTunnel() throws {

@@ -151,6 +151,12 @@ final class AppState: ObservableObject {
     }
 
     private func profileForInteractiveSSH(from profile: TunnelProfile) -> TunnelProfile {
+        if profile.resolvedInteractiveHost != profile.host {
+            var interactiveProfile = profile
+            interactiveProfile.host = profile.resolvedInteractiveHost
+            return interactiveProfile
+        }
+
         guard let account = configuration.accounts.first(where: { account in
             guard account.tunnelEnabled, account.tunnelHost == profile.host else { return false }
             return AccountSetupService.preset(for: account.id)?.profileName == profile.name
@@ -162,7 +168,7 @@ final class AppState: ObservableObject {
 
         var interactiveProfile = profile
         interactiveProfile.host = interactiveHost
-        interactiveProfile.jumpHost = nil
+        interactiveProfile.jumpHost = account.jumpHost
         return interactiveProfile
     }
 
@@ -339,6 +345,11 @@ final class AppState: ObservableObject {
         case "CERN lxplus", "CERN LxPlus":
             let account = accountByService[SSHAuto2FAPresets.cernLxplusTOTPService] ?? NSUserName()
             configuration.profiles[index].user = account
+            configuration.profiles[index].interactiveHost = "lxplus.cern.ch"
+            if configuration.profiles[index].host == "lxplus.cern.ch" {
+                configuration.profiles[index].host = "lxtunnel.cern.ch"
+                configuration.profiles[index].healthProbe = HealthProbe(host: "lxtunnel.cern.ch", port: 22)
+            }
             configuration.profiles[index].keychain.account = account
             if configuration.profiles[index].name == "CERN LxPlus" {
                 configuration.profiles[index].keychain.passwordService = SSHAuto2FAPresets.cernLxplusPasswordService
@@ -350,6 +361,9 @@ final class AppState: ObservableObject {
                 accountByService: accountByService
             )
             configuration.profiles[index].user = account
+            if (configuration.profiles[index].interactiveHost ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                configuration.profiles[index].interactiveHost = configuration.profiles[index].host
+            }
             configuration.profiles[index].jumpHost = "\(account)@t3hop01.psi.ch"
             configuration.profiles[index].keychain.account = account
             configuration.profiles[index].keychain.passwordService = SSHAuto2FAPresets.psiTier3PasswordService
@@ -357,6 +371,9 @@ final class AppState: ObservableObject {
         case "PSI General":
             let account = configuration.profiles[index].keychain.account
             configuration.profiles[index].user = account
+            if (configuration.profiles[index].interactiveHost ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                configuration.profiles[index].interactiveHost = configuration.profiles[index].host
+            }
             configuration.profiles[index].jumpHost = "\(account)@hopx.psi.ch"
             configuration.profiles[index].keychain.passwordService = SSHAuto2FAPresets.psiGeneralPasswordService
             configuration.profiles[index].keychain.totpService = SSHAuto2FAPresets.psiGeneralTOTPService

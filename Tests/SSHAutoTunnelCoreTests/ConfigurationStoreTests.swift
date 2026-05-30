@@ -72,8 +72,11 @@ final class ConfigurationStoreTests: XCTestCase {
         let persisted = try JSONDecoder().decode(AppConfiguration.self, from: Data(contentsOf: url))
 
         XCTAssertEqual(migrated.profiles[0].user, "clange")
+        XCTAssertEqual(migrated.profiles[0].host, "lxtunnel.cern.ch")
+        XCTAssertEqual(migrated.profiles[0].interactiveHost, "lxplus.cern.ch")
         XCTAssertEqual(migrated.profiles[1].user, "lange_c")
         XCTAssertEqual(migrated.profiles[1].jumpHost, "lange_c@t3hop01.psi.ch")
+        XCTAssertEqual(migrated.profiles[1].interactiveHost, "t3ui07.psi.ch")
         XCTAssertEqual(persisted, migrated)
     }
 

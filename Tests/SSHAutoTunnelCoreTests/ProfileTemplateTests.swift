@@ -10,6 +10,7 @@ final class ProfileTemplateTests: XCTestCase {
         XCTAssertEqual(profile.user, "alice")
         XCTAssertEqual(profile.sshPort, 22)
         XCTAssertEqual(profile.localSocksPort, 1083)
+        XCTAssertEqual(profile.interactiveHost, "login.example.org")
         XCTAssertEqual(profile.jumpHost, "bastion.example.org")
         XCTAssertEqual(profile.authMode, .passwordAndTOTP)
         XCTAssertEqual(profile.hostKeyPolicy, .acceptNew)

@@ -85,6 +85,11 @@ struct ProfileEditorView: View {
                 Section("SSH") {
                     TextField("Name", text: binding(index, \.name))
                     TextField("Host", text: binding(index, \.host))
+                    TextField(
+                        "Interactive host",
+                        text: optionalBinding(index, \.interactiveHost),
+                        prompt: Text("Use Host")
+                    )
                     TextField("User", text: optionalBinding(index, \.user))
                     TextField("SSH port", value: binding(index, \.sshPort), format: .number)
                     TextField("Local SOCKS port", value: binding(index, \.localSocksPort), format: .number)

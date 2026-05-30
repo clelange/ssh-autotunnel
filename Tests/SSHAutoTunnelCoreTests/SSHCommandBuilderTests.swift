@@ -42,6 +42,7 @@ final class SSHCommandBuilderTests: XCTestCase {
             user: "alice",
             sshPort: 2222,
             localSocksPort: 1091,
+            interactiveHost: "login.example.org",
             jumpHost: "alice@bastion.example.org",
             authMode: .passwordAndTOTP
         )
@@ -54,7 +55,7 @@ final class SSHCommandBuilderTests: XCTestCase {
         XCTAssertTrue(command.arguments.containsSubsequence(["-p", "2222"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-J", "alice@bastion.example.org"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-o", "PreferredAuthentications=keyboard-interactive,password"]))
-        XCTAssertEqual(command.arguments.last, "alice@target.example.org")
+        XCTAssertEqual(command.arguments.last, "alice@login.example.org")
     }
 
     func testShellCommandQuotesUnsafeArguments() {

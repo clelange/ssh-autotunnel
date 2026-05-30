@@ -92,6 +92,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
     public var user: String?
     public var sshPort: Int
     public var localSocksPort: Int
+    public var interactiveHost: String?
     public var jumpHost: String?
     public var authMode: TunnelAuthMode
     public var hostKeyPolicy: SSHHostKeyPolicy
@@ -107,6 +108,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         case user
         case sshPort
         case localSocksPort
+        case interactiveHost
         case jumpHost
         case authMode
         case hostKeyPolicy
@@ -123,6 +125,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         user: String? = nil,
         sshPort: Int = 22,
         localSocksPort: Int,
+        interactiveHost: String? = nil,
         jumpHost: String? = nil,
         authMode: TunnelAuthMode = .none,
         hostKeyPolicy: SSHHostKeyPolicy = .acceptNew,
@@ -137,6 +140,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         self.user = user
         self.sshPort = sshPort
         self.localSocksPort = localSocksPort
+        self.interactiveHost = interactiveHost
         self.jumpHost = jumpHost
         self.authMode = authMode
         self.hostKeyPolicy = hostKeyPolicy
@@ -154,6 +158,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         user = try container.decodeIfPresent(String.self, forKey: .user)
         sshPort = try container.decodeIfPresent(Int.self, forKey: .sshPort) ?? 22
         localSocksPort = try container.decode(Int.self, forKey: .localSocksPort)
+        interactiveHost = try container.decodeIfPresent(String.self, forKey: .interactiveHost)
         jumpHost = try container.decodeIfPresent(String.self, forKey: .jumpHost)
         authMode = try container.decodeIfPresent(TunnelAuthMode.self, forKey: .authMode) ?? .none
         hostKeyPolicy = try container.decodeIfPresent(SSHHostKeyPolicy.self, forKey: .hostKeyPolicy) ?? .acceptNew
@@ -171,6 +176,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         try container.encodeIfPresent(user, forKey: .user)
         try container.encode(sshPort, forKey: .sshPort)
         try container.encode(localSocksPort, forKey: .localSocksPort)
+        try container.encodeIfPresent(interactiveHost, forKey: .interactiveHost)
         try container.encodeIfPresent(jumpHost, forKey: .jumpHost)
         try container.encode(authMode, forKey: .authMode)
         try container.encode(hostKeyPolicy, forKey: .hostKeyPolicy)
@@ -185,6 +191,11 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
             return "\(user)@\(host)"
         }
         return host
+    }
+
+    public var resolvedInteractiveHost: String {
+        let candidate = interactiveHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return candidate.isEmpty ? host : candidate
     }
 }
 

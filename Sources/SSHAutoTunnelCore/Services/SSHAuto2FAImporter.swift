@@ -15,8 +15,10 @@ public enum SSHAuto2FAImporter {
             switch configuration.profiles[index].name {
             case "CERN lxplus":
                 didUpdate = backfillUser(in: &configuration.profiles[index]) || didUpdate
+                didUpdate = backfillCERNInteractiveHost(in: &configuration.profiles[index]) || didUpdate
             case "PSI Tier-3":
                 didUpdate = backfillUser(in: &configuration.profiles[index]) || didUpdate
+                didUpdate = backfillInteractiveHostFromTunnelHost(in: &configuration.profiles[index]) || didUpdate
                 didUpdate = backfillPSIJumpHost(in: &configuration.profiles[index]) || didUpdate
             default:
                 break
@@ -48,7 +50,8 @@ public enum SSHAuto2FAImporter {
             in: &configuration,
             result: &result,
             named: "CERN lxplus",
-            host: "lxplus.cern.ch",
+            host: "lxtunnel.cern.ch",
+            interactiveHost: "lxplus.cern.ch",
             preferredPort: 1081,
             user: cernAccount,
             authMode: .kerberosAndTOTP,
@@ -67,6 +70,7 @@ public enum SSHAuto2FAImporter {
             result: &result,
             named: "PSI Tier-3",
             host: "t3ui07.psi.ch",
+            interactiveHost: "t3ui07.psi.ch",
             preferredPort: 1082,
             user: psiAccount,
             jumpHost: "\(psiAccount)@t3hop01.psi.ch",
@@ -93,6 +97,7 @@ public enum SSHAuto2FAImporter {
         result: inout SSHAuto2FAImportResult,
         named name: String,
         host: String,
+        interactiveHost: String? = nil,
         preferredPort: Int,
         user: String,
         jumpHost: String? = nil,
@@ -102,6 +107,7 @@ public enum SSHAuto2FAImporter {
         if let index = configuration.profiles.firstIndex(where: { $0.name == name }) {
             configuration.profiles[index].host = host
             configuration.profiles[index].user = user
+            configuration.profiles[index].interactiveHost = interactiveHost
             configuration.profiles[index].jumpHost = jumpHost
             configuration.profiles[index].authMode = authMode
             configuration.profiles[index].keychain = keychain
@@ -114,6 +120,7 @@ public enum SSHAuto2FAImporter {
             host: host,
             user: user,
             localSocksPort: nextFreePort(preferred: preferredPort, profiles: configuration.profiles),
+            interactiveHost: interactiveHost,
             jumpHost: jumpHost,
             authMode: authMode,
             keychain: keychain
@@ -167,6 +174,30 @@ public enum SSHAuto2FAImporter {
             return false
         }
         profile.user = profile.keychain.account
+        return true
+    }
+
+    private static func backfillCERNInteractiveHost(in profile: inout TunnelProfile) -> Bool {
+        var didUpdate = false
+        if (profile.interactiveHost ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            profile.interactiveHost = "lxplus.cern.ch"
+            didUpdate = true
+        }
+        if profile.host == "lxplus.cern.ch" {
+            profile.host = "lxtunnel.cern.ch"
+            if profile.healthProbe?.host == "lxplus.cern.ch" {
+                profile.healthProbe?.host = "lxtunnel.cern.ch"
+            }
+            didUpdate = true
+        }
+        return didUpdate
+    }
+
+    private static func backfillInteractiveHostFromTunnelHost(in profile: inout TunnelProfile) -> Bool {
+        guard (profile.interactiveHost ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return false
+        }
+        profile.interactiveHost = profile.host
         return true
     }
 

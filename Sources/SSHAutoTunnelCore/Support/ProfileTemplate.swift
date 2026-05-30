@@ -11,6 +11,7 @@ public enum ProfileTemplate {
             user: "alice",
             sshPort: 22,
             localSocksPort: 1083,
+            interactiveHost: "login.example.org",
             jumpHost: "bastion.example.org",
             authMode: .passwordAndTOTP,
             hostKeyPolicy: .acceptNew,
