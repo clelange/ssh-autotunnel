@@ -85,11 +85,11 @@ public final class HopConnectionManager {
         }
     }
 
-    public func start(profile: TunnelProfile) {
+    public func start(profile: TunnelProfile, options: SSHLaunchOptions = .standard) {
         queue.async {
             self.reconnectTokens[profile.id] = nil
             self.reconnectAttempts[profile.id] = 0
-            self.startLocked(profile: profile, message: "Starting hop connection")
+            self.startLocked(profile: profile, message: "Starting hop connection", options: options)
         }
     }
 
@@ -111,24 +111,24 @@ public final class HopConnectionManager {
         }
     }
 
-    public func reconnect(profile: TunnelProfile) {
+    public func reconnect(profile: TunnelProfile, options: SSHLaunchOptions = .standard) {
         queue.async {
             self.reconnectTokens[profile.id] = nil
             self.reconnectAttempts[profile.id] = 0
             self.stopLocked(profileID: profile.id, updateStatus: false, reason: .restart)
-            self.scheduleReconnectLocked(profile: profile, message: "Reconnecting hop", delay: 1.0)
+            self.scheduleReconnectLocked(profile: profile, message: "Reconnecting hop", delay: 1.0, options: options)
         }
     }
 
-    private func startLocked(profile: TunnelProfile, message: String) {
+    private func startLocked(profile: TunnelProfile, message: String, options: SSHLaunchOptions) {
         stopLocked(profileID: profile.id, updateStatus: false, reason: .replacement)
         do {
-            let controlMaster = try JumpHostControlMasterFactory.make(for: profile)
+            let controlMaster = try JumpHostControlMasterFactory.make(for: profile, options: options)
             updateStatusLocked(profile.id, jumpHost: controlMaster.jumpHost, .connecting, message, pid: nil)
             try resetControlMaster(controlMaster)
             let credentials = try credentials(for: profile)
             try runKerberosSwitchIfNeeded(profile: profile)
-            let managed = try launch(profile: profile, controlMaster: controlMaster, credentials: credentials)
+            let managed = try launch(profile: profile, controlMaster: controlMaster, credentials: credentials, options: options)
             processes[profile.id] = managed
             updateStatusLocked(profile.id, jumpHost: controlMaster.jumpHost, .connecting, "SSH hop process started", pid: managed.session.processIdentifier)
         } catch {
@@ -173,8 +173,8 @@ public final class HopConnectionManager {
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: controlMaster.directory.path)
     }
 
-    private func launch(profile: TunnelProfile, controlMaster: JumpHostControlMaster, credentials: HopCredentials) throws -> ManagedHopConnection {
-        let managed = ManagedHopConnection(profile: profile, controlMaster: controlMaster, credentials: credentials, startedAt: now())
+    private func launch(profile: TunnelProfile, controlMaster: JumpHostControlMaster, credentials: HopCredentials, options: SSHLaunchOptions) throws -> ManagedHopConnection {
+        let managed = ManagedHopConnection(profile: profile, controlMaster: controlMaster, credentials: credentials, launchOptions: options, startedAt: now())
         managed.session = try processLauncher.launch(
             command: controlMaster.command,
             onOutput: { [weak self, weak managed] data in
@@ -198,6 +198,7 @@ public final class HopConnectionManager {
                         decision,
                         profile: profile,
                         controlMaster: controlMaster,
+                        options: managed.launchOptions,
                         terminationStatus: session.terminationStatus,
                         exitDetail: managed.lastOutputLine
                     )
@@ -210,7 +211,7 @@ public final class HopConnectionManager {
     private func handleOutput(_ data: Data, hop: ManagedHopConnection) {
         hop.outputBuffer.append(data)
         let text = String(data: data, encoding: .utf8) ?? ""
-        onLog?(hop.profile.id, text)
+        onLog?(hop.profile.id, SSHTranscriptLog.redact(text, secrets: hop.redactedSecrets))
         hop.readinessMarker?.handle(data)
         respondIfNeeded(to: hop.outputBuffer, hop: hop)
         if hop.outputBuffer.count > 4096 {
@@ -227,11 +228,14 @@ public final class HopConnectionManager {
         switch action {
         case .confirmHostKey:
             guard !hop.sentHostKeyConfirmation else { return }
+            logEventLocked("host key prompt detected", profileID: hop.profile.id)
             switch hop.profile.hostKeyPolicy {
             case .promptAndAccept:
                 hop.sentHostKeyConfirmation = true
+                logEventLocked("host key prompt accepted", profileID: hop.profile.id)
                 write("yes\n", to: hop)
             case .acceptNew, .strict:
+                logEventLocked("host key prompt blocked by \(hop.profile.hostKeyPolicy.displayName) policy", profileID: hop.profile.id)
                 updateStatusLocked(
                     hop.profile.id,
                     jumpHost: hop.controlMaster.jumpHost,
@@ -243,19 +247,28 @@ public final class HopConnectionManager {
             }
         case .sendPassword:
             guard !hop.sentPassword else { return }
+            logEventLocked("password prompt detected", profileID: hop.profile.id)
             if let password = hop.credentials.password {
                 hop.sentPassword = true
+                hop.redactedSecrets.append(password)
+                logEventLocked("password sent (<redacted>)", profileID: hop.profile.id)
                 write(password + "\n", to: hop)
+            } else {
+                logEventLocked("password prompt detected but no password is configured", profileID: hop.profile.id)
             }
         case .sendTOTP:
             guard !hop.sentTOTP else { return }
+            logEventLocked("TOTP prompt detected", profileID: hop.profile.id)
             if let totpReference = hop.credentials.totp {
                 do {
                     let seed = try readGenericPassword(service: totpReference.service, account: totpReference.account)
                     let totp = try totpGenerator(seed)
                     hop.sentTOTP = true
+                    hop.redactedSecrets.append(totp)
+                    logEventLocked("TOTP sent (<redacted>)", profileID: hop.profile.id)
                     write(totp + "\n", to: hop)
                 } catch {
+                    logEventLocked("TOTP generation failed: \(error.localizedDescription)", profileID: hop.profile.id)
                     updateStatusLocked(
                         hop.profile.id,
                         jumpHost: hop.controlMaster.jumpHost,
@@ -307,6 +320,7 @@ public final class HopConnectionManager {
         _ decision: TunnelLifecyclePolicy.ProcessExitDecision,
         profile: TunnelProfile,
         controlMaster: JumpHostControlMaster,
+        options: SSHLaunchOptions,
         terminationStatus: Int32,
         exitDetail: String?
     ) {
@@ -323,7 +337,8 @@ public final class HopConnectionManager {
         case .reconnect:
             scheduleReconnectLocked(
                 profile: profile,
-                message: "\(sshExitMessage(status: terminationStatus, detail: exitDetail)); reconnecting hop"
+                message: "\(sshExitMessage(status: terminationStatus, detail: exitDetail)); reconnecting hop",
+                options: options
             )
         }
     }
@@ -335,7 +350,7 @@ public final class HopConnectionManager {
         return "SSH hop exited with status \(status): \(detail)"
     }
 
-    private func scheduleReconnectLocked(profile: TunnelProfile, message: String, delay explicitDelay: TimeInterval? = nil) {
+    private func scheduleReconnectLocked(profile: TunnelProfile, message: String, delay explicitDelay: TimeInterval? = nil, options: SSHLaunchOptions) {
         let attempt = (reconnectAttempts[profile.id] ?? 0) + 1
         reconnectAttempts[profile.id] = attempt
         let delay = explicitDelay ?? reconnectDelay(attempt)
@@ -343,20 +358,36 @@ public final class HopConnectionManager {
         reconnectTokens[profile.id] = token
         let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? statuses[profile.id]?.jumpHost ?? ""
         updateStatusLocked(profile.id, jumpHost: jumpHost, .reconnecting, message, pid: nil)
+        logEventLocked("reconnect attempt \(attempt) scheduled in \(String(format: "%.1f", delay))s", profileID: profile.id)
 
         queue.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.reconnectTokens[profile.id] == token else { return }
             self.reconnectTokens[profile.id] = nil
-            self.startLocked(profile: profile, message: "Reconnecting hop")
+            self.startLocked(profile: profile, message: "Reconnecting hop", options: options)
         }
     }
 
     private func updateStatusLocked(_ profileID: UUID, jumpHost: String, _ health: TunnelHealth, _ message: String, pid: Int32?) {
+        let previous = statuses[profileID]
         let status = HopRuntimeStatus(profileID: profileID, jumpHost: jumpHost, health: health, message: message, pid: pid)
         statuses[profileID] = status
+        if previous?.jumpHost != jumpHost || previous?.health != health || previous?.message != message || previous?.pid != pid {
+            var statusMessage = "status \(health.rawValue): \(message)"
+            if !jumpHost.isEmpty {
+                statusMessage += " via \(jumpHost)"
+            }
+            if let pid {
+                statusMessage += " (pid \(pid))"
+            }
+            logEventLocked(statusMessage, profileID: profileID)
+        }
         DispatchQueue.main.async {
             self.onStatusChange?(status)
         }
+    }
+
+    private func logEventLocked(_ message: String, profileID: UUID) {
+        onLog?(profileID, SSHTranscriptLog.event(kind: "hop", message: message, at: now()))
     }
 
     private func startHealthTimer() {
@@ -382,6 +413,7 @@ public final class HopConnectionManager {
                     decision,
                     profile: managed.profile,
                     controlMaster: managed.controlMaster,
+                    options: managed.launchOptions,
                     terminationStatus: managed.session.terminationStatus,
                     exitDetail: managed.lastOutputLine
                 )
@@ -417,7 +449,7 @@ public final class HopConnectionManager {
                     updateStatusLocked(profileID, jumpHost: managed.controlMaster.jumpHost, .unhealthy, "Jump host ControlMaster check failed", pid: managed.session.processIdentifier)
                 case .reconnect:
                     stopLocked(profileID: profileID, updateStatus: false, reason: .restart)
-                    scheduleReconnectLocked(profile: managed.profile, message: "Jump host ControlMaster check failed; reconnecting hop")
+                    scheduleReconnectLocked(profile: managed.profile, message: "Jump host ControlMaster check failed; reconnecting hop", options: managed.launchOptions)
                 }
             }
         }
@@ -457,10 +489,12 @@ private final class ManagedHopConnection {
     let profile: TunnelProfile
     let controlMaster: JumpHostControlMaster
     let credentials: HopCredentials
+    let launchOptions: SSHLaunchOptions
     let startedAt: Date
     let readinessMarker: JumpHostReadinessMarker?
     var session: SSHProcessSession!
     var outputBuffer = Data()
+    var redactedSecrets: [String]
     var stopReason: StopReason?
     var sentHostKeyConfirmation = false
     var sentPassword = false
@@ -470,7 +504,7 @@ private final class ManagedHopConnection {
         guard let text = String(data: outputBuffer, encoding: .utf8) else {
             return nil
         }
-        let normalized = text.replacingOccurrences(of: "\r", with: "\n")
+        let normalized = SSHTranscriptLog.redact(text, secrets: redactedSecrets).replacingOccurrences(of: "\r", with: "\n")
         for line in normalized.split(whereSeparator: \.isNewline).reversed() {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
@@ -480,11 +514,13 @@ private final class ManagedHopConnection {
         return nil
     }
 
-    init(profile: TunnelProfile, controlMaster: JumpHostControlMaster, credentials: HopCredentials, startedAt: Date) {
+    init(profile: TunnelProfile, controlMaster: JumpHostControlMaster, credentials: HopCredentials, launchOptions: SSHLaunchOptions, startedAt: Date) {
         self.profile = profile
         self.controlMaster = controlMaster
         self.credentials = credentials
+        self.launchOptions = launchOptions
         self.startedAt = startedAt
         readinessMarker = JumpHostReadinessMarker(controlMaster: controlMaster)
+        redactedSecrets = [credentials.password].compactMap(\.self)
     }
 }

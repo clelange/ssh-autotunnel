@@ -140,6 +140,20 @@ final class SSHCommandBuilderTests: XCTestCase {
 
         XCTAssertTrue(command.arguments.containsSubsequence(["-o", "LogLevel=DEBUG", "ssh.example.org"]))
     }
+
+    func testVerboseTunnelCommandAddsVVVOnlyWhenRequested() {
+        let profile = TunnelProfile(
+            name: "Verbose",
+            host: "ssh.example.org",
+            localSocksPort: 1098
+        )
+
+        let standard = SSHCommandBuilder.tunnelCommand(for: profile)
+        let verbose = SSHCommandBuilder.tunnelCommand(for: profile, options: SSHLaunchOptions(verbose: true))
+
+        XCTAssertFalse(standard.arguments.contains("-vvv"))
+        XCTAssertTrue(verbose.arguments.containsSubsequence(["-vvv", "ssh.example.org"]))
+    }
 }
 
 private extension Array where Element: Equatable {

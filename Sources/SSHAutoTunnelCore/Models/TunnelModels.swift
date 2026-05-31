@@ -85,6 +85,16 @@ public struct HealthProbe: Codable, Equatable, Sendable {
     }
 }
 
+public struct SSHLaunchOptions: Equatable, Sendable {
+    public static let standard = SSHLaunchOptions()
+
+    public var verbose: Bool
+
+    public init(verbose: Bool = false) {
+        self.verbose = verbose
+    }
+}
+
 public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String

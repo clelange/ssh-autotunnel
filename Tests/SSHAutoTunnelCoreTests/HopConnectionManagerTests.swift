@@ -49,6 +49,58 @@ final class HopConnectionManagerTests: XCTestCase {
         ])
     }
 
+    func testLogsRedactedPromptAnnotationsAndOutput() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let keychain = FakeHopKeychain(values: [
+            "password-service|alice": "secret-password",
+            "totp-service|alice": "SEED"
+        ])
+        let profile = psiGeneralProfile()
+        let manager = HopConnectionManager(
+            keychain: keychain,
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            totpGenerator: { _ in "654321" },
+            startsHealthTimer: false
+        )
+        var log = ""
+        let started = expectation(description: "hop process started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH hop process started" {
+                started.fulfill()
+            }
+        }
+        manager.onLog = { profileID, text in
+            if profileID == profile.id {
+                log += text
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+
+        session.emit("Password:")
+        waitUntil("password reply is written") {
+            session.writtenStrings == ["secret-password\n"]
+        }
+        session.emit("secret-password\r\nEnter Your Microsoft verification code:")
+        waitUntil("TOTP reply is written") {
+            session.writtenStrings == ["secret-password\n", "654321\n"]
+        }
+        session.emit("654321\r\n")
+        waitUntil("prompt annotations are logged") {
+            log.contains("TOTP sent (<redacted>)")
+        }
+
+        XCTAssertTrue(log.contains("[hop] password prompt detected"))
+        XCTAssertTrue(log.contains("[hop] password sent (<redacted>)"))
+        XCTAssertTrue(log.contains("[hop] TOTP prompt detected"))
+        XCTAssertTrue(log.contains("[hop] TOTP sent (<redacted>)"))
+        XCTAssertFalse(log.contains("secret-password"))
+        XCTAssertFalse(log.contains("654321"))
+    }
+
     func testReportsHealthyAfterControlMasterCheckSucceeds() throws {
         let launcher = FakeHopSSHProcessLauncher()
         let profile = psiGeneralProfile(authMode: .none)
@@ -139,6 +191,44 @@ final class HopConnectionManagerTests: XCTestCase {
 
         XCTAssertEqual(launcher.sessions.count, 2)
         XCTAssertEqual(manager.status(for: profile.id)?.health, .connecting)
+    }
+
+    func testVerboseReconnectsStayVerboseUntilNormalStartReplaces() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            reconnectDelay: { _ in 0.01 },
+            startsHealthTimer: false
+        )
+        let firstStart = expectation(description: "first verbose start")
+        let secondStart = expectation(description: "second verbose start")
+        let thirdStart = expectation(description: "normal replacement start")
+        var starts = 0
+        manager.onStatusChange = { status in
+            guard status.profileID == profile.id, status.message == "SSH hop process started" else { return }
+            starts += 1
+            if starts == 1 {
+                firstStart.fulfill()
+            } else if starts == 2 {
+                secondStart.fulfill()
+            } else if starts == 3 {
+                thirdStart.fulfill()
+            }
+        }
+
+        manager.start(profile: profile, options: SSHLaunchOptions(verbose: true))
+        wait(for: [firstStart], timeout: 1)
+        XCTAssertTrue(try XCTUnwrap(launcher.commands.first).arguments.contains("-vvv"))
+
+        try XCTUnwrap(launcher.sessions.first).exit(status: 255)
+        wait(for: [secondStart], timeout: 1)
+        XCTAssertTrue(try XCTUnwrap(launcher.commands.dropFirst().first).arguments.contains("-vvv"))
+
+        manager.start(profile: profile, options: .standard)
+        wait(for: [thirdStart], timeout: 1)
+        XCTAssertFalse(try XCTUnwrap(launcher.commands.dropFirst(2).first).arguments.contains("-vvv"))
     }
 
     private func psiGeneralProfile(authMode: TunnelAuthMode = .passwordAndTOTP, autoReconnect: Bool = true) -> TunnelProfile {

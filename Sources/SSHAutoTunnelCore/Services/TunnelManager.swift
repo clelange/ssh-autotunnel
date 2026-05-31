@@ -76,11 +76,11 @@ public final class TunnelManager {
         queue.sync { statuses }
     }
 
-    public func start(profile: TunnelProfile) {
+    public func start(profile: TunnelProfile, options: SSHLaunchOptions = .standard) {
         queue.async {
             self.reconnectTokens[profile.id] = nil
             self.reconnectAttempts[profile.id] = 0
-            self.startLocked(profile: profile, message: "Starting tunnel")
+            self.startLocked(profile: profile, message: "Starting tunnel", options: options)
         }
     }
 
@@ -102,22 +102,22 @@ public final class TunnelManager {
         }
     }
 
-    public func reconnect(profile: TunnelProfile) {
+    public func reconnect(profile: TunnelProfile, options: SSHLaunchOptions = .standard) {
         queue.async {
             self.reconnectTokens[profile.id] = nil
             self.reconnectAttempts[profile.id] = 0
             self.stopLocked(profileID: profile.id, updateStatus: false, reason: .restart)
-            self.scheduleReconnectLocked(profile: profile, message: "Reconnecting", delay: 1.0)
+            self.scheduleReconnectLocked(profile: profile, message: "Reconnecting", delay: 1.0, options: options)
         }
     }
 
-    private func startLocked(profile: TunnelProfile, message: String) {
+    private func startLocked(profile: TunnelProfile, message: String, options: SSHLaunchOptions) {
         stopLocked(profileID: profile.id, updateStatus: false, reason: .replacement)
         updateStatusLocked(profile.id, .connecting, message, pid: nil)
         do {
             let credentials = try credentials(for: profile)
             try runKerberosSwitchIfNeeded(profile: profile)
-            let managed = try launch(profile: profile, credentials: credentials)
+            let managed = try launch(profile: profile, credentials: credentials, options: options)
             processes[profile.id] = managed
             updateStatusLocked(profile.id, .connecting, "SSH process started", pid: managed.session.processIdentifier)
         } catch {
@@ -154,9 +154,9 @@ public final class TunnelManager {
         _ = try? ShellRunner.run("/usr/bin/kswitch", ["-p", principal])
     }
 
-    private func launch(profile: TunnelProfile, credentials: TunnelCredentials) throws -> ManagedTunnel {
-        let command = SSHCommandBuilder.tunnelCommand(for: profile)
-        let managed = ManagedTunnel(profile: profile, credentials: credentials, startedAt: now())
+    private func launch(profile: TunnelProfile, credentials: TunnelCredentials, options: SSHLaunchOptions) throws -> ManagedTunnel {
+        let command = SSHCommandBuilder.tunnelCommand(for: profile, options: options)
+        let managed = ManagedTunnel(profile: profile, credentials: credentials, launchOptions: options, startedAt: now())
         managed.session = try processLauncher.launch(
             command: command,
             onOutput: { [weak self, weak managed] data in
@@ -179,6 +179,7 @@ public final class TunnelManager {
                     self.applyProcessExitDecisionLocked(
                         decision,
                         profile: profile,
+                        options: managed.launchOptions,
                         terminationStatus: session.terminationStatus,
                         exitDetail: managed.lastOutputLine
                     )
@@ -191,7 +192,7 @@ public final class TunnelManager {
     private func handleOutput(_ data: Data, tunnel: ManagedTunnel) {
         tunnel.outputBuffer.append(data)
         let text = String(data: data, encoding: .utf8) ?? ""
-        onLog?(tunnel.profile.id, text)
+        onLog?(tunnel.profile.id, SSHTranscriptLog.redact(text, secrets: tunnel.redactedSecrets))
         respondIfNeeded(to: tunnel.outputBuffer, tunnel: tunnel)
         if tunnel.outputBuffer.count > 4096 {
             tunnel.outputBuffer.removeFirst(tunnel.outputBuffer.count - 2048)
@@ -207,11 +208,14 @@ public final class TunnelManager {
         switch action {
         case .confirmHostKey:
             guard !tunnel.sentHostKeyConfirmation else { return }
+            logEventLocked("host key prompt detected", profileID: tunnel.profile.id)
             switch tunnel.profile.hostKeyPolicy {
             case .promptAndAccept:
                 tunnel.sentHostKeyConfirmation = true
+                logEventLocked("host key prompt accepted", profileID: tunnel.profile.id)
                 write("yes\n", to: tunnel)
             case .acceptNew, .strict:
+                logEventLocked("host key prompt blocked by \(tunnel.profile.hostKeyPolicy.displayName) policy", profileID: tunnel.profile.id)
                 updateStatusLocked(
                     tunnel.profile.id,
                     .failed,
@@ -222,19 +226,28 @@ public final class TunnelManager {
             }
         case .sendPassword:
             guard !tunnel.sentPassword else { return }
+            logEventLocked("password prompt detected", profileID: tunnel.profile.id)
             if let password = tunnel.credentials.password {
                 tunnel.sentPassword = true
+                tunnel.redactedSecrets.append(password)
+                logEventLocked("password sent (<redacted>)", profileID: tunnel.profile.id)
                 write(password + "\n", to: tunnel)
+            } else {
+                logEventLocked("password prompt detected but no password is configured", profileID: tunnel.profile.id)
             }
         case .sendTOTP:
             guard !tunnel.sentTOTP else { return }
+            logEventLocked("TOTP prompt detected", profileID: tunnel.profile.id)
             if let totpReference = tunnel.credentials.totp {
                 do {
                     let seed = try readGenericPassword(service: totpReference.service, account: totpReference.account)
                     let totp = try totpGenerator(seed)
                     tunnel.sentTOTP = true
+                    tunnel.redactedSecrets.append(totp)
+                    logEventLocked("TOTP sent (<redacted>)", profileID: tunnel.profile.id)
                     write(totp + "\n", to: tunnel)
                 } catch {
+                    logEventLocked("TOTP generation failed: \(error.localizedDescription)", profileID: tunnel.profile.id)
                     updateStatusLocked(
                         tunnel.profile.id,
                         .failed,
@@ -282,6 +295,7 @@ public final class TunnelManager {
     private func applyProcessExitDecisionLocked(
         _ decision: TunnelLifecyclePolicy.ProcessExitDecision,
         profile: TunnelProfile,
+        options: SSHLaunchOptions,
         terminationStatus: Int32,
         exitDetail: String?
     ) {
@@ -298,7 +312,8 @@ public final class TunnelManager {
         case .reconnect:
             scheduleReconnectLocked(
                 profile: profile,
-                message: "\(sshExitMessage(status: terminationStatus, detail: exitDetail)); reconnecting"
+                message: "\(sshExitMessage(status: terminationStatus, detail: exitDetail)); reconnecting",
+                options: options
             )
         }
     }
@@ -310,27 +325,40 @@ public final class TunnelManager {
         return "SSH exited with status \(status): \(detail)"
     }
 
-    private func scheduleReconnectLocked(profile: TunnelProfile, message: String, delay explicitDelay: TimeInterval? = nil) {
+    private func scheduleReconnectLocked(profile: TunnelProfile, message: String, delay explicitDelay: TimeInterval? = nil, options: SSHLaunchOptions) {
         let attempt = (reconnectAttempts[profile.id] ?? 0) + 1
         reconnectAttempts[profile.id] = attempt
         let delay = explicitDelay ?? reconnectDelay(attempt)
         let token = UUID()
         reconnectTokens[profile.id] = token
         updateStatusLocked(profile.id, .reconnecting, message, pid: nil)
+        logEventLocked("reconnect attempt \(attempt) scheduled in \(String(format: "%.1f", delay))s", profileID: profile.id)
 
         queue.asyncAfter(deadline: .now() + delay) { [weak self] in
             guard let self, self.reconnectTokens[profile.id] == token else { return }
             self.reconnectTokens[profile.id] = nil
-            self.startLocked(profile: profile, message: "Reconnecting")
+            self.startLocked(profile: profile, message: "Reconnecting", options: options)
         }
     }
 
     private func updateStatusLocked(_ profileID: UUID, _ health: TunnelHealth, _ message: String, pid: Int32?) {
+        let previous = statuses[profileID]
         let status = TunnelRuntimeStatus(profileID: profileID, health: health, message: message, pid: pid)
         statuses[profileID] = status
+        if previous?.health != health || previous?.message != message || previous?.pid != pid {
+            var statusMessage = "status \(health.rawValue): \(message)"
+            if let pid {
+                statusMessage += " (pid \(pid))"
+            }
+            logEventLocked(statusMessage, profileID: profileID)
+        }
         DispatchQueue.main.async {
             self.onStatusChange?(status)
         }
+    }
+
+    private func logEventLocked(_ message: String, profileID: UUID) {
+        onLog?(profileID, SSHTranscriptLog.event(kind: "tunnel", message: message, at: now()))
     }
 
     private func startHealthTimer() {
@@ -355,6 +383,7 @@ public final class TunnelManager {
                 applyProcessExitDecisionLocked(
                     decision,
                     profile: managed.profile,
+                    options: managed.launchOptions,
                     terminationStatus: managed.session.terminationStatus,
                     exitDetail: managed.lastOutputLine
                 )
@@ -386,7 +415,7 @@ public final class TunnelManager {
                     updateStatusLocked(profileID, .unhealthy, "SOCKS5 probe failed", pid: managed.session.processIdentifier)
                 case .reconnect:
                     stopLocked(profileID: profileID, updateStatus: false, reason: .restart)
-                    scheduleReconnectLocked(profile: managed.profile, message: "SOCKS5 probe failed; reconnecting")
+                    scheduleReconnectLocked(profile: managed.profile, message: "SOCKS5 probe failed; reconnecting", options: managed.launchOptions)
                 }
             }
         }
@@ -418,9 +447,11 @@ private final class ManagedTunnel {
 
     let profile: TunnelProfile
     let credentials: TunnelCredentials
+    let launchOptions: SSHLaunchOptions
     let startedAt: Date
     var session: SSHProcessSession!
     var outputBuffer = Data()
+    var redactedSecrets: [String]
     var stopReason: StopReason?
     var sentHostKeyConfirmation = false
     var sentPassword = false
@@ -430,7 +461,7 @@ private final class ManagedTunnel {
         guard let text = String(data: outputBuffer, encoding: .utf8) else {
             return nil
         }
-        let normalized = text.replacingOccurrences(of: "\r", with: "\n")
+        let normalized = SSHTranscriptLog.redact(text, secrets: redactedSecrets).replacingOccurrences(of: "\r", with: "\n")
         for line in normalized.split(whereSeparator: \.isNewline).reversed() {
             let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
             if !trimmed.isEmpty {
@@ -440,9 +471,11 @@ private final class ManagedTunnel {
         return nil
     }
 
-    init(profile: TunnelProfile, credentials: TunnelCredentials, startedAt: Date) {
+    init(profile: TunnelProfile, credentials: TunnelCredentials, launchOptions: SSHLaunchOptions, startedAt: Date) {
         self.profile = profile
         self.credentials = credentials
+        self.launchOptions = launchOptions
         self.startedAt = startedAt
+        redactedSecrets = [credentials.password].compactMap(\.self)
     }
 }

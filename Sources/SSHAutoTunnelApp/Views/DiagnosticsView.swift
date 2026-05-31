@@ -44,10 +44,17 @@ struct DiagnosticsView: View {
                         .font(.headline)
                     Spacer()
                     if let selectedProfileID {
+                        if let selectedProfile, appState.hasJumpHost(selectedProfile) {
+                            Button {
+                                appState.connectHopWithVerboseSSHLogging(profileID: selectedProfileID)
+                            } label: {
+                                Label("Verbose Hop", systemImage: "point.3.connected.trianglepath.dotted")
+                            }
+                        }
                         Button {
                             appState.connectWithVerboseSSHLogging(profileID: selectedProfileID)
                         } label: {
-                            Label("Verbose Connect", systemImage: "terminal")
+                            Label("Verbose Tunnel", systemImage: "terminal")
                         }
                         Button {
                             copy(appState.fullSSHLog(for: selectedProfileID))
@@ -80,7 +87,15 @@ struct DiagnosticsView: View {
             .padding()
         }
         .onAppear {
-            selectedProfileID = selectedProfileID ?? appState.configuration.profiles.first?.id
+            selectedProfileID = appState.diagnosticsSelectedProfileID ?? selectedProfileID ?? appState.configuration.profiles.first?.id
+        }
+        .onChange(of: appState.diagnosticsSelectedProfileID) {
+            if let profileID = appState.diagnosticsSelectedProfileID {
+                selectedProfileID = profileID
+            }
+        }
+        .onChange(of: selectedProfileID) {
+            appState.diagnosticsSelectedProfileID = selectedProfileID
         }
     }
 
@@ -97,9 +112,14 @@ struct DiagnosticsView: View {
     private func logPreview() -> String {
         guard let selectedProfileID else { return "Select a profile." }
         guard let preview = appState.logs[selectedProfileID], !preview.isEmpty else {
-            return "No log output yet. Use Verbose Connect to run SSH with -vvv and capture detailed diagnostics."
+            return "No log output yet. Use Verbose Tunnel or Verbose Hop to run SSH with -vvv and capture detailed diagnostics."
         }
         return preview
+    }
+
+    private var selectedProfile: TunnelProfile? {
+        guard let selectedProfileID else { return nil }
+        return appState.configuration.profiles.first { $0.id == selectedProfileID }
     }
 
     private func logDetail() -> String {

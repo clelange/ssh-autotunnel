@@ -116,6 +116,7 @@ struct DashboardView: View {
 
 private struct ProfileControlCard: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.openWindow) private var openWindow
     let profile: TunnelProfile
 
     private var tunnelStatus: TunnelRuntimeStatus {
@@ -163,46 +164,77 @@ private struct ProfileControlCard: View {
                 StatusLine(label: "Tunnel", health: tunnelStatus.health, message: tunnelStatus.message, pid: tunnelStatus.pid)
             }
 
-            HStack(spacing: 8) {
-                if hopStatus != nil {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    if hopStatus != nil {
+                        Button {
+                            if isActive(hopStatus?.health) {
+                                appState.disconnectHop(profile)
+                            } else {
+                                appState.connectHop(profile)
+                            }
+                        } label: {
+                            Label(isActive(hopStatus?.health) ? "Stop Hop" : "Start Hop", systemImage: "point.3.connected.trianglepath.dotted")
+                        }
+                        .help(isActive(hopStatus?.health) ? "Stop the jump host tunnel" : "Start the jump host tunnel")
+                    }
+
                     Button {
-                        if isActive(hopStatus?.health) {
-                            appState.disconnectHop(profile)
+                        if isActive(tunnelStatus.health) {
+                            appState.disconnect(profile)
                         } else {
-                            appState.connectHop(profile)
+                            appState.connect(profile)
                         }
                     } label: {
-                        Label(isActive(hopStatus?.health) ? "Stop Hop" : "Start Hop", systemImage: "point.3.connected.trianglepath.dotted")
+                        Label(isActive(tunnelStatus.health) ? "Stop Tunnel" : "Start Tunnel", systemImage: "arrow.left.arrow.right")
                     }
-                    .help(isActive(hopStatus?.health) ? "Stop the jump host tunnel" : "Start the jump host tunnel")
-                }
+                    .help(isActive(tunnelStatus.health) ? "Stop the tunnel for this profile" : "Start the tunnel for this profile")
 
-                Button {
-                    if isActive(tunnelStatus.health) {
-                        appState.disconnect(profile)
-                    } else {
-                        appState.connect(profile)
+                    Button {
+                        appState.reconnect(profile)
+                    } label: {
+                        Label("Reconnect", systemImage: "arrow.clockwise")
                     }
-                } label: {
-                    Label(isActive(tunnelStatus.health) ? "Stop Tunnel" : "Start Tunnel", systemImage: "arrow.left.arrow.right")
-                }
-                .help(isActive(tunnelStatus.health) ? "Stop the tunnel for this profile" : "Start the tunnel for this profile")
+                    .help("Reconnect this profile immediately")
 
-                Button {
-                    appState.reconnect(profile)
-                } label: {
-                    Label("Reconnect", systemImage: "arrow.clockwise")
-                }
-                .help("Reconnect this profile immediately")
+                    Button {
+                        appState.connectInteractiveSSH(profile)
+                    } label: {
+                        Label("Interactive SSH", systemImage: "terminal")
+                    }
+                    .help("Open an interactive SSH session for this profile")
 
-                Button {
-                    appState.connectInteractiveSSH(profile)
-                } label: {
-                    Label("Interactive SSH", systemImage: "terminal")
+                    Spacer()
                 }
-                .help("Open an interactive SSH session for this profile")
 
-                Spacer()
+                HStack(spacing: 8) {
+                    Button {
+                        openDiagnostics()
+                    } label: {
+                        Label("View Log", systemImage: "doc.text.magnifyingglass")
+                    }
+                    .help("Open the captured SSH transcript for this profile")
+
+                    if hopStatus != nil {
+                        Button {
+                            appState.connectHopWithVerboseSSHLogging(profileID: profile.id)
+                            openDiagnostics()
+                        } label: {
+                            Label("Verbose Hop", systemImage: "point.3.connected.trianglepath.dotted")
+                        }
+                        .help("Start the app-owned hop with verbose SSH diagnostics")
+                    }
+
+                    Button {
+                        appState.connectWithVerboseSSHLogging(profileID: profile.id)
+                        openDiagnostics()
+                    } label: {
+                        Label("Verbose Tunnel", systemImage: "terminal")
+                    }
+                    .help("Start the tunnel with verbose SSH diagnostics")
+
+                    Spacer()
+                }
             }
             .buttonStyle(.bordered)
         }
@@ -229,6 +261,12 @@ private struct ProfileControlCard: View {
         case .stopped, .unhealthy, .failed, nil:
             false
         }
+    }
+
+    private func openDiagnostics() {
+        appState.selectDiagnosticsProfile(profile.id)
+        openWindow(id: "diagnostics")
+        AppActivation.activate()
     }
 }
 

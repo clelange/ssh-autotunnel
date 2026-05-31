@@ -29,7 +29,7 @@ public struct JumpHostControlMaster: Equatable, Sendable {
 }
 
 public enum JumpHostControlMasterFactory {
-    public static func make(for profile: TunnelProfile) throws -> JumpHostControlMaster {
+    public static func make(for profile: TunnelProfile, options: SSHLaunchOptions = .standard) throws -> JumpHostControlMaster {
         let jumpHost = try normalizedJumpHost(for: profile)
         let directory = controlDirectory(for: profile.id)
         let controlPath = directory.appendingPathComponent("control").path
@@ -62,6 +62,7 @@ public enum JumpHostControlMasterFactory {
             ]
         }
 
+        SSHCommandBuilder.appendLaunchOptions(options, to: &masterArguments)
         masterArguments.append(jumpHost)
 
         return JumpHostControlMaster(

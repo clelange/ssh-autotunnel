@@ -23,7 +23,7 @@ public struct SSHCommand: Equatable, Sendable {
 }
 
 public enum SSHCommandBuilder {
-    public static func tunnelCommand(for profile: TunnelProfile) -> SSHCommand {
+    public static func tunnelCommand(for profile: TunnelProfile, options: SSHLaunchOptions = .standard) -> SSHCommand {
         var arguments = [
             "-N",
             "-D", "127.0.0.1:\(profile.localSocksPort)",
@@ -53,12 +53,13 @@ public enum SSHCommandBuilder {
             arguments += ["-J", jumpHost]
         }
 
+        appendLaunchOptions(options, to: &arguments)
         arguments += profile.extraSSHOptions
         arguments.append(profile.sshDestination)
         return SSHCommand(arguments: arguments)
     }
 
-    public static func interactiveCommand(for profile: TunnelProfile) -> SSHCommand {
+    public static func interactiveCommand(for profile: TunnelProfile, options: SSHLaunchOptions = .standard) -> SSHCommand {
         var profile = profile
         profile.host = profile.resolvedInteractiveHost
         var arguments = [
@@ -85,9 +86,16 @@ public enum SSHCommandBuilder {
             arguments += ["-J", jumpHost]
         }
 
+        appendLaunchOptions(options, to: &arguments)
         arguments += profile.extraSSHOptions
         arguments.append(profile.sshDestination)
         return SSHCommand(arguments: arguments)
+    }
+
+    static func appendLaunchOptions(_ options: SSHLaunchOptions, to arguments: inout [String]) {
+        if options.verbose, !arguments.contains("-vvv") {
+            arguments.append("-vvv")
+        }
     }
 
     private static func usesKeyboardInteractiveAuth(_ authMode: TunnelAuthMode) -> Bool {

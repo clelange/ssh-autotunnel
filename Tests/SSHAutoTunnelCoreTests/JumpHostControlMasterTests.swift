@@ -27,6 +27,7 @@ final class JumpHostControlMasterTests: XCTestCase {
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "ControlMaster=yes"]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "StrictHostKeyChecking=yes"]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "PreferredAuthentications=keyboard-interactive,password"]))
+        XCTAssertFalse(controlMaster.command.arguments.containsSubsequence(["-o", "LogLevel=DEBUG"]))
         XCTAssertEqual(controlMaster.command.arguments.last, "alice@hopx.psi.ch")
 
         XCTAssertNil(controlMaster.finalProfile.jumpHost)
@@ -35,6 +36,24 @@ final class JumpHostControlMasterTests: XCTestCase {
             option == "ProxyCommand=/usr/bin/ssh -o ControlMaster=auto -o BatchMode=yes -S \(controlMaster.controlPath) -W %h:%p alice@hopx.psi.ch"
         })
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.containsSubsequence(["-o", "LogLevel=DEBUG", "-o"]))
+    }
+
+    func testVerboseControlMasterCommandAddsVVVOnlyWhenRequested() throws {
+        let profile = TunnelProfile(
+            name: "PSI General",
+            host: "login.psi.ch",
+            user: "alice",
+            localSocksPort: 1083,
+            jumpHost: "alice@hopx.psi.ch",
+            extraSSHOptions: ["-o", "LogLevel=DEBUG"]
+        )
+
+        let standard = try JumpHostControlMasterFactory.make(for: profile)
+        let verbose = try JumpHostControlMasterFactory.make(for: profile, options: SSHLaunchOptions(verbose: true))
+
+        XCTAssertFalse(standard.command.arguments.contains("-vvv"))
+        XCTAssertTrue(verbose.command.arguments.containsSubsequence(["-vvv", "alice@hopx.psi.ch"]))
+        XCTAssertFalse(verbose.command.arguments.containsSubsequence(["-o", "LogLevel=DEBUG"]))
     }
 
     func testFactoryCanApplyExistingControlMasterToDifferentFinalProfile() throws {

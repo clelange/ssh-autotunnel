@@ -240,6 +240,67 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertEqual(session.terminateCallCount, 1)
     }
 
+    func testLogsRedactedPromptAnnotationsAndOutput() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let keychain = FakeGenericPasswordReader(values: [
+            "password-service": "secret-password",
+            "otp-service": "JBSWY3DPEHPK3PXP"
+        ])
+        let profile = TunnelProfile(
+            name: "Redacted",
+            host: "ssh.example.org",
+            localSocksPort: 1099,
+            authMode: .passwordAndTOTP,
+            keychain: KeychainReference(
+                account: "alice",
+                passwordService: "password-service",
+                totpService: "otp-service"
+            )
+        )
+        let manager = TunnelManager(
+            keychain: keychain,
+            processLauncher: launcher,
+            totpGenerator: { _ in "654321" },
+            startsHealthTimer: false
+        )
+        var log = ""
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+        manager.onLog = { profileID, text in
+            if profileID == profile.id {
+                log += text
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+
+        session.emit("Password:")
+        waitUntil("password reply is written") {
+            session.writtenStrings == ["secret-password\n"]
+        }
+        session.emit("secret-password\r\nVerification code:")
+        waitUntil("TOTP reply is written") {
+            session.writtenStrings == ["secret-password\n", "654321\n"]
+        }
+        session.emit("654321\r\n")
+        waitUntil("prompt annotations are logged") {
+            log.contains("TOTP sent (<redacted>)")
+        }
+
+        XCTAssertTrue(log.contains("[tunnel] password prompt detected"))
+        XCTAssertTrue(log.contains("[tunnel] password sent (<redacted>)"))
+        XCTAssertTrue(log.contains("[tunnel] TOTP prompt detected"))
+        XCTAssertTrue(log.contains("[tunnel] TOTP sent (<redacted>)"))
+        XCTAssertFalse(log.contains("secret-password"))
+        XCTAssertFalse(log.contains("654321"))
+    }
+
     private func testProfile(autoReconnect: Bool) -> TunnelProfile {
         TunnelProfile(
             name: "Test",
@@ -263,6 +324,7 @@ final class TunnelManagerProcessTests: XCTestCase {
 private final class FakeSSHProcessLauncher: SSHProcessLaunching {
     private var nextPID: Int32 = 10_000
     private let lock = NSLock()
+    private(set) var commands: [SSHCommand] = []
     private(set) var sessions: [FakeSSHProcessSession] = []
 
     func launch(
@@ -272,6 +334,7 @@ private final class FakeSSHProcessLauncher: SSHProcessLaunching {
     ) throws -> SSHProcessSession {
         lock.lock()
         defer { lock.unlock() }
+        commands.append(command)
         let session = FakeSSHProcessSession(pid: nextPID, onOutput: onOutput, onTermination: onTermination)
         nextPID += 1
         sessions.append(session)
