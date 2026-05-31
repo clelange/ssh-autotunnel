@@ -11,6 +11,7 @@ public final class HopConnectionManager {
     private let reconnectDelay: (Int) -> TimeInterval
     private let totpGenerator: (String) throws -> String
     private let initialReadinessGracePeriod: TimeInterval
+    private let processExitObservationDelay: TimeInterval
     private let now: () -> Date
     private let queue = DispatchQueue(label: "dev.clange.ssh-autotunnel.hops")
     private var processes: [UUID: ManagedHopConnection] = [:]
@@ -39,6 +40,7 @@ public final class HopConnectionManager {
         reconnectDelay: @escaping (Int) -> TimeInterval = { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
         initialReadinessGracePeriod: TimeInterval = 60,
+        processExitObservationDelay: TimeInterval = 0.1,
         now: @escaping () -> Date = Date.init,
         startsHealthTimer: Bool = true
     ) {
@@ -48,6 +50,7 @@ public final class HopConnectionManager {
         self.reconnectDelay = reconnectDelay
         self.totpGenerator = totpGenerator
         self.initialReadinessGracePeriod = initialReadinessGracePeriod
+        self.processExitObservationDelay = processExitObservationDelay
         self.now = now
         if startsHealthTimer {
             startHealthTimer()
@@ -184,12 +187,16 @@ public final class HopConnectionManager {
                 }
             },
             onTermination: { [weak self, weak managed] session in
-                self?.queue.async {
+                guard let self else { return }
+                self.queue.asyncAfter(deadline: .now() + self.processExitObservationDelay) { [weak self, weak managed] in
                     guard let self, let managed else { return }
                     guard self.processes[profile.id] === managed else { return }
                     self.processes[profile.id] = nil
 
-                    let decision = TunnelLifecyclePolicy.processExitDecision(
+                    let hasExistingSessionConflict = managed.hasExistingSessionConflict || managed.matchesExistingSessionConflict
+                    let decision = hasExistingSessionConflict
+                        ? TunnelLifecyclePolicy.ProcessExitDecision.markFailed
+                        : TunnelLifecyclePolicy.processExitDecision(
                         terminationStatus: session.terminationStatus,
                         wasIntentionalStop: managed.stopReason != nil,
                         autoReconnect: profile.autoReconnect
@@ -200,7 +207,10 @@ public final class HopConnectionManager {
                         controlMaster: controlMaster,
                         options: managed.launchOptions,
                         terminationStatus: session.terminationStatus,
-                        exitDetail: managed.lastOutputLine
+                        exitDetail: managed.lastOutputLine,
+                        forcedFailureMessage: hasExistingSessionConflict
+                        ? Self.existingSessionFailureMessage(for: controlMaster.jumpHost)
+                        : nil
                     )
                 }
             }
@@ -213,10 +223,46 @@ public final class HopConnectionManager {
         let text = String(data: data, encoding: .utf8) ?? ""
         onLog?(hop.profile.id, SSHTranscriptLog.redact(text, secrets: hop.redactedSecrets))
         hop.readinessMarker?.handle(data)
+        detectExistingSessionConflict(in: hop)
         respondIfNeeded(to: hop.outputBuffer, hop: hop)
         if hop.outputBuffer.count > 4096 {
             hop.outputBuffer.removeFirst(hop.outputBuffer.count - 2048)
         }
+    }
+
+    private func detectExistingSessionConflict(in hop: ManagedHopConnection) {
+        guard !hop.hasExistingSessionConflict else { return }
+        guard let transcriptText = String(data: hop.outputBuffer, encoding: .utf8)?.lowercased() else { return }
+        if Self.matchesExistingSessionMessage(in: transcriptText) {
+            hop.hasExistingSessionConflict = true
+            reconnectTokens[hop.profile.id] = nil
+            reconnectAttempts[hop.profile.id] = nil
+            logEventLocked("existing hop session detected; stopping auto-reconnect", profileID: hop.profile.id)
+            let failureMessage = Self.existingSessionFailureMessage(for: hop.controlMaster.jumpHost)
+            updateStatusLocked(
+                hop.profile.id,
+                jumpHost: hop.controlMaster.jumpHost,
+                .failed,
+                failureMessage,
+                pid: hop.session.processIdentifier
+            )
+            stopLocked(profileID: hop.profile.id, updateStatus: false, reason: .user)
+            return
+        }
+    }
+
+    private static func existingSessionFailureMessage(for jumpHost: String) -> String {
+        "SSH hop failed: an existing hop session is already active on \(jumpHost). Close that session and retry. Auto-reconnect was stopped for this attempt."
+    }
+
+    fileprivate static func matchesExistingSessionMessage(in text: String) -> Bool {
+        let normalizedText = text
+            .lowercased()
+            .components(separatedBy: .whitespacesAndNewlines)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+        return normalizedText.contains("you already have an existing session")
+            || normalizedText.contains("multiple sessions to this systems for the same user are not possible")
     }
 
     private func respondIfNeeded(to buffer: Data, hop: ManagedHopConnection) {
@@ -322,7 +368,8 @@ public final class HopConnectionManager {
         controlMaster: JumpHostControlMaster,
         options: SSHLaunchOptions,
         terminationStatus: Int32,
-        exitDetail: String?
+        exitDetail: String?,
+        forcedFailureMessage: String? = nil
     ) {
         switch decision {
         case .ignore:
@@ -333,7 +380,13 @@ public final class HopConnectionManager {
             updateStatusLocked(profile.id, jumpHost: controlMaster.jumpHost, .stopped, sshExitMessage(status: terminationStatus, detail: exitDetail), pid: nil)
         case .markFailed:
             reconnectTokens[profile.id] = nil
-            updateStatusLocked(profile.id, jumpHost: controlMaster.jumpHost, .failed, sshExitMessage(status: terminationStatus, detail: exitDetail), pid: nil)
+            updateStatusLocked(
+                profile.id,
+                jumpHost: controlMaster.jumpHost,
+                .failed,
+                forcedFailureMessage ?? sshExitMessage(status: terminationStatus, detail: exitDetail),
+                pid: nil
+            )
         case .reconnect:
             scheduleReconnectLocked(
                 profile: profile,
@@ -496,9 +549,17 @@ private final class ManagedHopConnection {
     var outputBuffer = Data()
     var redactedSecrets: [String]
     var stopReason: StopReason?
+    var hasExistingSessionConflict = false
     var sentHostKeyConfirmation = false
     var sentPassword = false
     var sentTOTP = false
+
+    var matchesExistingSessionConflict: Bool {
+        guard let text = String(data: outputBuffer, encoding: .utf8) else {
+            return false
+        }
+        return HopConnectionManager.matchesExistingSessionMessage(in: text)
+    }
 
     var lastOutputLine: String? {
         guard let text = String(data: outputBuffer, encoding: .utf8) else {

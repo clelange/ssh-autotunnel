@@ -193,6 +193,163 @@ final class HopConnectionManagerTests: XCTestCase {
         XCTAssertEqual(manager.status(for: profile.id)?.health, .connecting)
     }
 
+    func testExistingSessionMessageStopsReconnectAndMarksFailure() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let expectedHost = profile.jumpHost ?? ""
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            reconnectDelay: { _ in 0.01 },
+            startsHealthTimer: false
+        )
+        let firstStart = expectation(description: "hop process started")
+        let statusFailed = expectation(description: "hop marked failed")
+        var statusMessages: [String] = []
+
+        manager.onStatusChange = { status in
+            guard status.profileID == profile.id else { return }
+            if status.message == "SSH hop process started" {
+                firstStart.fulfill()
+            }
+            if status.health == .failed {
+                statusMessages.append(status.message)
+                statusFailed.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [firstStart], timeout: 1)
+
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.emit("You already have an existing session to hopx!")
+        session.exit(status: 0)
+
+        wait(for: [statusFailed], timeout: 1)
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .failed)
+        XCTAssertTrue(statusMessages.last?.contains("existing hop session is already active on \(expectedHost)") == true)
+        assertNoReconnectAttempt(launcher, expectedCount: 1)
+    }
+
+    func testExistingSessionConflictWorksForOtherHopHostAndNoReconnect() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = tier3Profile(authMode: .none, autoReconnect: true)
+        let expectedHost = profile.jumpHost ?? ""
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            reconnectDelay: { _ in 0.01 },
+            startsHealthTimer: false
+        )
+        let firstStart = expectation(description: "hop process started")
+        let statusFailed = expectation(description: "hop marked failed")
+        var failedMessages: [String] = []
+
+        manager.onStatusChange = { status in
+            guard status.profileID == profile.id else { return }
+            if status.message == "SSH hop process started" {
+                firstStart.fulfill()
+            }
+            if status.health == .failed {
+                failedMessages.append(status.message)
+                statusFailed.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [firstStart], timeout: 1)
+
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.emit("Multiple sessions to this systems for the same user are not possible")
+        session.exit(status: 0)
+
+        wait(for: [statusFailed], timeout: 1)
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .failed)
+        XCTAssertTrue(failedMessages.last?.contains("existing hop session is already active on \(expectedHost)") == true)
+        assertNoReconnectAttempt(launcher, expectedCount: 1)
+    }
+
+    func testExistingSessionConflictDetectedAcrossOutputChunks() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let expectedHost = profile.jumpHost ?? ""
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            reconnectDelay: { _ in 0.01 },
+            startsHealthTimer: false
+        )
+        let firstStart = expectation(description: "hop process started")
+        let statusFailed = expectation(description: "hop marked failed")
+        var failedMessages: [String] = []
+
+        manager.onStatusChange = { status in
+            guard status.profileID == profile.id else { return }
+            if status.message == "SSH hop process started" {
+                firstStart.fulfill()
+            }
+            if status.health == .failed {
+                failedMessages.append(status.message)
+                statusFailed.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [firstStart], timeout: 1)
+
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.emit("You already have an existing session")
+        session.emit(" to")
+        session.emit(" hopx!")
+        session.exit(status: 0)
+
+        wait(for: [statusFailed], timeout: 1)
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .failed)
+        XCTAssertTrue(failedMessages.last?.contains("existing hop session is already active on \(expectedHost)") == true)
+        assertNoReconnectAttempt(launcher, expectedCount: 1)
+    }
+
+    func testExistingSessionOutputAfterTerminationStillCancelsReconnect() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let expectedHost = profile.jumpHost ?? ""
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            reconnectDelay: { _ in 0.01 },
+            processExitObservationDelay: 0.02,
+            startsHealthTimer: false
+        )
+        let firstStart = expectation(description: "hop process started")
+        let statusFailed = expectation(description: "hop marked failed")
+        var failedMessages: [String] = []
+
+        manager.onStatusChange = { status in
+            guard status.profileID == profile.id else { return }
+            if status.message == "SSH hop process started" {
+                firstStart.fulfill()
+            }
+            if status.health == .failed {
+                failedMessages.append(status.message)
+                statusFailed.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [firstStart], timeout: 1)
+
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.exit(status: 0)
+        session.emit("You already have an existing session to hopx!")
+
+        wait(for: [statusFailed], timeout: 1)
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .failed)
+        XCTAssertTrue(failedMessages.last?.contains("existing hop session is already active on \(expectedHost)") == true)
+        assertNoReconnectAttempt(launcher, expectedCount: 1, timeout: 0.15)
+    }
+
     func testVerboseReconnectsStayVerboseUntilNormalStartReplaces() throws {
         let launcher = FakeHopSSHProcessLauncher()
         let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
@@ -248,7 +405,7 @@ final class HopConnectionManagerTests: XCTestCase {
         )
     }
 
-    private func tier3Profile(authMode: TunnelAuthMode = .passwordAndTOTP) -> TunnelProfile {
+    private func tier3Profile(authMode: TunnelAuthMode = .passwordAndTOTP, autoReconnect: Bool = true) -> TunnelProfile {
         TunnelProfile(
             name: "PSI CMS Tier-3",
             host: "t3ui07.psi.ch",
@@ -260,7 +417,8 @@ final class HopConnectionManagerTests: XCTestCase {
                 account: "alice",
                 passwordService: "password-service",
                 totpService: "totp-service"
-            )
+            ),
+            autoReconnect: autoReconnect
         )
     }
 
@@ -271,6 +429,24 @@ final class HopConnectionManagerTests: XCTestCase {
             Thread.sleep(forTimeInterval: 0.01)
         }
         XCTFail("Timed out waiting for \(description)")
+    }
+
+    private func assertNoReconnectAttempt(
+        _ launcher: FakeHopSSHProcessLauncher,
+        expectedCount: Int,
+        timeout: TimeInterval = 0.2,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if launcher.sessions.count != expectedCount {
+                XCTFail("Unexpected reconnect attempt", file: file, line: line)
+                return
+            }
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        XCTAssertEqual(launcher.sessions.count, expectedCount, file: file, line: line)
     }
 }
 

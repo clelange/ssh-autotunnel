@@ -12,6 +12,13 @@
   - `Sources/SSHAutoTunnelCLI` for command-line remote control.
   - `Tests/SSHAutoTunnelCoreTests` for core behavior tests.
 
+## SSH/Hop Flow Testing Notes
+
+- When changing SSH prompt, transcript, or hop-session detection logic, add tests using exact text from real user logs when available.
+- For reconnect and lifecycle changes, cover both callback orderings: output before termination and termination before late output.
+- For behavior that must not reconnect, tests must wait longer than the injected reconnect delay before passing.
+- After adding or changing tests, run the focused test suite or filter before reporting the change as ready.
+
 ## Current Progress
 
 - Created the SwiftPM macOS menu-bar app scaffold.
