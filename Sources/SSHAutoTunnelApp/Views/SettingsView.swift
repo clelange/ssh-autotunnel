@@ -32,6 +32,7 @@ struct SettingsView: View {
                 } label: {
                     Label("Add Profile", systemImage: "plus")
                 }
+                .help("Create a new profile")
             }
         } detail: {
             TabView {
@@ -142,12 +143,14 @@ struct ProfileEditorView: View {
                             } label: {
                                 Label("Interactive SSH", systemImage: "terminal")
                             }
+                            .help("Open an interactive SSH session")
                         }
                         Button(role: .destructive) {
                             deleteCandidate = profile
                         } label: {
                             Label("Delete Profile", systemImage: "trash")
                         }
+                        .help("Delete the selected profile")
                         Label {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(status.health.rawValue.capitalized)
@@ -312,6 +315,7 @@ struct PACRulesView: View {
                 } label: {
                     Label("Add Rule", systemImage: "plus")
                 }
+                .help("Add a PAC routing rule")
             }
 
             List {
@@ -484,6 +488,7 @@ struct AppPreferencesView: View {
                         Button("Choose...") {
                             choosePACFile()
                         }
+                        .help("Choose a PAC file path")
                     }
                     .disabled(!appState.configuration.pacAppendSource.enabled)
                 }
@@ -492,6 +497,7 @@ struct AppPreferencesView: View {
                         appState.refreshPACAppendSource(force: true)
                     }
                     .disabled(!appState.configuration.pacAppendSource.isReadyToLoad)
+                    .help("Reload the configured PAC source")
                     Text(appState.pacAppendSourceMessage)
                         .font(.caption)
                         .foregroundStyle(.secondary)
@@ -509,9 +515,11 @@ struct AppPreferencesView: View {
                 Button("Apply System PAC Now") {
                     appState.applySystemPAC()
                 }
+                .help("Apply PAC to active network service")
                 Button("Restore Previous System Proxy") {
                     appState.restoreSystemPAC()
                 }
+                .help("Restore previous system proxy settings")
             }
 
             Section("Local API") {
@@ -522,6 +530,7 @@ struct AppPreferencesView: View {
                 Button("Rotate API Token") {
                     appState.rotateAPIToken()
                 }
+                .help("Create a new local API token")
             }
 
             Section("Interactive SSH") {
@@ -537,6 +546,7 @@ struct AppPreferencesView: View {
                         Button("Choose...") {
                             chooseTerminalApplication()
                         }
+                        .help("Choose a custom terminal app for interactive SSH")
                     }
                     Text("Custom terminal apps must accept command launches with `-e /bin/zsh -lc ...`.")
                         .font(.caption)
@@ -556,11 +566,13 @@ struct AppPreferencesView: View {
                         } label: {
                             Label("Copy Managed Snippet", systemImage: "doc.on.doc")
                         }
+                        .help("Copy managed SSH config snippet")
                         Button {
                             confirmsManagedSSHConfigInstall = true
                         } label: {
                             Label("Install Managed Include...", systemImage: "square.and.arrow.down")
                         }
+                        .help("Install managed SSH include configuration")
                     }
                     ScrollView {
                         Text(appState.managedSSHConfigSnippet())

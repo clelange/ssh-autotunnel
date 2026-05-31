@@ -75,6 +75,7 @@ struct OnboardingView: View {
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
+                .help("Open app settings")
             }
 
             Picker("Step", selection: $step) {
@@ -177,6 +178,7 @@ struct OnboardingView: View {
                 } label: {
                     Label("Check Keychain", systemImage: "key.viewfinder")
                 }
+                .help("Refresh credential status from Keychain")
             }
 
             if selectedInputs.isEmpty {
