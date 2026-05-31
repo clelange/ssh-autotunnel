@@ -42,16 +42,19 @@ struct DashboardView: View {
                 } label: {
                     Label("Copy PAC URL", systemImage: "doc.on.doc")
                 }
+                .help("Copy the PAC URL")
                 Button {
                     appState.applySystemPAC()
                 } label: {
                     Label("Apply PAC", systemImage: "network")
                 }
+                .help("Apply PAC settings to the active network")
                 Button {
                     appState.restoreSystemPAC()
                 } label: {
                     Label("Restore Proxy", systemImage: "arrow.uturn.backward")
                 }
+                .help("Restore system proxy settings from the last snapshot")
             }
             ToolbarItemGroup {
                 Button {
@@ -60,18 +63,21 @@ struct DashboardView: View {
                 } label: {
                     Label("Setup", systemImage: "sparkles")
                 }
+                .help("Open setup window")
                 Button {
                     openWindow(id: "settings")
                     AppActivation.activate()
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
+                .help("Open settings")
                 Button {
                     openWindow(id: "diagnostics")
                     AppActivation.activate()
                 } label: {
                     Label("Diagnostics", systemImage: "stethoscope")
                 }
+                .help("Open diagnostics")
             }
         }
     }
@@ -168,6 +174,7 @@ private struct ProfileControlCard: View {
                     } label: {
                         Label(isActive(hopStatus?.health) ? "Stop Hop" : "Start Hop", systemImage: "point.3.connected.trianglepath.dotted")
                     }
+                    .help(isActive(hopStatus?.health) ? "Stop the jump host tunnel" : "Start the jump host tunnel")
                 }
 
                 Button {
@@ -179,18 +186,21 @@ private struct ProfileControlCard: View {
                 } label: {
                     Label(isActive(tunnelStatus.health) ? "Stop Tunnel" : "Start Tunnel", systemImage: "arrow.left.arrow.right")
                 }
+                .help(isActive(tunnelStatus.health) ? "Stop the tunnel for this profile" : "Start the tunnel for this profile")
 
                 Button {
                     appState.reconnect(profile)
                 } label: {
                     Label("Reconnect", systemImage: "arrow.clockwise")
                 }
+                .help("Reconnect this profile immediately")
 
                 Button {
                     appState.connectInteractiveSSH(profile)
                 } label: {
                     Label("Interactive SSH", systemImage: "terminal")
                 }
+                .help("Open an interactive SSH session for this profile")
 
                 Spacer()
             }
