@@ -251,7 +251,8 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try runResult?.get(), 0)
         XCTAssertEqual(statusChecks.first.map { Array($0.suffix(2)) }, ["check", "alice@hopx.psi.ch"])
-        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.hasPrefix("ProxyCommand=/usr/bin/ssh -S ") } == true)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("ControlMaster=auto") } == true)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("BatchMode=yes") } == true)
         XCTAssertFalse(launcher.commands.first?.arguments.contains("-J") == true)
         XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@login.psi.ch")
     }
@@ -314,7 +315,57 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try runResult?.get(), 0)
-        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.hasPrefix("ProxyCommand=/usr/bin/ssh -S ") } == true)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("ControlMaster=auto") } == true)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("BatchMode=yes") } == true)
+        XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@t3ui07.psi.ch")
+    }
+
+    func testRunnerFinalReadySessionStartsWithoutWaitingForHopChecks() throws {
+        let launcher = FakeInteractiveSSHProcessLauncher()
+        let outputPipe = Pipe()
+        let runner = InteractiveSSHSessionRunner(
+            keychain: FakeInteractiveKeychain(values: [
+                "password-service|alice": "secret-password",
+                "totp-service|alice": "SEED"
+            ]),
+            processLauncher: launcher,
+            runCommand: { _, _ in },
+            runStatusCommand: { _, _ in
+                XCTFail("App-verified final sessions should not poll the hop again")
+                return 1
+            }
+        )
+        let profile = tier3Profile()
+        let readyPath = jumpHostReadyPath(for: profile)
+        try? FileManager.default.removeItem(at: readyPath.deletingLastPathComponent())
+        defer {
+            try? FileManager.default.removeItem(at: readyPath.deletingLastPathComponent())
+        }
+
+        let runQueue = DispatchQueue(label: "interactive-tier3-final-ready-test")
+        var runResult: Result<Int32, Error>?
+        let finished = expectation(description: "tier3 ready final runner finished")
+        runQueue.async {
+            runResult = Result {
+                try runner.runFinalSessionThroughReadyJumpHost(
+                    profile: profile,
+                    input: FileHandle.standardInput,
+                    output: outputPipe.fileHandleForWriting,
+                    errorOutput: outputPipe.fileHandleForWriting,
+                    bridgeInput: false,
+                    configureTerminal: false
+                )
+            }
+            finished.fulfill()
+        }
+
+        let session = try waitForSession(launcher)
+        session.finish(status: 0)
+
+        wait(for: [finished], timeout: 2)
+        XCTAssertEqual(try runResult?.get(), 0)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("ControlMaster=auto") } == true)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("BatchMode=yes") } == true)
         XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@t3ui07.psi.ch")
     }
 

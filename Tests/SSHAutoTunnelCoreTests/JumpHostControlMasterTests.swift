@@ -32,7 +32,7 @@ final class JumpHostControlMasterTests: XCTestCase {
         XCTAssertNil(controlMaster.finalProfile.jumpHost)
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.contains("-o"))
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.contains { option in
-            option == "ProxyCommand=/usr/bin/ssh -S \(controlMaster.controlPath) -W %h:%p alice@hopx.psi.ch"
+            option == "ProxyCommand=/usr/bin/ssh -o ControlMaster=auto -o BatchMode=yes -S \(controlMaster.controlPath) -W %h:%p alice@hopx.psi.ch"
         })
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.containsSubsequence(["-o", "LogLevel=DEBUG", "-o"]))
     }

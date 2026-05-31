@@ -41,6 +41,10 @@ final class CLIArgumentsTests: XCTestCase {
             CLIArguments.parse(["interactive-ssh-final", "PSI", "General"]),
             CLIInvocation(command: "interactive-ssh-final", profileName: "PSI General")
         )
+        XCTAssertEqual(
+            CLIArguments.parse(["interactive-ssh-final-ready", "PSI", "General"]),
+            CLIInvocation(command: "interactive-ssh-final-ready", profileName: "PSI General")
+        )
     }
 
     func testReturnsNilForEmptyArguments() {

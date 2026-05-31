@@ -87,6 +87,7 @@
 - Raised the app to macOS 26, changed it into a regular Dock app with a persistent main dashboard window, and kept the menu-bar extra as a quick control surface.
 - Added app-owned background SSH ControlMaster hop connections with first-class hop status, health checks, prompt-time TOTP, reconnect handling, and PSI Tier-3 readiness marker support.
 - Made tunnel and interactive SSH actions for jump-host profiles wait for a verified app-owned hop before launching the tunnel or final terminal session.
+- Stopped app-launched final interactive SSH sessions from re-running the manual/debug hop wait loop after the app has already verified the hop.
 - Added actionable macOS reconnect notifications for tunnel and hop failures.
 - Added hop connect/disconnect/reconnect coverage to the local API, CLI, Shortcuts/App Intents, status snapshots, diagnostics, and tests.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
@@ -102,7 +103,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the main-window and hop-workflow update, the core test suite has 220 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the main-window and hop-workflow update, the core test suite has 221 XCTest cases.
 
 ## Known Gaps
 

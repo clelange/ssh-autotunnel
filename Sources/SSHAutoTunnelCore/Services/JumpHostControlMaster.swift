@@ -113,6 +113,8 @@ public enum JumpHostControlMasterFactory {
         finalProfile.jumpHost = nil
         let proxyCommand = [
             "/usr/bin/ssh",
+            "-o", "ControlMaster=auto",
+            "-o", "BatchMode=yes",
             "-S", SSHCommand.shellQuoted(controlPath),
             "-W", "%h:%p",
             SSHCommand.shellQuoted(jumpHost)

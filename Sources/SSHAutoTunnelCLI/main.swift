@@ -42,6 +42,12 @@ struct SSHAutoTunnelCLI {
                 let status = try InteractiveSSHSessionRunner().runFinalSessionThroughJumpHost(profile: interactiveProfile)
                 exit(status == 0 ? 0 : status)
             }
+            if invocation.command == "interactive-ssh-final-ready" {
+                let profile = try profile(named: invocation.profileName, in: configuration)
+                let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
+                let status = try InteractiveSSHSessionRunner().runFinalSessionThroughReadyJumpHost(profile: interactiveProfile)
+                exit(status == 0 ? 0 : status)
+            }
 
             let client = ControlAPIClient(configuration: configuration)
             let response: ControlResponse

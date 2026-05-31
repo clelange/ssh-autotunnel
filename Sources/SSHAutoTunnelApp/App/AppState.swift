@@ -235,7 +235,7 @@ final class AppState: ObservableObject {
     private func connectInteractiveSSHThroughHop(profile: TunnelProfile, interactiveProfile: TunnelProfile) async {
         do {
             _ = try await ensureHopReady(for: interactiveProfile, resetLog: true)
-            let command = try interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-final")
+            let command = try interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-final-ready")
             try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
             lastProxyMessage = "\(profile.name): Opened interactive SSH through hop in \(configuration.interactiveTerminal.app.displayName)"
         } catch {

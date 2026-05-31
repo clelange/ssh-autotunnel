@@ -49,7 +49,11 @@ public final class InteractiveSSHSessionRunner {
     }
 
     public func runFinalSessionThroughJumpHost(profile: TunnelProfile) throws -> Int32 {
-        try runFinalSessionThroughJumpHost(profile: profile, input: .standardInput, output: .standardOutput, errorOutput: .standardError)
+        try runFinalSessionThroughJumpHost(profile: profile, waitsForReadyHop: true, input: .standardInput, output: .standardOutput, errorOutput: .standardError)
+    }
+
+    public func runFinalSessionThroughReadyJumpHost(profile: TunnelProfile) throws -> Int32 {
+        try runFinalSessionThroughJumpHost(profile: profile, waitsForReadyHop: false, input: .standardInput, output: .standardOutput, errorOutput: .standardError)
     }
 
     func run(
@@ -118,6 +122,7 @@ public final class InteractiveSSHSessionRunner {
 
     func runFinalSessionThroughJumpHost(
         profile: TunnelProfile,
+        waitsForReadyHop: Bool = true,
         input: FileHandle,
         output: FileHandle,
         errorOutput: FileHandle,
@@ -126,22 +131,47 @@ public final class InteractiveSSHSessionRunner {
     ) throws -> Int32 {
         writeStatus("Preparing final SSH session for \(profile.name)", to: output)
         let controlMaster = try JumpHostControlMasterFactory.make(for: profile)
-        writeStatus("Waiting for authenticated jump host connection to \(controlMaster.jumpHost)", to: output)
-        guard waitForJumpHostControlMaster(controlMaster) else {
-            writeStatus("Timed out waiting for jump host connection. Keep the jump host window open and try again.", to: errorOutput)
-            return 1
-        }
-        if JumpHostControlMasterFactory.requiresReadyMarker(for: controlMaster.jumpHost) {
-            writeStatus("Waiting for jump host setup prompt from \(controlMaster.jumpHost)", to: output)
-            guard waitForJumpHostReadiness(controlMaster) else {
-                writeStatus("Timed out waiting for jump host setup prompt. Keep the jump host window open and try again.", to: errorOutput)
+
+        if waitsForReadyHop {
+            writeStatus("Waiting for authenticated jump host connection to \(controlMaster.jumpHost)", to: output)
+            guard waitForJumpHostControlMaster(controlMaster) else {
+                writeStatus("Timed out waiting for jump host connection. Start the hop in SSH AutoTunnel or keep the jump host debug session open and try again.", to: errorOutput)
                 return 1
             }
+            if JumpHostControlMasterFactory.requiresReadyMarker(for: controlMaster.jumpHost) {
+                writeStatus("Waiting for jump host setup prompt from \(controlMaster.jumpHost)", to: output)
+                guard waitForJumpHostReadiness(controlMaster) else {
+                    writeStatus("Timed out waiting for jump host setup prompt. Start the hop in SSH AutoTunnel or keep the jump host debug session open and try again.", to: errorOutput)
+                    return 1
+                }
+            }
+        } else {
+            writeStatus("Using app-verified jump host connection to \(controlMaster.jumpHost)", to: output)
         }
+
         let credentials = try credentials(for: profile)
         return try runInteractiveSSH(
             profile: controlMaster.finalProfile,
             credentials: credentials,
+            input: input,
+            output: output,
+            errorOutput: errorOutput,
+            bridgeInput: bridgeInput,
+            configureTerminal: configureTerminal
+        )
+    }
+
+    func runFinalSessionThroughReadyJumpHost(
+        profile: TunnelProfile,
+        input: FileHandle,
+        output: FileHandle,
+        errorOutput: FileHandle,
+        bridgeInput: Bool = true,
+        configureTerminal: Bool = true
+    ) throws -> Int32 {
+        try runFinalSessionThroughJumpHost(
+            profile: profile,
+            waitsForReadyHop: false,
             input: input,
             output: output,
             errorOutput: errorOutput,
