@@ -458,6 +458,8 @@ private struct NetworkFingerprintView: View {
 struct AppPreferencesView: View {
     @EnvironmentObject private var appState: AppState
     @State private var configurationFileMessage = ""
+    @State private var sshConfigMessage = ""
+    @State private var confirmsManagedSSHConfigInstall = false
 
     var body: some View {
         Form {
@@ -546,6 +548,36 @@ struct AppPreferencesView: View {
                     .foregroundStyle(.secondary)
             }
 
+            Section("OpenSSH Config") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Button {
+                            copyManagedSSHConfigSnippet()
+                        } label: {
+                            Label("Copy Managed Snippet", systemImage: "doc.on.doc")
+                        }
+                        Button {
+                            confirmsManagedSSHConfigInstall = true
+                        } label: {
+                            Label("Install Managed Include...", systemImage: "square.and.arrow.down")
+                        }
+                    }
+                    ScrollView {
+                        Text(appState.managedSSHConfigSnippet())
+                            .font(.caption.monospaced())
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .textSelection(.enabled)
+                    }
+                    .frame(minHeight: 120, maxHeight: 180)
+                    if !sshConfigMessage.isEmpty {
+                        Text(sshConfigMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+            }
+
             Section("Migration") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -617,6 +649,18 @@ struct AppPreferencesView: View {
         .onChange(of: appState.configuration) {
             appState.scheduleConfigurationSave()
         }
+        .confirmationDialog(
+            "Install SSH AutoTunnel managed OpenSSH config?",
+            isPresented: $confirmsManagedSSHConfigInstall,
+            titleVisibility: .visible
+        ) {
+            Button("Install Managed Include") {
+                installManagedSSHConfig()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This writes ~/.ssh/config.d/ssh-autotunnel.conf and adds a marked Include block to ~/.ssh/config. Existing SSH config blocks are not edited.")
+        }
     }
 
     private func keychainStatusLabel(_ state: KeychainCredentialState) -> String {
@@ -624,6 +668,23 @@ struct AppPreferencesView: View {
         case .available: "Found"
         case .missing: "Missing"
         case .unreadable: "Unreadable"
+        }
+    }
+
+    private func copyManagedSSHConfigSnippet() {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(appState.managedSSHConfigSnippet(), forType: .string)
+        sshConfigMessage = "Copied managed OpenSSH config snippet"
+    }
+
+    private func installManagedSSHConfig() {
+        do {
+            let result = try appState.installManagedSSHConfig()
+            let includeStatus = result.updatedMainConfig ? "added include" : "include already present"
+            let backupStatus = result.backupURL.map { " Backup: \($0.path)" } ?? ""
+            sshConfigMessage = "Installed \(result.managedConfigURL.path), \(includeStatus).\(backupStatus)"
+        } catch {
+            sshConfigMessage = "Could not install managed OpenSSH config: \(error.localizedDescription)"
         }
     }
 

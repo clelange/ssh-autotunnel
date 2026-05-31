@@ -152,6 +152,8 @@ Existing `ssh-auto2fa` Keychain service names can still be checked and imported 
 
 Settings, Shortcuts, and the CLI can also import literal `Host` entries from `~/.ssh/config`. Wildcard and negated host patterns are skipped because they do not map to one concrete tunnel profile.
 
+Settings can generate a managed OpenSSH snippet for jump-host profiles and can install it as `~/.ssh/config.d/ssh-autotunnel.conf` with a marked include block in `~/.ssh/config`. Existing SSH config blocks are not edited.
+
 Shortcuts/App Intents expose tunnel connect/disconnect/reconnect, status, diagnostics, imports, export validation, exports, support bundles, system PAC apply/restore, and profile/PAC/network rule management. Shortcuts can also list configured profiles, PAC rules, and network rules as typed results, use picker-based profile/rule parameters for selected-item actions, and return the current PAC URL, diagnostics summary, network fingerprint, redacted configuration JSON, validation summaries, and redacted support-bundle JSON as automation values.
 
 For external automation, generate a profile JSON template with `ssh-autotunnelctl profile-template`, edit it, then pass it to `create-profile` or `update-profile`. The template command does not require the app to be running.

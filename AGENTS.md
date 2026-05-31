@@ -91,6 +91,7 @@
 - Added actionable macOS reconnect notifications for tunnel and hop failures.
 - Added tracking for app-launched hop-dependent interactive SSH sessions and a quit confirmation before stopping tunnels and hop connections.
 - Fixed interactive SSH marker cleanup trap quoting for Application Support paths containing spaces.
+- Added Settings actions to copy or install a managed OpenSSH config snippet for jump-host profiles without editing existing user config blocks.
 - Added hop connect/disconnect/reconnect coverage to the local API, CLI, Shortcuts/App Intents, status snapshots, diagnostics, and tests.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
@@ -105,7 +106,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the main-window and hop-workflow update, the core test suite has 223 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the main-window and hop-workflow update, the core test suite has 226 XCTest cases.
 
 ## Known Gaps
 

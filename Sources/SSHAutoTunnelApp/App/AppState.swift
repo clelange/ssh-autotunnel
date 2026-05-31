@@ -624,6 +624,19 @@ final class AppState: ObservableObject {
         return result
     }
 
+    func managedSSHConfigSnippet() -> String {
+        SSHConfigSetupService.managedSnippet(for: configuration)
+    }
+
+    @discardableResult
+    func installManagedSSHConfig() throws -> SSHConfigInstallResult {
+        let result = try SSHConfigSetupService.installManagedConfig(for: configuration)
+        let includeMessage = result.updatedMainConfig ? "added include to \(result.mainConfigURL.path)" : "include already present"
+        let backupMessage = result.backupURL.map { " Backup: \($0.path)" } ?? ""
+        lastProxyMessage = "Installed managed SSH config for \(result.profileCount) profiles: \(includeMessage).\(backupMessage)"
+        return result
+    }
+
     func addGenericProfile() {
         let profile = TunnelProfile(name: "New tunnel", host: "example.org", localSocksPort: nextFreeSocksPort())
         configuration.profiles.append(profile)
