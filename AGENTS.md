@@ -90,6 +90,7 @@
 - Stopped app-launched final interactive SSH sessions from re-running the manual/debug hop wait loop after the app has already verified the hop.
 - Added actionable macOS reconnect notifications for tunnel and hop failures.
 - Added tracking for app-launched hop-dependent interactive SSH sessions and a quit confirmation before stopping tunnels and hop connections.
+- Fixed interactive SSH marker cleanup trap quoting for Application Support paths containing spaces.
 - Added hop connect/disconnect/reconnect coverage to the local API, CLI, Shortcuts/App Intents, status snapshots, diagnostics, and tests.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 

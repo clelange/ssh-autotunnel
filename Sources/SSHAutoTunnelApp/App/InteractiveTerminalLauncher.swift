@@ -162,15 +162,15 @@ struct InteractiveTerminalLauncher {
         let markerPath = activeSessionMarkerURL?.path
         var lines: [String] = []
         if let markerPath {
-            let quotedMarkerPath = SSHCommand.shellQuoted(markerPath)
-            lines.append("trap 'rm -f \(quotedMarkerPath)' EXIT INT TERM HUP")
+            lines.append("ssh_autotunnel_marker=\(SSHCommand.shellQuoted(markerPath))")
+            lines.append("trap 'rm -f \"$ssh_autotunnel_marker\"' EXIT INT TERM HUP")
         }
         lines += [
             command.shellCommand,
             "ssh_autotunnel_status=$?",
         ]
-        if let markerPath {
-            lines.append("rm -f \(SSHCommand.shellQuoted(markerPath))")
+        if markerPath != nil {
+            lines.append("rm -f \"$ssh_autotunnel_marker\"")
         }
         lines += [
             "printf '\\nSSH session ended with exit status %d. Press Ctrl-D to close this window.\\n' \"$ssh_autotunnel_status\""
