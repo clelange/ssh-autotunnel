@@ -1,6 +1,14 @@
 import AppKit
 
 @MainActor
+enum AppActivation {
+    static func activate() {
+        NSApp.unhide(nil)
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+    }
+}
+
+@MainActor
 struct AppWindowFocusRestorer {
     private let windows: [NSWindow]
 
@@ -28,9 +36,7 @@ struct AppWindowFocusRestorer {
         }
         guard let frontWindow = visibleWindows.first else { return }
 
-        NSRunningApplication.current.activate(options: [.activateAllWindows, .activateIgnoringOtherApps])
-        NSApp.activate(ignoringOtherApps: true)
-        NSApp.unhide(nil)
+        AppActivation.activate()
 
         for window in visibleWindows.reversed() {
             window.orderFrontRegardless()

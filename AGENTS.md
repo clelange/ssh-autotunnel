@@ -84,6 +84,11 @@
 - Added split-terminal interactive SSH for PSI jump-host profiles so the authenticated hop session stays open while the final host session connects through it.
 - Changed PSI General setup connections to use an interactive hopx session instead of a sessionless `ssh -N` ControlMaster.
 - Made PSI Tier-3 final interactive sessions wait for the bastion setup prompt before launching the UI-node SSH command.
+- Raised the app to macOS 26, changed it into a regular Dock app with a persistent main dashboard window, and kept the menu-bar extra as a quick control surface.
+- Added app-owned background SSH ControlMaster hop connections with first-class hop status, health checks, prompt-time TOTP, reconnect handling, and PSI Tier-3 readiness marker support.
+- Made tunnel and interactive SSH actions for jump-host profiles wait for a verified app-owned hop before launching the tunnel or final terminal session.
+- Added actionable macOS reconnect notifications for tunnel and hop failures.
+- Added hop connect/disconnect/reconnect coverage to the local API, CLI, Shortcuts/App Intents, status snapshots, diagnostics, and tests.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -97,7 +102,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. The core test suite currently has 211 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the main-window and hop-workflow update, the core test suite has 220 XCTest cases.
 
 ## Known Gaps
 

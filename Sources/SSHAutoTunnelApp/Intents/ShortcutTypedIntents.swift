@@ -65,6 +65,69 @@ struct ReconnectSelectedTunnelIntent: AppIntent {
     }
 }
 
+struct ConnectSelectedHopIntent: AppIntent {
+    static var title: LocalizedStringResource = "Connect Selected SSH Hop"
+    static var description = IntentDescription("Connect the jump host for a selected SSH AutoTunnel profile.")
+
+    @Parameter(title: "Profile")
+    var profile: ShortcutTunnelProfileEntity
+
+    init() {
+        profile = .placeholder
+    }
+
+    init(profile: ShortcutTunnelProfileEntity) {
+        self.profile = profile
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await shortcutAPI().send(ControlRequest(action: .connectHop, profileName: profile.name, profileID: try shortcutUUID(profile.id)))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct DisconnectSelectedHopIntent: AppIntent {
+    static var title: LocalizedStringResource = "Disconnect Selected SSH Hop"
+    static var description = IntentDescription("Disconnect the jump host for a selected SSH AutoTunnel profile.")
+
+    @Parameter(title: "Profile")
+    var profile: ShortcutTunnelProfileEntity
+
+    init() {
+        profile = .placeholder
+    }
+
+    init(profile: ShortcutTunnelProfileEntity) {
+        self.profile = profile
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await shortcutAPI().send(ControlRequest(action: .disconnectHop, profileName: profile.name, profileID: try shortcutUUID(profile.id)))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct ReconnectSelectedHopIntent: AppIntent {
+    static var title: LocalizedStringResource = "Reconnect Selected SSH Hop"
+    static var description = IntentDescription("Reconnect the jump host for a selected SSH AutoTunnel profile.")
+
+    @Parameter(title: "Profile")
+    var profile: ShortcutTunnelProfileEntity
+
+    init() {
+        profile = .placeholder
+    }
+
+    init(profile: ShortcutTunnelProfileEntity) {
+        self.profile = profile
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await shortcutAPI().send(ControlRequest(action: .reconnectHop, profileName: profile.name, profileID: try shortcutUUID(profile.id)))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
 struct DeleteSelectedProfileIntent: AppIntent {
     static var title: LocalizedStringResource = "Delete Selected SSH AutoTunnel Profile"
     static var description = IntentDescription("Delete an SSH AutoTunnel profile selected from the current configuration.")

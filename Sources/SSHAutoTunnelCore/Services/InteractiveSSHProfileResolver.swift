@@ -26,10 +26,6 @@ public enum InteractiveSSHProfileResolver {
 
 public enum InteractiveSSHJumpHostPolicy {
     public static func requiresPersistentJumpHostSession(_ profile: TunnelProfile) -> Bool {
-        guard let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines), !jumpHost.isEmpty else {
-            return false
-        }
-        return jumpHost.localizedCaseInsensitiveContains("t3hop")
-            || jumpHost.localizedCaseInsensitiveContains("hopx.psi.ch")
+        JumpHostControlMasterFactory.hasJumpHost(profile)
     }
 }

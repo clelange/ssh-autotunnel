@@ -1,11 +1,11 @@
-// swift-tools-version: 5.10
+// swift-tools-version: 6.2
 
 import PackageDescription
 
 let package = Package(
     name: "ssh-autotunnel",
     platforms: [
-        .macOS(.v13)
+        .macOS(.v26)
     ],
     products: [
         .library(name: "SSHAutoTunnelCore", targets: ["SSHAutoTunnelCore"]),
@@ -40,5 +40,6 @@ let package = Package(
             name: "SSHAutoTunnelCoreTests",
             dependencies: ["SSHAutoTunnelCore"]
         )
-    ]
+    ],
+    swiftLanguageModes: [.v5]
 )

@@ -17,6 +17,21 @@ final class CLIArgumentsTests: XCTestCase {
         XCTAssertEqual(invocation, CLIInvocation(command: "interactive-ssh", profileName: "CERN LxPlus"))
     }
 
+    func testParsesHopCommands() {
+        XCTAssertEqual(
+            CLIArguments.parse(["connect-hop", "PSI", "General"]),
+            CLIInvocation(command: "connect-hop", profileName: "PSI General")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["disconnect-hop", "PSI", "General"]),
+            CLIInvocation(command: "disconnect-hop", profileName: "PSI General")
+        )
+        XCTAssertEqual(
+            CLIArguments.parse(["reconnect-hop", "PSI", "General"]),
+            CLIInvocation(command: "reconnect-hop", profileName: "PSI General")
+        )
+    }
+
     func testParsesSplitInteractiveSSHCommands() {
         XCTAssertEqual(
             CLIArguments.parse(["interactive-ssh-jump", "PSI", "General"]),

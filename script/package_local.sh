@@ -4,7 +4,7 @@ set -euo pipefail
 APP_NAME="SSHAutoTunnel"
 CLI_NAME="ssh-autotunnelctl"
 BUNDLE_ID="dev.clange.ssh-autotunnel"
-MIN_SYSTEM_VERSION="13.0"
+MIN_SYSTEM_VERSION="26.0"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist/package"
@@ -56,8 +56,6 @@ cat >"$INFO_PLIST" <<PLIST
   <string>1</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
-  <key>LSUIElement</key>
-  <true/>
   <key>NSPrincipalClass</key>
   <string>NSApplication</string>
   <key>NSAppleEventsUsageDescription</key>

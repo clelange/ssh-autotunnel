@@ -2,19 +2,20 @@
 
 [![CI](https://github.com/clelange/ssh-autotunnel/actions/workflows/ci.yml/badge.svg)](https://github.com/clelange/ssh-autotunnel/actions/workflows/ci.yml)
 
-SSH AutoTunnel is a macOS menu-bar app for starting SSH SOCKS5 tunnels with automatic password/TOTP handling, health-aware PAC routing, network-aware proxy policy, and local automation.
+SSH AutoTunnel is a macOS app for starting SSH SOCKS5 tunnels with automatic password/TOTP handling, health-aware PAC routing, network-aware proxy policy, and local automation.
 
 The app is designed for SSH servers that require interactive 2FA, including CERN LxPlus/lxtunnel and PSI Hop NG or Tier-3 style workflows.
 
 ## Features
 
-- Menu-bar controls for connecting and disconnecting tunnel profiles.
+- Main window controls for connecting profile hops, tunnels, and interactive SSH sessions, plus a menu-bar quick menu.
 - First-launch account setup for CERN LxPlus, PSI CMS Tier-3, and PSI General credentials with optional tunnel target creation.
 - Native Keychain-backed password and TOTP support.
 - Configurable SSH host-key policy per profile, defaulting to accepting new keys while rejecting changed keys.
 - `ssh-auto2fa` Keychain service checks before importing legacy preset profiles.
 - `~/.ssh/config` import for literal `Host` entries, including common user, port, jump-host, and identity options.
 - SSH SOCKS5 tunnels using `/usr/bin/ssh -N -D`.
+- App-owned background SSH ControlMaster hop connections for jump-host profiles, so tunnel and interactive SSH actions wait for a verified hop without opening an extra hop terminal window.
 - Local PAC server with fail-closed routing when a tunnel is unhealthy.
 - Optional fallback to an existing PAC from an HTTP(S) URL or local file.
 - Local blocking proxy that shows an explanatory page for HTTP requests when a PAC-matched tunnel is down.
@@ -32,6 +33,8 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Automatic recovery from malformed configuration files by backing them up and recreating defaults.
 
 ## Build and Run
+
+The app targets macOS 26 and SwiftPM tools 6.2 or newer.
 
 ```sh
 ./script/build_and_run.sh
@@ -102,6 +105,9 @@ swift run ssh-autotunnelctl update-network-rule ./network-rule.json
 swift run ssh-autotunnelctl delete-network-rule "Old trusted network"
 swift run ssh-autotunnelctl trust-current-network "CERN LxPlus"
 swift run ssh-autotunnelctl connect "CERN LxPlus"
+swift run ssh-autotunnelctl connect-hop "PSI General"
+swift run ssh-autotunnelctl disconnect-hop "PSI General"
+swift run ssh-autotunnelctl reconnect-hop "PSI General"
 swift run ssh-autotunnelctl disconnect "CERN LxPlus"
 ```
 

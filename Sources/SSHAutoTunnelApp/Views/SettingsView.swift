@@ -191,7 +191,7 @@ struct ProfileEditorView: View {
             } message: {
                 Text("Keychain cleanup removes configured password and TOTP items only when no remaining profile references the same service and account.")
             }
-            .onChange(of: appState.configuration) { _ in
+            .onChange(of: appState.configuration) {
                 appState.scheduleConfigurationSave()
             }
         } else {
@@ -340,7 +340,7 @@ struct PACRulesView: View {
                     appState.saveConfiguration()
                 }
             }
-            .onChange(of: appState.configuration.pacRules) { _ in
+            .onChange(of: appState.configuration.pacRules) {
                 appState.scheduleConfigurationSave()
             }
         }
@@ -405,7 +405,7 @@ struct NetworkRulesView: View {
             }
         }
         .formStyle(.grouped)
-        .onChange(of: appState.configuration.networkRules) { _ in
+        .onChange(of: appState.configuration.networkRules) {
             appState.scheduleConfigurationSave()
         }
     }
@@ -614,7 +614,7 @@ struct AppPreferencesView: View {
             }
         }
         .formStyle(.grouped)
-        .onChange(of: appState.configuration) { _ in
+        .onChange(of: appState.configuration) {
             appState.scheduleConfigurationSave()
         }
     }

@@ -5,8 +5,9 @@ import XCTest
 final class DiagnosticsSnapshotTests: XCTestCase {
     func testDiagnosticsSnapshotRoundTripsThroughJSON() throws {
         let profileID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
-        let profile = TunnelProfile(id: profileID, name: "CERN lxplus", host: "lxplus.cern.ch", localSocksPort: 1081)
+        let profile = TunnelProfile(id: profileID, name: "PSI General", host: "login.psi.ch", localSocksPort: 1081, jumpHost: "alice@hopx.psi.ch")
         let status = TunnelRuntimeStatus(profileID: profileID, health: .healthy, message: "SOCKS5 OK", pid: 42)
+        let hopStatus = HopRuntimeStatus(profileID: profileID, jumpHost: "alice@hopx.psi.ch", health: .healthy, message: "Hop OK", pid: 41)
         let snapshot = DiagnosticsSnapshot(
             generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
             appIdentifier: "dev.clange.ssh-autotunnel",
@@ -18,7 +19,7 @@ final class DiagnosticsSnapshotTests: XCTestCase {
             configuredPorts: LocalServerPorts(pacHTTPPort: 18483, blockingHTTPProxyPort: 18485, apiHTTPPort: 18484),
             activePorts: LocalServerPorts(pacHTTPPort: 18483, blockingHTTPProxyPort: 18485, apiHTTPPort: 18484),
             currentNetwork: NetworkFingerprint(serviceName: "Wi-Fi", wifiSSID: "CERN", hasVPNInterface: true),
-            profiles: [ProfileStatusSnapshot(profile: profile, status: status)],
+            profiles: [ProfileStatusSnapshot(profile: profile, status: status, hopStatus: hopStatus)],
             fileStatuses: [
                 DiagnosticFileStatus(
                     label: "Configuration",

@@ -65,13 +65,81 @@ struct ReconnectTunnelIntent: AppIntent {
     }
 }
 
+struct ConnectHopIntent: AppIntent {
+    static var title: LocalizedStringResource = "Connect SSH Hop"
+    static var description = IntentDescription("Connect the jump host for an SSH AutoTunnel profile.")
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    init() {
+        profileName = "PSI General"
+    }
+
+    init(profileName: String) {
+        self.profileName = profileName
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .connectHop, profileName: profileName))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct DisconnectHopIntent: AppIntent {
+    static var title: LocalizedStringResource = "Disconnect SSH Hop"
+    static var description = IntentDescription("Disconnect the jump host for an SSH AutoTunnel profile.")
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    init() {
+        profileName = "PSI General"
+    }
+
+    init(profileName: String) {
+        self.profileName = profileName
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .disconnectHop, profileName: profileName))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
+struct ReconnectHopIntent: AppIntent {
+    static var title: LocalizedStringResource = "Reconnect SSH Hop"
+    static var description = IntentDescription("Reconnect the jump host for an SSH AutoTunnel profile.")
+
+    @Parameter(title: "Profile Name")
+    var profileName: String
+
+    init() {
+        profileName = "PSI General"
+    }
+
+    init(profileName: String) {
+        self.profileName = profileName
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let response = try await api().send(ControlRequest(action: .reconnectHop, profileName: profileName))
+        return .result(dialog: IntentDialog(stringLiteral: response.message))
+    }
+}
+
 struct TunnelStatusIntent: AppIntent {
     static var title: LocalizedStringResource = "Get SSH AutoTunnel Status"
     static var description = IntentDescription("Get the current SSH AutoTunnel status.")
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let response = try await api().send(ControlRequest(action: .status))
-        let summary = response.status?.profiles.map { "\($0.name): \($0.health.rawValue)" }.joined(separator: ", ") ?? response.message
+        let summary = response.status?.profiles.map { profile in
+            if let hop = profile.hop {
+                return "\(profile.name): tunnel \(profile.health.rawValue), hop \(hop.health.rawValue)"
+            }
+            return "\(profile.name): \(profile.health.rawValue)"
+        }.joined(separator: ", ") ?? response.message
         return .result(value: summary, dialog: IntentDialog(stringLiteral: summary))
     }
 }
@@ -701,6 +769,24 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             systemImageName: "arrow.clockwise"
         )
         AppShortcut(
+            intent: ConnectHopIntent(profileName: "PSI General"),
+            phrases: ["Connect \(.applicationName) hop"],
+            shortTitle: "Connect Hop",
+            systemImageName: "point.3.connected.trianglepath.dotted"
+        )
+        AppShortcut(
+            intent: DisconnectHopIntent(profileName: "PSI General"),
+            phrases: ["Disconnect \(.applicationName) hop"],
+            shortTitle: "Disconnect Hop",
+            systemImageName: "xmark.circle"
+        )
+        AppShortcut(
+            intent: ReconnectHopIntent(profileName: "PSI General"),
+            phrases: ["Reconnect \(.applicationName) hop"],
+            shortTitle: "Reconnect Hop",
+            systemImageName: "arrow.clockwise"
+        )
+        AppShortcut(
             intent: TunnelStatusIntent(),
             phrases: ["Check \(.applicationName) status"],
             shortTitle: "Tunnel Status",
@@ -806,6 +892,24 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
             intent: ReconnectSelectedTunnelIntent(),
             phrases: ["Reconnect selected \(.applicationName) tunnel"],
             shortTitle: "Reconnect Selected",
+            systemImageName: "arrow.clockwise"
+        )
+        AppShortcut(
+            intent: ConnectSelectedHopIntent(),
+            phrases: ["Connect selected \(.applicationName) hop"],
+            shortTitle: "Connect Hop",
+            systemImageName: "point.3.connected.trianglepath.dotted"
+        )
+        AppShortcut(
+            intent: DisconnectSelectedHopIntent(),
+            phrases: ["Disconnect selected \(.applicationName) hop"],
+            shortTitle: "Disconnect Hop",
+            systemImageName: "xmark.circle"
+        )
+        AppShortcut(
+            intent: ReconnectSelectedHopIntent(),
+            phrases: ["Reconnect selected \(.applicationName) hop"],
+            shortTitle: "Reconnect Hop",
             systemImageName: "arrow.clockwise"
         )
         AppShortcut(

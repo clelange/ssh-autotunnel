@@ -21,7 +21,7 @@ struct OnboardingPresenter: View {
         guard !hasCompletedOnboarding, !didPresent else { return }
         didPresent = true
         openWindow(id: "onboarding")
-        NSApp.activate(ignoringOtherApps: true)
+        AppActivation.activate()
     }
 }
 
@@ -71,7 +71,7 @@ struct OnboardingView: View {
                 Spacer()
                 Button {
                     openWindow(id: "settings")
-                    NSApp.activate(ignoringOtherApps: true)
+                    AppActivation.activate()
                 } label: {
                     Label("Settings", systemImage: "gearshape")
                 }
@@ -239,7 +239,7 @@ struct OnboardingView: View {
                 buttonTitle: "Open"
             ) {
                 openWindow(id: "diagnostics")
-                NSApp.activate(ignoringOtherApps: true)
+                AppActivation.activate()
             }
         }
     }

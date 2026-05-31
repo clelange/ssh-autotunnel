@@ -9,6 +9,13 @@ struct SSHAutoTunnelApp: App {
     @StateObject private var appState = AppState()
 
     var body: some Scene {
+        WindowGroup("SSH AutoTunnel", id: "main") {
+            DashboardView()
+                .environmentObject(appState)
+                .frame(minWidth: 820, minHeight: 560)
+        }
+        .defaultLaunchBehavior(.presented)
+
         MenuBarExtra {
             MenuBarView()
                 .environmentObject(appState)
@@ -43,7 +50,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let logger = Logger(subsystem: AppPaths.appIdentifier, category: "lifecycle")
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        NSApp.setActivationPolicy(.accessory)
+        NSApp.setActivationPolicy(.regular)
+        AppActivation.activate()
     }
 
     func applicationWillTerminate(_ notification: Notification) {

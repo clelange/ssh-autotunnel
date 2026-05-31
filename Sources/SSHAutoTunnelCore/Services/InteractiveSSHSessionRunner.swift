@@ -93,7 +93,7 @@ public final class InteractiveSSHSessionRunner {
     ) throws -> Int32 {
         writeStatus("Preparing jump host connection for \(profile.name)", to: output)
         let credentials = try credentials(for: profile)
-        let controlMaster = try makeJumpHostControlMaster(profile: profile)
+        let controlMaster = try JumpHostControlMasterFactory.make(for: profile)
         try resetJumpHostControlMaster(controlMaster)
         let readinessMarker = JumpHostReadinessMarker(controlMaster: controlMaster)
         writeStatus("Opening jump host setup connection to \(controlMaster.jumpHost)", to: output)
@@ -125,13 +125,13 @@ public final class InteractiveSSHSessionRunner {
         configureTerminal: Bool = true
     ) throws -> Int32 {
         writeStatus("Preparing final SSH session for \(profile.name)", to: output)
-        let controlMaster = try makeJumpHostControlMaster(profile: profile)
+        let controlMaster = try JumpHostControlMasterFactory.make(for: profile)
         writeStatus("Waiting for authenticated jump host connection to \(controlMaster.jumpHost)", to: output)
         guard waitForJumpHostControlMaster(controlMaster) else {
             writeStatus("Timed out waiting for jump host connection. Keep the jump host window open and try again.", to: errorOutput)
             return 1
         }
-        if JumpHostReadinessMarker.requiresReadyMarker(for: controlMaster) {
+        if JumpHostControlMasterFactory.requiresReadyMarker(for: controlMaster.jumpHost) {
             writeStatus("Waiting for jump host setup prompt from \(controlMaster.jumpHost)", to: output)
             guard waitForJumpHostReadiness(controlMaster) else {
                 writeStatus("Timed out waiting for jump host setup prompt. Keep the jump host window open and try again.", to: errorOutput)
@@ -230,52 +230,6 @@ public final class InteractiveSSHSessionRunner {
         return terminationStatus
     }
 
-    private func makeJumpHostControlMaster(profile: TunnelProfile) throws -> JumpHostControlMaster {
-        let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !jumpHost.isEmpty else {
-            throw NSError(domain: "InteractiveSSHSessionRunner", code: 4, userInfo: [NSLocalizedDescriptionKey: "Jump host is not configured"])
-        }
-        let directory = URL(fileURLWithPath: "/tmp", isDirectory: true)
-            .appendingPathComponent("ssh-autotunnel-\(profile.id.uuidString)", isDirectory: true)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
-        let controlPath = directory.appendingPathComponent("control").path
-        let readyPath = directory.appendingPathComponent("ready")
-
-        var masterArguments = [
-            "-M",
-            "-tt",
-            "-S", controlPath,
-            "-o", "ControlMaster=yes",
-            "-o", "ControlPersist=no",
-            "-p", "\(profile.sshPort)"
-        ]
-        if let strictHostKeyCheckingValue = profile.hostKeyPolicy.strictHostKeyCheckingValue {
-            masterArguments += ["-o", "StrictHostKeyChecking=\(strictHostKeyCheckingValue)"]
-        }
-        masterArguments += ["-o", "PreferredAuthentications=keyboard-interactive"]
-        masterArguments.append(jumpHost)
-
-        var finalProfile = profile
-        finalProfile.jumpHost = nil
-        let proxyCommand = [
-            "/usr/bin/ssh",
-            "-S", SSHCommand.shellQuoted(controlPath),
-            "-W", "%h:%p",
-            SSHCommand.shellQuoted(jumpHost)
-        ].joined(separator: " ")
-        finalProfile.extraSSHOptions += ["-o", "ProxyCommand=\(proxyCommand)"]
-
-        return JumpHostControlMaster(
-            jumpHost: jumpHost,
-            controlPath: controlPath,
-            readyPath: readyPath,
-            directory: directory,
-            command: SSHCommand(arguments: masterArguments),
-            finalProfile: finalProfile
-        )
-    }
-
     private func resetJumpHostControlMaster(_ controlMaster: JumpHostControlMaster) throws {
         try? runCommand("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "exit", controlMaster.jumpHost])
         try? FileManager.default.removeItem(at: controlMaster.directory)
@@ -337,58 +291,6 @@ public final class InteractiveSSHSessionRunner {
         }
         let principal = "\(profile.user ?? profile.keychain.account)@CERN.CH"
         try runCommand("/usr/bin/kswitch", ["-p", principal])
-    }
-}
-
-private struct JumpHostControlMaster {
-    var jumpHost: String
-    var controlPath: String
-    var readyPath: URL
-    var directory: URL
-    var command: SSHCommand
-    var finalProfile: TunnelProfile
-}
-
-private final class JumpHostReadinessMarker {
-    private let lock = NSLock()
-    private let readyPath: URL
-    private let patterns: [String]
-    private var outputBuffer = Data()
-    private var didMarkReady = false
-
-    init?(controlMaster: JumpHostControlMaster) {
-        let patterns = Self.readyPatterns(for: controlMaster.jumpHost)
-        guard !patterns.isEmpty else { return nil }
-        self.readyPath = controlMaster.readyPath
-        self.patterns = patterns
-    }
-
-    static func requiresReadyMarker(for controlMaster: JumpHostControlMaster) -> Bool {
-        !readyPatterns(for: controlMaster.jumpHost).isEmpty
-    }
-
-    func handle(_ data: Data) {
-        lock.lock()
-        defer { lock.unlock() }
-        guard !didMarkReady else { return }
-        outputBuffer.append(data)
-        if outputBuffer.count > 4096 {
-            outputBuffer.removeFirst(outputBuffer.count - 2048)
-        }
-        guard let text = String(data: outputBuffer, encoding: .utf8)?.lowercased(),
-              patterns.contains(where: { text.contains($0) }) else {
-            return
-        }
-        didMarkReady = true
-        FileManager.default.createFile(atPath: readyPath.path, contents: Data(), attributes: [.posixPermissions: 0o600])
-    }
-
-    private static func readyPatterns(for jumpHost: String) -> [String] {
-        guard jumpHost.localizedCaseInsensitiveContains("t3hop") else { return [] }
-        return [
-            "options (choose number):",
-            "#?"
-        ]
     }
 }
 

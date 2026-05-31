@@ -64,6 +64,12 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .disconnect, profileName: invocation.profileName))
             case "reconnect":
                 response = try await client.send(ControlRequest(action: .reconnect, profileName: invocation.profileName))
+            case "connect-hop":
+                response = try await client.send(ControlRequest(action: .connectHop, profileName: invocation.profileName))
+            case "disconnect-hop":
+                response = try await client.send(ControlRequest(action: .disconnectHop, profileName: invocation.profileName))
+            case "reconnect-hop":
+                response = try await client.send(ControlRequest(action: .reconnectHop, profileName: invocation.profileName))
             case "status":
                 response = try await client.send(ControlRequest(action: .status))
             case "pac-url":
@@ -164,6 +170,10 @@ struct SSHAutoTunnelCLI {
         for profile in status.profiles {
             let pid = profile.pid.map { " pid=\($0)" } ?? ""
             print("- \(profile.name): \(profile.health.rawValue)\(pid) - \(profile.message)")
+            if let hop = profile.hop {
+                let hopPID = hop.pid.map { " pid=\($0)" } ?? ""
+                print("  hop \(hop.jumpHost): \(hop.health.rawValue)\(hopPID) - \(hop.message)")
+            }
         }
         if let serviceStatuses = response.sshAuto2FAServiceStatuses {
             print("ssh-auto2fa Keychain services:")
@@ -335,6 +345,9 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl delete-network-rule <network rule name>
           ssh-autotunnelctl trust-current-network [profile name]
           ssh-autotunnelctl connect <profile name>
+          ssh-autotunnelctl connect-hop <profile name>
+          ssh-autotunnelctl disconnect-hop <profile name>
+          ssh-autotunnelctl reconnect-hop <profile name>
           ssh-autotunnelctl interactive-ssh <profile name>
           ssh-autotunnelctl interactive-ssh-jump <profile name>
           ssh-autotunnelctl interactive-ssh-final <profile name>

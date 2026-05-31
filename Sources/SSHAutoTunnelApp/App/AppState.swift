@@ -15,6 +15,7 @@ private struct ProfileDeletionResult {
 final class AppState: ObservableObject {
     @Published var configuration: AppConfiguration
     @Published var statuses: [UUID: TunnelRuntimeStatus] = [:]
+    @Published var hopStatuses: [UUID: HopRuntimeStatus] = [:]
     @Published var logs: [UUID: String] = [:]
     @Published var networkDecision = NetworkPolicyDecision(shouldDisableProxy: false, matchedRule: nil)
     @Published var currentNetworkFingerprint = NetworkFingerprint()
@@ -25,6 +26,7 @@ final class AppState: ObservableObject {
 
     private let configurationStore: ConfigurationStore
     private let tunnelManager = TunnelManager()
+    private let hopManager = HopConnectionManager()
     private let keychain = KeychainService()
     private let networkIdentity = NetworkIdentityService()
     private let proxyManager = SystemProxyManager()
@@ -34,6 +36,7 @@ final class AppState: ObservableObject {
     private var pathMonitor: NWPathMonitor?
     private var pendingConfigurationSaveTask: Task<Void, Never>?
     private var pendingPACAppendSourceTask: Task<Void, Never>?
+    private var pendingTunnelStartTokens: [UUID: UUID] = [:]
     private var loadedPACAppendSource: PACAppendSource?
     private var appendedPACContent: String?
     private let jsonEncoder = JSONEncoder()
@@ -61,6 +64,8 @@ final class AppState: ObservableObject {
         }
 
         jsonEncoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        setupNotificationCallbacks()
+        setupHopCallbacks()
         setupTunnelCallbacks()
         refreshNetworkDecision()
         startServers()
@@ -90,38 +95,91 @@ final class AppState: ObservableObject {
         statuses[profile.id] ?? TunnelRuntimeStatus(profileID: profile.id)
     }
 
+    func hopStatus(for profile: TunnelProfile) -> HopRuntimeStatus? {
+        guard let jumpHost = normalizedJumpHost(for: profile) else { return nil }
+        if let status = hopStatuses[profile.id], status.jumpHost == jumpHost {
+            return status
+        }
+        return HopRuntimeStatus(profileID: profile.id, jumpHost: jumpHost)
+    }
+
+    func hasJumpHost(_ profile: TunnelProfile) -> Bool {
+        normalizedJumpHost(for: profile) != nil
+    }
+
     func connect(_ profile: TunnelProfile) {
         startSSHLogSession(for: profile, verbose: false)
-        statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: "Starting tunnel")
-        lastProxyMessage = "\(profile.name): Starting tunnel"
-        tunnelManager.start(profile: profile)
+        if hasJumpHost(profile) {
+            let token = UUID()
+            pendingTunnelStartTokens[profile.id] = token
+            statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: "Waiting for hop connection")
+            lastProxyMessage = "\(profile.name): Waiting for hop connection"
+            Task {
+                await connectTunnelThroughHop(profile, token: token)
+            }
+        } else {
+            startTunnel(profile, message: "Starting tunnel")
+        }
     }
 
     func disconnect(_ profile: TunnelProfile) {
+        pendingTunnelStartTokens[profile.id] = nil
         lastProxyMessage = "\(profile.name): Disconnect requested"
         tunnelManager.stop(profileID: profile.id)
     }
 
     func reconnect(_ profile: TunnelProfile) {
         startSSHLogSession(for: profile, verbose: false)
-        statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .reconnecting, message: "Reconnect requested")
-        lastProxyMessage = "\(profile.name): Reconnect requested"
-        tunnelManager.reconnect(profile: profile)
+        if hasJumpHost(profile) {
+            let token = UUID()
+            pendingTunnelStartTokens[profile.id] = token
+            statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .reconnecting, message: "Reconnect requested; waiting for hop")
+            lastProxyMessage = "\(profile.name): Reconnect requested; waiting for hop"
+            tunnelManager.stop(profileID: profile.id)
+            Task {
+                await connectTunnelThroughHop(profile, token: token)
+            }
+        } else {
+            statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .reconnecting, message: "Reconnect requested")
+            lastProxyMessage = "\(profile.name): Reconnect requested"
+            tunnelManager.reconnect(profile: profile)
+        }
+    }
+
+    func connectHop(_ profile: TunnelProfile) {
+        startHop(profile, resetLog: true)
+    }
+
+    func disconnectHop(_ profile: TunnelProfile) {
+        pendingTunnelStartTokens[profile.id] = nil
+        lastProxyMessage = "\(profile.name): Hop disconnect requested"
+        hopManager.stop(profileID: profile.id)
+    }
+
+    func reconnectHop(_ profile: TunnelProfile) {
+        startSSHLogSession(for: profile, verbose: false)
+        guard hasJumpHost(profile) else {
+            lastProxyMessage = "\(profile.name): No jump host configured"
+            return
+        }
+        hopStatuses[profile.id] = HopRuntimeStatus(
+            profileID: profile.id,
+            jumpHost: normalizedJumpHost(for: profile) ?? "",
+            health: .reconnecting,
+            message: "Reconnect requested"
+        )
+        lastProxyMessage = "\(profile.name): Hop reconnect requested"
+        hopManager.reconnect(profile: profile)
     }
 
     func connectInteractiveSSH(_ profile: TunnelProfile) {
         do {
             let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
             if InteractiveSSHJumpHostPolicy.requiresPersistentJumpHostSession(interactiveProfile) {
-                try terminalLauncher.launch(
-                    command: interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-jump"),
-                    preference: configuration.interactiveTerminal
-                )
-                try terminalLauncher.launch(
-                    command: interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-final"),
-                    preference: configuration.interactiveTerminal
-                )
-                lastProxyMessage = "\(profile.name): Opened jump host and final SSH sessions in \(configuration.interactiveTerminal.app.displayName)"
+                lastProxyMessage = "\(profile.name): Preparing hop for interactive SSH"
+                Task {
+                    await connectInteractiveSSHThroughHop(profile: profile, interactiveProfile: interactiveProfile)
+                }
             } else {
                 let command = try interactiveSSHHelperCommand(for: profile)
                 try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
@@ -138,15 +196,102 @@ final class AppState: ObservableObject {
             : "\(configuration.interactiveTerminal.app.displayName) is not available"
     }
 
+    private func startTunnel(_ profile: TunnelProfile, message: String) {
+        statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: message)
+        lastProxyMessage = "\(profile.name): \(message)"
+        tunnelManager.start(profile: profile)
+    }
+
+    private func startHop(_ profile: TunnelProfile, resetLog: Bool) {
+        guard let jumpHost = normalizedJumpHost(for: profile) else {
+            lastProxyMessage = "\(profile.name): No jump host configured"
+            return
+        }
+        if resetLog {
+            startSSHLogSession(for: profile, verbose: false)
+        }
+        hopStatuses[profile.id] = HopRuntimeStatus(profileID: profile.id, jumpHost: jumpHost, health: .connecting, message: "Starting hop connection")
+        lastProxyMessage = "\(profile.name): Starting hop connection"
+        hopManager.start(profile: profile)
+    }
+
+    private func connectTunnelThroughHop(_ profile: TunnelProfile, token: UUID) async {
+        do {
+            let controlMaster = try await ensureHopReady(for: profile, resetLog: false)
+            guard pendingTunnelStartTokens[profile.id] == token else { return }
+            let tunnelProfile = JumpHostControlMasterFactory.profile(profile, through: controlMaster)
+            statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: "Starting tunnel through hop")
+            lastProxyMessage = "\(profile.name): Starting tunnel through hop"
+            pendingTunnelStartTokens[profile.id] = nil
+            tunnelManager.start(profile: tunnelProfile)
+        } catch {
+            guard pendingTunnelStartTokens[profile.id] == token else { return }
+            pendingTunnelStartTokens[profile.id] = nil
+            statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .failed, message: "Could not start tunnel through hop: \(error.localizedDescription)")
+            lastProxyMessage = "\(profile.name): Could not start tunnel through hop: \(error.localizedDescription)"
+        }
+    }
+
+    private func connectInteractiveSSHThroughHop(profile: TunnelProfile, interactiveProfile: TunnelProfile) async {
+        do {
+            _ = try await ensureHopReady(for: interactiveProfile, resetLog: true)
+            let command = try interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-final")
+            try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
+            lastProxyMessage = "\(profile.name): Opened interactive SSH through hop in \(configuration.interactiveTerminal.app.displayName)"
+        } catch {
+            lastProxyMessage = "\(profile.name): Could not open interactive SSH through hop: \(error.localizedDescription)"
+        }
+    }
+
+    private func ensureHopReady(
+        for profile: TunnelProfile,
+        resetLog: Bool,
+        timeoutSeconds: TimeInterval = 120
+    ) async throws -> JumpHostControlMaster {
+        guard hasJumpHost(profile) else {
+            throw NSError(domain: "AppState", code: 30, userInfo: [NSLocalizedDescriptionKey: "Jump host is not configured"])
+        }
+        let jumpHost = normalizedJumpHost(for: profile)
+        if let controlMaster = hopManager.controlMaster(for: profile.id), controlMaster.jumpHost == jumpHost {
+            return controlMaster
+        }
+
+        let currentHealth = hopStatus(for: profile)?.health
+        if currentHealth != .connecting, currentHealth != .reconnecting {
+            startHop(profile, resetLog: resetLog)
+        }
+
+        let deadline = Date().addingTimeInterval(timeoutSeconds)
+        while Date() < deadline {
+            if let controlMaster = hopManager.controlMaster(for: profile.id) {
+                return controlMaster
+            }
+            if let status = hopStatus(for: profile), status.health == .failed || status.health == .unhealthy {
+                throw NSError(domain: "AppState", code: 31, userInfo: [NSLocalizedDescriptionKey: status.message])
+            }
+            try await Task.sleep(nanoseconds: 500_000_000)
+        }
+
+        throw NSError(domain: "AppState", code: 32, userInfo: [NSLocalizedDescriptionKey: "Timed out waiting for hop connection"])
+    }
+
     func connectWithVerboseSSHLogging(profileID: UUID) {
         guard var profile = configuration.profiles.first(where: { $0.id == profileID }) else { return }
         if !profile.extraSSHOptions.contains("-vvv") {
             profile.extraSSHOptions.append("-vvv")
         }
         startSSHLogSession(for: profile, verbose: true)
-        statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: "Starting verbose SSH tunnel")
-        lastProxyMessage = "\(profile.name): Starting verbose SSH tunnel"
-        tunnelManager.start(profile: profile)
+        if hasJumpHost(profile) {
+            let token = UUID()
+            pendingTunnelStartTokens[profile.id] = token
+            statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: "Waiting for hop connection")
+            lastProxyMessage = "\(profile.name): Waiting for hop connection"
+            Task {
+                await connectTunnelThroughHop(profile, token: token)
+            }
+        } else {
+            startTunnel(profile, message: "Starting verbose SSH tunnel")
+        }
     }
 
     func fullSSHLog(for profileID: UUID) -> String {
@@ -482,7 +627,9 @@ final class AppState: ObservableObject {
             : []
 
         for id in ids {
+            pendingTunnelStartTokens[id] = nil
             tunnelManager.stop(profileID: id)
+            hopManager.stop(profileID: id)
         }
 
         var updated = configuration
@@ -491,6 +638,7 @@ final class AppState: ObservableObject {
         }
         configuration = updated
         statuses = statuses.filter { !idSet.contains($0.key) }
+        hopStatuses = hopStatuses.filter { !idSet.contains($0.key) }
         saveConfiguration()
 
         var deletedKeychainItemCount = 0
@@ -557,7 +705,7 @@ final class AppState: ObservableObject {
 
     func snapshot() -> AppStatusSnapshot {
         let profileStatuses = configuration.profiles.map { profile in
-            ProfileStatusSnapshot(profile: profile, status: status(for: profile))
+            ProfileStatusSnapshot(profile: profile, status: status(for: profile), hopStatus: hopStatus(for: profile))
         }
         return AppStatusSnapshot(
             pacURL: pacURL,
@@ -570,7 +718,7 @@ final class AppState: ObservableObject {
 
     func diagnosticsSnapshot(generatedAt: Date = Date()) -> DiagnosticsSnapshot {
         let profileStatuses = configuration.profiles.map { profile in
-            ProfileStatusSnapshot(profile: profile, status: status(for: profile))
+            ProfileStatusSnapshot(profile: profile, status: status(for: profile), hopStatus: hopStatus(for: profile))
         }
         let files = diagnosticFileStatuses()
         return DiagnosticsSnapshot(
@@ -643,9 +791,12 @@ final class AppState: ObservableObject {
             )
             let importedProfileIDs = Set(imported.profiles.map(\.id))
             for profile in configuration.profiles where !importedProfileIDs.contains(profile.id) {
+                pendingTunnelStartTokens[profile.id] = nil
                 tunnelManager.stop(profileID: profile.id)
+                hopManager.stop(profileID: profile.id)
             }
             statuses = statuses.filter { importedProfileIDs.contains($0.key) }
+            hopStatuses = hopStatuses.filter { importedProfileIDs.contains($0.key) }
             configuration = imported
             saveConfiguration()
             let backupMessage = backupURL.map { " Backup: \($0.path)" } ?? ""
@@ -663,6 +814,45 @@ final class AppState: ObservableObject {
         }
     }
 
+    private func setupNotificationCallbacks() {
+        notifications.onReconnectTunnel = { [weak self] profileID in
+            Task { @MainActor in
+                guard let self, let profile = self.configuration.profiles.first(where: { $0.id == profileID }) else { return }
+                self.reconnect(profile)
+            }
+        }
+        notifications.onReconnectHop = { [weak self] profileID in
+            Task { @MainActor in
+                guard let self, let profile = self.configuration.profiles.first(where: { $0.id == profileID }) else { return }
+                self.reconnectHop(profile)
+            }
+        }
+    }
+
+    private func setupHopCallbacks() {
+        hopManager.onKeychainAccessCompleted = {
+            Task { @MainActor in
+                AppWindowFocusRestorer.restoreVisibleWindows()
+            }
+        }
+        hopManager.onStatusChange = { [weak self] status in
+            guard let self else { return }
+            let previous = self.hopStatuses[status.profileID]
+            self.hopStatuses[status.profileID] = status
+            if let profile = self.configuration.profiles.first(where: { $0.id == status.profileID }) {
+                self.lastProxyMessage = "\(profile.name) hop: \(status.message)"
+                if let event = TunnelNotificationPolicy.event(previous: previous?.health, current: status.health, kind: .hop) {
+                    self.notifications.deliver(event: event, profileID: profile.id, profileName: profile.name, message: status.message)
+                }
+            }
+        }
+        hopManager.onLog = { [weak self] profileID, text in
+            DispatchQueue.main.async {
+                self?.appendSSHLog(text, profileID: profileID)
+            }
+        }
+    }
+
     private func setupTunnelCallbacks() {
         tunnelManager.onKeychainAccessCompleted = {
             Task { @MainActor in
@@ -676,7 +866,7 @@ final class AppState: ObservableObject {
             if let profile = self.configuration.profiles.first(where: { $0.id == status.profileID }) {
                 self.lastProxyMessage = "\(profile.name): \(status.message)"
                 if let event = TunnelNotificationPolicy.event(previous: previous?.health, current: status.health) {
-                    self.notifications.deliver(event: event, profileName: profile.name, message: status.message)
+                    self.notifications.deliver(event: event, profileID: profile.id, profileName: profile.name, message: status.message)
                 }
             }
             self.writePACCopy()
@@ -686,13 +876,16 @@ final class AppState: ObservableObject {
         }
         tunnelManager.onLog = { [weak self] profileID, text in
             DispatchQueue.main.async {
-                guard let self else { return }
-                let current = self.logs[profileID] ?? ""
-                let combined = current + text
-                self.logs[profileID] = String(combined.suffix(120_000))
-                try? self.sshLogStore.append(text, profileID: profileID)
+                self?.appendSSHLog(text, profileID: profileID)
             }
         }
+    }
+
+    private func appendSSHLog(_ text: String, profileID: UUID) {
+        let current = logs[profileID] ?? ""
+        let combined = current + text
+        logs[profileID] = String(combined.suffix(120_000))
+        try? sshLogStore.append(text, profileID: profileID)
     }
 
     private func startSSHLogSession(for profile: TunnelProfile, verbose: Bool) {
@@ -794,6 +987,21 @@ final class AppState: ObservableObject {
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
             reconnect(profile)
             return ControlResponse(ok: true, message: "Reconnecting \(profile.name)", status: snapshot())
+        case .connectHop:
+            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
+            guard hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: snapshot()) }
+            connectHop(profile)
+            return ControlResponse(ok: true, message: "Connecting hop for \(profile.name)", status: snapshot())
+        case .disconnectHop:
+            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
+            guard hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: snapshot()) }
+            disconnectHop(profile)
+            return ControlResponse(ok: true, message: "Disconnecting hop for \(profile.name)", status: snapshot())
+        case .reconnectHop:
+            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
+            guard hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: snapshot()) }
+            reconnectHop(profile)
+            return ControlResponse(ok: true, message: "Reconnecting hop for \(profile.name)", status: snapshot())
         case .reloadPAC:
             refreshPACAppendSource(force: true)
             writePACCopy()
@@ -1084,6 +1292,11 @@ final class AppState: ObservableObject {
             return configuration.profiles.first { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }
         }
         return nil
+    }
+
+    private func normalizedJumpHost(for profile: TunnelProfile) -> String? {
+        let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return jumpHost.isEmpty ? nil : jumpHost
     }
 
     private func refreshNetworkDecision() {

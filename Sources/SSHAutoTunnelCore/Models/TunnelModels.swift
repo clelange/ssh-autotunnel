@@ -215,6 +215,31 @@ public struct TunnelRuntimeStatus: Codable, Equatable, Sendable {
     }
 }
 
+public struct HopRuntimeStatus: Codable, Equatable, Sendable {
+    public var profileID: UUID
+    public var jumpHost: String
+    public var health: TunnelHealth
+    public var message: String
+    public var pid: Int32?
+    public var lastChanged: Date
+
+    public init(
+        profileID: UUID,
+        jumpHost: String,
+        health: TunnelHealth = .stopped,
+        message: String = "Stopped",
+        pid: Int32? = nil,
+        lastChanged: Date = Date()
+    ) {
+        self.profileID = profileID
+        self.jumpHost = jumpHost
+        self.health = health
+        self.message = message
+        self.pid = pid
+        self.lastChanged = lastChanged
+    }
+}
+
 public enum PACFailureMode: String, Codable, CaseIterable, Identifiable, Sendable {
     case failClosed
     case directFallback

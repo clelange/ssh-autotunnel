@@ -4,6 +4,9 @@ public enum ControlAction: String, Codable, Sendable {
     case connect
     case disconnect
     case reconnect
+    case connectHop
+    case disconnectHop
+    case reconnectHop
     case status
     case pacURL
     case reloadPAC
@@ -76,14 +79,30 @@ public struct ProfileStatusSnapshot: Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
     public var localSocksPort: Int
+    public var hop: HopStatusSnapshot?
     public var health: TunnelHealth
     public var message: String
     public var pid: Int32?
 
-    public init(profile: TunnelProfile, status: TunnelRuntimeStatus) {
+    public init(profile: TunnelProfile, status: TunnelRuntimeStatus, hopStatus: HopRuntimeStatus? = nil) {
         id = profile.id
         name = profile.name
         localSocksPort = profile.localSocksPort
+        hop = hopStatus.map(HopStatusSnapshot.init(status:))
+        health = status.health
+        message = status.message
+        pid = status.pid
+    }
+}
+
+public struct HopStatusSnapshot: Codable, Equatable, Sendable {
+    public var jumpHost: String
+    public var health: TunnelHealth
+    public var message: String
+    public var pid: Int32?
+
+    public init(status: HopRuntimeStatus) {
+        jumpHost = status.jumpHost
         health = status.health
         message = status.message
         pid = status.pid

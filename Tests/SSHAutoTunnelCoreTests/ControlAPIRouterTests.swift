@@ -40,6 +40,23 @@ final class ControlAPIRouterTests: XCTestCase {
         XCTAssertEqual(controlResponse.message, "handled connect")
     }
 
+    func testDispatchesHopControlAction() throws {
+        var handledRequest: ControlRequest?
+        let router = makeRouter { request in
+            handledRequest = request
+            return ControlResponse(ok: true, message: "handled \(request.action.rawValue)")
+        }
+        let body = try JSONEncoder().encode(ControlRequest(action: .connectHop, profileName: "PSI General"))
+
+        let response = router.response(for: request(body: body))
+        let controlResponse = try decode(response)
+
+        XCTAssertEqual(handledRequest?.action, .connectHop)
+        XCTAssertEqual(handledRequest?.profileName, "PSI General")
+        XCTAssertTrue(controlResponse.ok)
+        XCTAssertEqual(controlResponse.message, "handled connectHop")
+    }
+
     func testReturnsNotFoundForUnknownAuthorizedRoute() {
         let router = makeRouter()
 
