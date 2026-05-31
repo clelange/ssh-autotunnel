@@ -23,16 +23,24 @@ enum InteractiveTerminalLaunchError: LocalizedError {
 }
 
 struct InteractiveTerminalLauncher {
-    func launch(command: SSHCommand, preference: InteractiveTerminalPreference) throws {
+    func launch(
+        command: SSHCommand,
+        preference: InteractiveTerminalPreference,
+        activeSessionMarkerURL: URL? = nil
+    ) throws {
         switch preference.app {
         case .terminal:
-            try launchTerminal(command)
+            try launchTerminal(command, activeSessionMarkerURL: activeSessionMarkerURL)
         case .iTerm2:
-            try launchITerm2(command)
+            try launchITerm2(command, activeSessionMarkerURL: activeSessionMarkerURL)
         case .ghostty:
-            try launchGhostty(command)
+            try launchGhostty(command, activeSessionMarkerURL: activeSessionMarkerURL)
         case .custom:
-            try launchCustom(command, applicationPath: preference.customApplicationPath)
+            try launchCustom(
+                command,
+                applicationPath: preference.customApplicationPath,
+                activeSessionMarkerURL: activeSessionMarkerURL
+            )
         }
     }
 
@@ -46,12 +54,12 @@ struct InteractiveTerminalLauncher {
         }
     }
 
-    private func launchTerminal(_ command: SSHCommand) throws {
+    private func launchTerminal(_ command: SSHCommand, activeSessionMarkerURL: URL?) throws {
         guard let bundleIdentifier = InteractiveTerminalApp.terminal.bundleIdentifier,
               NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil else {
             throw InteractiveTerminalLaunchError.terminalUnavailable(InteractiveTerminalApp.terminal.displayName)
         }
-        let scriptURL = try writeCommandScript(for: command)
+        let scriptURL = try writeCommandScript(for: command, activeSessionMarkerURL: activeSessionMarkerURL)
         do {
             try runOpen(arguments: ["-b", bundleIdentifier, scriptURL.path])
         } catch {
@@ -60,7 +68,7 @@ struct InteractiveTerminalLauncher {
         }
     }
 
-    private func launchITerm2(_ command: SSHCommand) throws {
+    private func launchITerm2(_ command: SSHCommand, activeSessionMarkerURL: URL?) throws {
         guard let bundleIdentifier = InteractiveTerminalApp.iTerm2.bundleIdentifier,
               NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) != nil else {
             throw InteractiveTerminalLaunchError.terminalUnavailable(InteractiveTerminalApp.iTerm2.displayName)
@@ -70,27 +78,31 @@ struct InteractiveTerminalLauncher {
             activate
             set newWindow to (create window with default profile)
             tell current session of newWindow
-                write text \(appleScriptString(shellSessionCommand(for: command)))
+                write text \(appleScriptString(shellSessionCommand(for: command, activeSessionMarkerURL: activeSessionMarkerURL)))
             end tell
         end tell
         """
         try runAppleScript(script)
     }
 
-    private func launchGhostty(_ command: SSHCommand) throws {
+    private func launchGhostty(_ command: SSHCommand, activeSessionMarkerURL: URL?) throws {
         guard let bundleIdentifier = InteractiveTerminalApp.ghostty.bundleIdentifier,
               let applicationURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleIdentifier) else {
             throw InteractiveTerminalLaunchError.terminalUnavailable(InteractiveTerminalApp.ghostty.displayName)
         }
-        try runOpen(arguments: ["-n", applicationURL.path, "--args"] + terminalEmulatorArguments(for: command))
+        try runOpen(arguments: ["-n", applicationURL.path, "--args"] + terminalEmulatorArguments(for: command, activeSessionMarkerURL: activeSessionMarkerURL))
     }
 
-    private func launchCustom(_ command: SSHCommand, applicationPath: String) throws {
+    private func launchCustom(
+        _ command: SSHCommand,
+        applicationPath: String,
+        activeSessionMarkerURL: URL?
+    ) throws {
         let trimmedPath = applicationPath.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedPath.isEmpty, FileManager.default.fileExists(atPath: trimmedPath) else {
             throw InteractiveTerminalLaunchError.customApplicationMissing
         }
-        try runOpen(arguments: ["-n", trimmedPath, "--args"] + terminalEmulatorArguments(for: command))
+        try runOpen(arguments: ["-n", trimmedPath, "--args"] + terminalEmulatorArguments(for: command, activeSessionMarkerURL: activeSessionMarkerURL))
     }
 
     private func runAppleScript(_ source: String) throws {
@@ -124,28 +136,43 @@ struct InteractiveTerminalLauncher {
         }
     }
 
-    private func terminalEmulatorArguments(for command: SSHCommand) -> [String] {
+    private func terminalEmulatorArguments(for command: SSHCommand, activeSessionMarkerURL: URL?) -> [String] {
         [
             "-e",
             "/bin/zsh",
             "-lc",
-            shellSessionCommand(for: command)
+            shellSessionCommand(for: command, activeSessionMarkerURL: activeSessionMarkerURL)
         ]
     }
 
-    private func writeCommandScript(for command: SSHCommand) throws -> URL {
+    private func writeCommandScript(for command: SSHCommand, activeSessionMarkerURL: URL?) throws -> URL {
         let scriptURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("SSHAutoTunnel-\(UUID().uuidString).command")
-        let source = "#!/bin/zsh\n\(shellSessionCommand(for: command, cleanupPath: scriptURL.path))\n"
+        let source = "#!/bin/zsh\n\(shellSessionCommand(for: command, cleanupPath: scriptURL.path, activeSessionMarkerURL: activeSessionMarkerURL))\n"
         try source.write(to: scriptURL, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: scriptURL.path)
         return scriptURL
     }
 
-    private func shellSessionCommand(for command: SSHCommand, cleanupPath: String? = nil) -> String {
-        var lines = [
+    private func shellSessionCommand(
+        for command: SSHCommand,
+        cleanupPath: String? = nil,
+        activeSessionMarkerURL: URL? = nil
+    ) -> String {
+        let markerPath = activeSessionMarkerURL?.path
+        var lines: [String] = []
+        if let markerPath {
+            let quotedMarkerPath = SSHCommand.shellQuoted(markerPath)
+            lines.append("trap 'rm -f \(quotedMarkerPath)' EXIT INT TERM HUP")
+        }
+        lines += [
             command.shellCommand,
             "ssh_autotunnel_status=$?",
+        ]
+        if let markerPath {
+            lines.append("rm -f \(SSHCommand.shellQuoted(markerPath))")
+        }
+        lines += [
             "printf '\\nSSH session ended with exit status %d. Press Ctrl-D to close this window.\\n' \"$ssh_autotunnel_status\""
         ]
         if let cleanupPath {

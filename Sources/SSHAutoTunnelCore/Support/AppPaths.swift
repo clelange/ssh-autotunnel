@@ -26,4 +26,11 @@ public enum AppPaths {
     public static func proxySnapshotURL() throws -> URL {
         try applicationSupportDirectory().appendingPathComponent("system-proxy-snapshot.json")
     }
+
+    public static func interactiveSessionDirectory() throws -> URL {
+        let directory = try applicationSupportDirectory()
+            .appendingPathComponent("interactive-sessions", isDirectory: true)
+        try FileProtection.protectDirectory(directory)
+        return directory
+    }
 }

@@ -32,6 +32,7 @@ final class AppState: ObservableObject {
     private let proxyManager = SystemProxyManager()
     private let notifications = AppNotificationService()
     private let sshLogStore = SSHLogStore()
+    private let interactiveSessionRegistry = InteractiveSSHSessionRegistry()
     private let terminalLauncher = InteractiveTerminalLauncher()
     private var pathMonitor: NWPathMonitor?
     private var pendingConfigurationSaveTask: Task<Void, Never>?
@@ -236,7 +237,17 @@ final class AppState: ObservableObject {
         do {
             _ = try await ensureHopReady(for: interactiveProfile, resetLog: true)
             let command = try interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-final-ready")
-            try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
+            let markerURL = try createHopInteractiveSessionMarker(profile: profile, interactiveProfile: interactiveProfile)
+            do {
+                try terminalLauncher.launch(
+                    command: command,
+                    preference: configuration.interactiveTerminal,
+                    activeSessionMarkerURL: markerURL
+                )
+            } catch {
+                interactiveSessionRegistry.removeMarker(at: markerURL)
+                throw error
+            }
             lastProxyMessage = "\(profile.name): Opened interactive SSH through hop in \(configuration.interactiveTerminal.app.displayName)"
         } catch {
             lastProxyMessage = "\(profile.name): Could not open interactive SSH through hop: \(error.localizedDescription)"
@@ -307,6 +318,18 @@ final class AppState: ObservableObject {
         try? sshLogStore.clearLog(profileID: profileID)
     }
 
+    func activeHopInteractiveSessions() -> [ActiveInteractiveSSHSession] {
+        interactiveSessionRegistry.activeSessions()
+    }
+
+    func prepareForTermination() {
+        pendingConfigurationSaveTask?.cancel()
+        pendingPACAppendSourceTask?.cancel()
+        pendingTunnelStartTokens.removeAll()
+        tunnelManager.stopAll()
+        hopManager.stopAll()
+    }
+
     private func interactiveSSHHelperCommand(for profile: TunnelProfile) throws -> SSHCommand {
         try interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh")
     }
@@ -338,6 +361,21 @@ final class AppState: ObservableObject {
         }
 
         throw NSError(domain: "AppState", code: 20, userInfo: [NSLocalizedDescriptionKey: "Could not find ssh-autotunnelctl helper in the app bundle"])
+    }
+
+    private func createHopInteractiveSessionMarker(
+        profile: TunnelProfile,
+        interactiveProfile: TunnelProfile
+    ) throws -> URL {
+        guard let jumpHost = normalizedJumpHost(for: interactiveProfile) else {
+            throw NSError(domain: "AppState", code: 33, userInfo: [NSLocalizedDescriptionKey: "Jump host is not configured"])
+        }
+        let session = ActiveInteractiveSSHSession(
+            profileID: profile.id,
+            profileName: profile.name,
+            jumpHost: jumpHost
+        )
+        return try interactiveSessionRegistry.createMarker(for: session)
     }
 
     func saveConfiguration() {
