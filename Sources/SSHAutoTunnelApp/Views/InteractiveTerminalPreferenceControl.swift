@@ -89,17 +89,24 @@ struct InteractiveTerminalPreferenceControl: View {
     @ViewBuilder
     private var pickerOptions: some View {
         ForEach(appState.interactiveTerminalOptions()) { option in
-            Label {
-                Text(title(for: option))
-            } icon: {
-                TerminalApplicationIcon(
-                    app: option.app,
-                    applicationPath: applicationPath(for: option),
-                    size: 13
-                )
-            }
+            terminalOptionRow(option)
             .tag(option.app)
         }
+    }
+
+    private func terminalOptionRow(_ option: InteractiveTerminalOption) -> some View {
+        HStack(alignment: .center, spacing: 0) {
+            TerminalApplicationIcon(
+                app: option.app,
+                applicationPath: applicationPath(for: option),
+                size: 18
+            )
+            .frame(width: 20, height: 20, alignment: .center)
+
+            Text(title(for: option))
+                .padding(.leading, 9)
+        }
+        .frame(height: 22, alignment: .center)
     }
 
     private var terminalAppBinding: Binding<InteractiveTerminalApp> {
