@@ -28,10 +28,11 @@ struct InteractiveTerminalPreferenceControl: View {
 
     private var dashboardControl: some View {
         HStack(alignment: .center, spacing: 12) {
-            Image(systemName: "terminal")
-                .font(.title3)
-                .foregroundStyle(.secondary)
-                .frame(width: 24)
+            TerminalApplicationIcon(
+                app: appState.configuration.interactiveTerminal.app,
+                applicationPath: selectedApplicationPath,
+                size: 36
+            )
 
             VStack(alignment: .leading, spacing: 2) {
                 Text("Interactive SSH Terminal")
@@ -94,7 +95,16 @@ struct InteractiveTerminalPreferenceControl: View {
     @ViewBuilder
     private var pickerOptions: some View {
         ForEach(appState.interactiveTerminalOptions()) { option in
-            Text(title(for: option)).tag(option.app)
+            Label {
+                Text(title(for: option))
+            } icon: {
+                TerminalApplicationIcon(
+                    app: option.app,
+                    applicationPath: applicationPath(for: option),
+                    size: 16
+                )
+            }
+            .tag(option.app)
         }
     }
 
@@ -123,11 +133,28 @@ struct InteractiveTerminalPreferenceControl: View {
         appState.isInteractiveTerminalAvailable(appState.configuration.interactiveTerminal) ? .secondary : .red
     }
 
+    private var selectedApplicationPath: String? {
+        let app = appState.configuration.interactiveTerminal.app
+        if app == .custom {
+            return appState.configuration.interactiveTerminal.customApplicationPath
+        }
+        return appState.interactiveTerminalOptions()
+            .first { $0.app == app }?
+            .applicationPath
+    }
+
     private func title(for option: InteractiveTerminalOption) -> String {
         guard option.app != .custom, !option.isInstalled else {
             return option.app.displayName
         }
         return "\(option.app.displayName) (not installed)"
+    }
+
+    private func applicationPath(for option: InteractiveTerminalOption) -> String? {
+        if option.app == .custom {
+            return appState.configuration.interactiveTerminal.customApplicationPath
+        }
+        return option.applicationPath
     }
 
     private func chooseTerminalApplication() {
@@ -140,5 +167,43 @@ struct InteractiveTerminalPreferenceControl: View {
         appState.configuration.interactiveTerminal.app = .custom
         appState.configuration.interactiveTerminal.customApplicationPath = url.path
         appState.saveConfiguration()
+    }
+}
+
+private struct TerminalApplicationIcon: View {
+    var app: InteractiveTerminalApp
+    var applicationPath: String?
+    var size: CGFloat
+
+    var body: some View {
+        Group {
+            if let icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            } else {
+                Image(systemName: fallbackSystemImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .symbolRenderingMode(.hierarchical)
+                    .foregroundStyle(.secondary)
+                    .padding(size * 0.16)
+            }
+        }
+        .frame(width: size, height: size)
+        .accessibilityHidden(true)
+    }
+
+    private var icon: NSImage? {
+        guard let path = applicationPath?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !path.isEmpty,
+              FileManager.default.fileExists(atPath: path) else {
+            return nil
+        }
+        return NSWorkspace.shared.icon(forFile: path)
+    }
+
+    private var fallbackSystemImage: String {
+        app == .custom ? "app.dashed" : "terminal"
     }
 }

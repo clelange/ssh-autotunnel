@@ -84,9 +84,7 @@ struct DashboardView: View {
 
     private var header: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .center, spacing: 12) {
-                AppIconView()
-
+            HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("SSH AutoTunnel")
                         .font(.title2.weight(.semibold))
@@ -117,16 +115,6 @@ struct DashboardView: View {
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
-    }
-}
-
-private struct AppIconView: View {
-    var body: some View {
-        Image(nsImage: NSApplication.shared.applicationIconImage)
-            .resizable()
-            .aspectRatio(contentMode: .fit)
-            .frame(width: 52, height: 52)
-            .accessibilityHidden(true)
     }
 }
 
