@@ -111,6 +111,7 @@ public struct HopStatusSnapshot: Codable, Equatable, Sendable {
 
 public struct AppStatusSnapshot: Codable, Equatable, Sendable {
     public var pacURL: String
+    public var systemPACStatus: SystemPACStatus?
     public var proxyDisabledByNetworkPolicy: Bool
     public var matchedNetworkRule: String?
     public var networkDisabledProfileIDs: [UUID]
@@ -118,12 +119,14 @@ public struct AppStatusSnapshot: Codable, Equatable, Sendable {
 
     public init(
         pacURL: String,
+        systemPACStatus: SystemPACStatus? = nil,
         proxyDisabledByNetworkPolicy: Bool,
         matchedNetworkRule: String?,
         networkDisabledProfileIDs: [UUID] = [],
         profiles: [ProfileStatusSnapshot]
     ) {
         self.pacURL = pacURL
+        self.systemPACStatus = systemPACStatus
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
         self.matchedNetworkRule = matchedNetworkRule
         self.networkDisabledProfileIDs = networkDisabledProfileIDs
@@ -159,6 +162,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
     public var pacURL: String
     public var statusURL: String
     public var proxyApplyMode: ProxyApplyMode
+    public var systemPACStatus: SystemPACStatus?
     public var proxyDisabledByNetworkPolicy: Bool
     public var matchedNetworkRule: String?
     public var networkDisabledProfileIDs: [UUID]
@@ -175,6 +179,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
         pacURL: String,
         statusURL: String,
         proxyApplyMode: ProxyApplyMode,
+        systemPACStatus: SystemPACStatus? = nil,
         proxyDisabledByNetworkPolicy: Bool,
         matchedNetworkRule: String?,
         networkDisabledProfileIDs: [UUID] = [],
@@ -190,6 +195,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
         self.pacURL = pacURL
         self.statusURL = statusURL
         self.proxyApplyMode = proxyApplyMode
+        self.systemPACStatus = systemPACStatus
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
         self.matchedNetworkRule = matchedNetworkRule
         self.networkDisabledProfileIDs = networkDisabledProfileIDs

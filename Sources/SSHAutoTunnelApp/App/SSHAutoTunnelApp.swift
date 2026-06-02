@@ -26,7 +26,8 @@ struct SSHAutoTunnelApp: App {
                     appDelegate.appState = appState
                 }
         } label: {
-            Label("SSH AutoTunnel", systemImage: "point.3.connected.trianglepath.dotted")
+            MenuBarExtraStatusLabel()
+                .environmentObject(appState)
                 .overlay {
                     OnboardingPresenter()
                 }

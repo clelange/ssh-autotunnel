@@ -18,7 +18,7 @@ public enum NetworkSetupParser {
         for rawLine in output.split(separator: "\n", omittingEmptySubsequences: false) {
             let line = rawLine.trimmingCharacters(in: .whitespaces)
             if let value = value(in: line, after: "URL:") {
-                url = value.isEmpty ? nil : value
+                url = value.isEmpty || value == "(null)" ? nil : value
             } else if let value = value(in: line, after: "Enabled:") {
                 enabled = ["1", "yes", "on", "true"].contains(value.lowercased())
             }

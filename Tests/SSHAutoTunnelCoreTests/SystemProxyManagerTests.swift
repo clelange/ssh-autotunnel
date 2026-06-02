@@ -58,6 +58,134 @@ final class SystemProxyManagerTests: XCTestCase {
         XCTAssertTrue(store.savedArchives.isEmpty)
     }
 
+    func testPACStatusReportsActiveServiceUsingExpectedPAC() {
+        let manager = SystemProxyManager(
+            snapshotStore: nil,
+            currentServiceName: { "Wi-Fi" },
+            commandRunner: { command in
+                XCTAssertEqual(command, NetworkSetupCommand(arguments: ["-getautoproxyurl", "Wi-Fi"]))
+                return ShellResult(
+                    exitCode: 0,
+                    stdout: """
+                    URL: http://127.0.0.1:18483/proxy.pac?v=123
+                    Enabled: Yes
+                    """,
+                    stderr: ""
+                )
+            }
+        )
+
+        let status = manager.pacStatus(expectedURL: "http://127.0.0.1:18483/proxy.pac?v=123")
+
+        XCTAssertEqual(status.state, .active)
+        XCTAssertEqual(status.serviceName, "Wi-Fi")
+        XCTAssertEqual(status.observedPACURL, "http://127.0.0.1:18483/proxy.pac?v=123")
+        XCTAssertEqual(status.autoProxyEnabled, true)
+        XCTAssertNil(status.errorMessage)
+    }
+
+    func testPACStatusReportsStaleAutoTunnelPACWhenOnlyVersionDiffers() {
+        let manager = SystemProxyManager(
+            snapshotStore: nil,
+            currentServiceName: { "Wi-Fi" },
+            commandRunner: { _ in
+                ShellResult(
+                    exitCode: 0,
+                    stdout: """
+                    URL: http://127.0.0.1:18483/proxy.pac?v=old
+                    Enabled: Yes
+                    """,
+                    stderr: ""
+                )
+            }
+        )
+
+        let status = manager.pacStatus(expectedURL: "http://127.0.0.1:18483/proxy.pac?v=new")
+
+        XCTAssertEqual(status.state, .staleAutoTunnelPAC)
+        XCTAssertEqual(status.serviceName, "Wi-Fi")
+        XCTAssertEqual(status.observedPACURL, "http://127.0.0.1:18483/proxy.pac?v=old")
+    }
+
+    func testPACStatusReportsMissingPACOnActiveService() {
+        let manager = SystemProxyManager(
+            snapshotStore: nil,
+            currentServiceName: { "USB 10/100/1000 LAN" },
+            commandRunner: { _ in
+                ShellResult(
+                    exitCode: 0,
+                    stdout: """
+                    URL:
+                    Enabled: No
+                    """,
+                    stderr: ""
+                )
+            }
+        )
+
+        let status = manager.pacStatus(expectedURL: "http://127.0.0.1:18483/proxy.pac?v=123")
+
+        XCTAssertEqual(status.state, .notConfigured)
+        XCTAssertEqual(status.serviceName, "USB 10/100/1000 LAN")
+        XCTAssertEqual(status.autoProxyEnabled, false)
+        XCTAssertNil(status.observedPACURL)
+    }
+
+    func testPACStatusReportsOtherPACOnActiveService() {
+        let manager = SystemProxyManager(
+            snapshotStore: nil,
+            currentServiceName: { "Wi-Fi" },
+            commandRunner: { _ in
+                ShellResult(
+                    exitCode: 0,
+                    stdout: """
+                    URL: https://proxy.example/proxy.pac
+                    Enabled: Yes
+                    """,
+                    stderr: ""
+                )
+            }
+        )
+
+        let status = manager.pacStatus(expectedURL: "http://127.0.0.1:18483/proxy.pac?v=123")
+
+        XCTAssertEqual(status.state, .otherPAC)
+        XCTAssertEqual(status.observedPACURL, "https://proxy.example/proxy.pac")
+    }
+
+    func testPACStatusReportsUnknownWithoutActiveService() {
+        let manager = SystemProxyManager(
+            snapshotStore: nil,
+            currentServiceName: { nil },
+            commandRunner: { _ in
+                XCTFail("No commands should run without an active service")
+                return ShellResult(exitCode: 0, stdout: "", stderr: "")
+            }
+        )
+
+        let status = manager.pacStatus(expectedURL: "http://127.0.0.1:18483/proxy.pac?v=123")
+
+        XCTAssertEqual(status.state, .unknown)
+        XCTAssertNil(status.serviceName)
+        XCTAssertEqual(status.errorMessage, "Could not determine active network service")
+    }
+
+    func testPACStatusReportsNetworkSetupFailure() {
+        let manager = SystemProxyManager(
+            snapshotStore: nil,
+            currentServiceName: { "Wi-Fi" },
+            commandRunner: { _ in
+                ShellResult(exitCode: 1, stdout: "", stderr: "Wi-Fi is not a network service.")
+            }
+        )
+
+        let status = manager.pacStatus(expectedURL: "http://127.0.0.1:18483/proxy.pac?v=123")
+
+        XCTAssertEqual(status.state, .unknown)
+        XCTAssertEqual(status.serviceName, "Wi-Fi")
+        XCTAssertEqual(status.errorMessage, "Wi-Fi is not a network service.")
+    }
+
     func testApplyPACReusesSnapshotForSameService() throws {
         let store = FakeProxySnapshotStore()
         var commands: [NetworkSetupCommand] = []

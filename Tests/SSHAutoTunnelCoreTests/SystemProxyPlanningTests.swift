@@ -30,6 +30,19 @@ final class SystemProxyPlanningTests: XCTestCase {
         XCTAssertNil(snapshot.autoProxyURL)
     }
 
+    func testParsesNullAutoProxyURLAsMissing() {
+        let snapshot = NetworkSetupParser.autoProxySnapshot(
+            serviceName: "Wi-Fi",
+            output: """
+            URL: (null)
+            Enabled: No
+            """
+        )
+
+        XCTAssertFalse(snapshot.autoProxyEnabled)
+        XCTAssertNil(snapshot.autoProxyURL)
+    }
+
     func testParsesNumericEnabledAutoProxySnapshot() {
         let snapshot = NetworkSetupParser.autoProxySnapshot(
             serviceName: "Ethernet",

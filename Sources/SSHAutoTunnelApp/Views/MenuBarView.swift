@@ -9,6 +9,16 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
+                openWindow(id: "settings")
+                AppActivation.activate()
+            } label: {
+                Label(appState.systemPACMenuTitle, systemImage: appState.systemPACStatusSymbol)
+            }
+            .help(appState.systemPACStatusDetail)
+
+            Divider()
+
+            Button {
                 openWindow(id: "main")
                 AppActivation.activate()
             } label: {

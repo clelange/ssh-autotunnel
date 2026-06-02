@@ -721,6 +721,7 @@ struct AppPreferencesView: View {
     var body: some View {
         Form {
             Section("PAC") {
+                SystemPACStatusDetailView()
                 Text(appState.pacURL)
                     .textSelection(.enabled)
                 TextField("PAC HTTP port", value: $appState.configuration.pacHTTPPort, format: .number)

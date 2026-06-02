@@ -20,6 +20,7 @@ final class AppState: ObservableObject {
     @Published var networkDecision = NetworkPolicyDecision(shouldDisableProxy: false, matchedRule: nil)
     @Published var currentNetworkFingerprint = NetworkFingerprint()
     @Published var lastProxyMessage = "System PAC is not enabled"
+    @Published var systemPACStatus = SystemPACStatus.unknown(expectedPACURL: "")
     @Published var configurationValidationMessage: String?
     @Published var sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus] = []
     @Published var pacAppendSourceMessage = "Existing PAC appending disabled"
@@ -77,6 +78,7 @@ final class AppState: ObservableObject {
         refreshInteractiveTerminalDiscovery()
         refreshPACAppendSource(force: true)
         writePACCopy()
+        refreshSystemPACStatus()
     }
 
     var pacURL: String {
@@ -429,7 +431,16 @@ final class AppState: ObservableObject {
             refreshNetworkDecision()
             refreshPACAppendSource()
             writePACCopy()
-            if didRestartServers, let activeServerPorts = localServers.activePorts {
+            let didAttemptSystemPACApply: Bool
+            if configuration.proxyApplyMode == .activeNetworkServicePAC,
+               didRestartServers || systemPACStatus.state != .active || systemPACStatus.expectedPACURL != pacURL {
+                didAttemptSystemPACApply = true
+                _ = applySystemPAC()
+            } else {
+                didAttemptSystemPACApply = false
+                refreshSystemPACStatus()
+            }
+            if didRestartServers, !didAttemptSystemPACApply, let activeServerPorts = localServers.activePorts {
                 lastProxyMessage = "Local servers restarted: PAC \(activeServerPorts.pacHTTPPort), API \(activeServerPorts.apiHTTPPort), blocking proxy \(activeServerPorts.blockingHTTPProxyPort)"
             }
         } catch let error as PortConfigurationError {
@@ -557,6 +568,9 @@ final class AppState: ObservableObject {
 
     @discardableResult
     func applySystemPAC() -> Bool {
+        defer {
+            refreshSystemPACStatus()
+        }
         do {
             if networkDecision.shouldDisableProxy {
                 try proxyManager.restoreIfNeeded()
@@ -574,6 +588,9 @@ final class AppState: ObservableObject {
 
     @discardableResult
     func restoreSystemPAC() -> Bool {
+        defer {
+            refreshSystemPACStatus()
+        }
         do {
             try proxyManager.restoreIfNeeded()
             lastProxyMessage = "System PAC restored"
@@ -812,6 +829,7 @@ final class AppState: ObservableObject {
         }
         return AppStatusSnapshot(
             pacURL: pacURL,
+            systemPACStatus: systemPACStatus,
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
             matchedNetworkRule: networkDecision.matchedRule?.name,
             networkDisabledProfileIDs: sortedNetworkDisabledProfileIDs(),
@@ -830,6 +848,7 @@ final class AppState: ObservableObject {
             pacURL: pacURL,
             statusURL: statusURL,
             proxyApplyMode: configuration.proxyApplyMode,
+            systemPACStatus: systemPACStatus,
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
             matchedNetworkRule: networkDecision.matchedRule?.name,
             networkDisabledProfileIDs: sortedNetworkDisabledProfileIDs(),
@@ -975,6 +994,8 @@ final class AppState: ObservableObject {
             self.writePACCopy()
             if self.configuration.proxyApplyMode == .activeNetworkServicePAC {
                 self.applySystemPAC()
+            } else {
+                self.refreshSystemPACStatus()
             }
         }
         tunnelManager.onLog = { [weak self] profileID, text in
@@ -1409,6 +1430,10 @@ final class AppState: ObservableObject {
         networkDecision = networkIdentity.evaluate(configuration: configuration, fingerprint: currentNetworkFingerprint)
     }
 
+    func refreshSystemPACStatus() {
+        systemPACStatus = proxyManager.pacStatus(expectedURL: pacURL)
+    }
+
     private func startNetworkMonitoring() {
         let monitor = NWPathMonitor()
         monitor.pathUpdateHandler = { [weak self] _ in
@@ -1418,6 +1443,8 @@ final class AppState: ObservableObject {
                 self.writePACCopy()
                 if self.configuration.proxyApplyMode == .activeNetworkServicePAC {
                     self.applySystemPAC()
+                } else {
+                    self.refreshSystemPACStatus()
                 }
             }
         }

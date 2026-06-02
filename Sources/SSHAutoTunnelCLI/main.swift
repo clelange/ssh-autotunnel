@@ -164,6 +164,9 @@ struct SSHAutoTunnelCLI {
         print(response.message)
         guard let status = response.status else { return }
         print("PAC: \(status.pacURL)")
+        if let systemPACStatus = status.systemPACStatus {
+            print("System PAC: \(label(for: systemPACStatus))")
+        }
         if status.proxyDisabledByNetworkPolicy {
             print("Network policy disabled proxy: \(status.matchedNetworkRule ?? "unknown rule")")
         }
@@ -193,6 +196,9 @@ struct SSHAutoTunnelCLI {
             print("- App: \(diagnostics.appIdentifier)")
             print("- Status URL: \(diagnostics.statusURL)")
             print("- Proxy apply mode: \(diagnostics.proxyApplyMode.rawValue)")
+            if let systemPACStatus = diagnostics.systemPACStatus {
+                print("- System PAC: \(label(for: systemPACStatus))")
+            }
             if let activePorts = diagnostics.activePorts {
                 print("- Active ports: PAC \(activePorts.pacHTTPPort), API \(activePorts.apiHTTPPort), blocking proxy \(activePorts.blockingHTTPProxyPort)")
             } else {
@@ -231,6 +237,20 @@ struct SSHAutoTunnelCLI {
         case .missing: "missing"
         case .unreadable(let message): "unreadable: \(message)"
         }
+    }
+
+    private static func label(for status: SystemPACStatus) -> String {
+        var parts = [status.state.rawValue]
+        if let serviceName = status.serviceName {
+            parts.append("service=\(serviceName)")
+        }
+        if let observedPACURL = status.observedPACURL {
+            parts.append("url=\(observedPACURL)")
+        }
+        if let errorMessage = status.errorMessage {
+            parts.append("error=\(errorMessage)")
+        }
+        return parts.joined(separator: ", ")
     }
 
     private static func readProfile(from argument: String?) throws -> TunnelProfile {

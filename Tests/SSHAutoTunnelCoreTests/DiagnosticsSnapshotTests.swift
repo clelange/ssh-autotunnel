@@ -14,6 +14,13 @@ final class DiagnosticsSnapshotTests: XCTestCase {
             pacURL: "http://127.0.0.1:18483/proxy.pac",
             statusURL: "http://127.0.0.1:18483/status",
             proxyApplyMode: .activeNetworkServicePAC,
+            systemPACStatus: SystemPACStatus(
+                serviceName: "Wi-Fi",
+                expectedPACURL: "http://127.0.0.1:18483/proxy.pac",
+                observedPACURL: "http://127.0.0.1:18483/proxy.pac",
+                autoProxyEnabled: true,
+                state: .active
+            ),
             proxyDisabledByNetworkPolicy: true,
             matchedNetworkRule: "Trusted Wi-Fi: CERN",
             configuredPorts: LocalServerPorts(pacHTTPPort: 18483, blockingHTTPProxyPort: 18485, apiHTTPPort: 18484),
@@ -36,6 +43,28 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         let decoded = try JSONDecoder().decode(DiagnosticsSnapshot.self, from: data)
 
         XCTAssertEqual(decoded, snapshot)
+    }
+
+    func testAppStatusSnapshotCarriesSystemPACStatus() throws {
+        let snapshot = AppStatusSnapshot(
+            pacURL: "http://127.0.0.1:18483/proxy.pac",
+            systemPACStatus: SystemPACStatus(
+                serviceName: "Wi-Fi",
+                expectedPACURL: "http://127.0.0.1:18483/proxy.pac",
+                observedPACURL: nil,
+                autoProxyEnabled: false,
+                state: .notConfigured
+            ),
+            proxyDisabledByNetworkPolicy: false,
+            matchedNetworkRule: nil,
+            profiles: []
+        )
+
+        let data = try JSONEncoder().encode(snapshot)
+        let decoded = try JSONDecoder().decode(AppStatusSnapshot.self, from: data)
+
+        XCTAssertEqual(decoded, snapshot)
+        XCTAssertEqual(decoded.systemPACStatus?.state, .notConfigured)
     }
 
     func testControlResponseCanCarryDiagnostics() throws {

@@ -17,6 +17,52 @@ public enum SystemProxyManagerError: LocalizedError, Equatable {
     }
 }
 
+public enum SystemPACObservedState: String, Codable, Equatable, Sendable {
+    case active
+    case staleAutoTunnelPAC
+    case notConfigured
+    case otherPAC
+    case unknown
+}
+
+public struct SystemPACStatus: Codable, Equatable, Sendable {
+    public var serviceName: String?
+    public var expectedPACURL: String
+    public var observedPACURL: String?
+    public var autoProxyEnabled: Bool?
+    public var state: SystemPACObservedState
+    public var errorMessage: String?
+
+    public init(
+        serviceName: String?,
+        expectedPACURL: String,
+        observedPACURL: String? = nil,
+        autoProxyEnabled: Bool? = nil,
+        state: SystemPACObservedState,
+        errorMessage: String? = nil
+    ) {
+        self.serviceName = serviceName
+        self.expectedPACURL = expectedPACURL
+        self.observedPACURL = observedPACURL
+        self.autoProxyEnabled = autoProxyEnabled
+        self.state = state
+        self.errorMessage = errorMessage
+    }
+
+    public static func unknown(
+        expectedPACURL: String,
+        serviceName: String? = nil,
+        errorMessage: String? = nil
+    ) -> SystemPACStatus {
+        SystemPACStatus(
+            serviceName: serviceName,
+            expectedPACURL: expectedPACURL,
+            state: .unknown,
+            errorMessage: errorMessage
+        )
+    }
+}
+
 protocol ProxySnapshotStoring: AnyObject {
     func saveAll(_ snapshots: [ProxySnapshot]) throws
     func loadAll() throws -> [ProxySnapshot]
@@ -67,6 +113,41 @@ public final class SystemProxyManager {
         return service
     }
 
+    public func pacStatus(expectedURL: String) -> SystemPACStatus {
+        guard let service = currentServiceName() else {
+            return .unknown(
+                expectedPACURL: expectedURL,
+                errorMessage: SystemProxyManagerError.missingActiveNetworkService.localizedDescription
+            )
+        }
+
+        let command = NetworkSetupCommand(arguments: ["-getautoproxyurl", service])
+        do {
+            let result = try commandRunner(command)
+            guard result.succeeded else {
+                return .unknown(
+                    expectedPACURL: expectedURL,
+                    serviceName: service,
+                    errorMessage: result.proxyStatusErrorMessage
+                )
+            }
+            let snapshot = NetworkSetupParser.autoProxySnapshot(serviceName: service, output: result.stdout)
+            return SystemPACStatus(
+                serviceName: service,
+                expectedPACURL: expectedURL,
+                observedPACURL: snapshot.autoProxyURL,
+                autoProxyEnabled: snapshot.autoProxyEnabled,
+                state: Self.observedState(expectedURL: expectedURL, snapshot: snapshot)
+            )
+        } catch {
+            return .unknown(
+                expectedPACURL: expectedURL,
+                serviceName: service,
+                errorMessage: error.localizedDescription
+            )
+        }
+    }
+
     public func restoreIfNeeded() throws {
         try loadSnapshotsIfNeeded()
         let snapshots = sortedSnapshots()
@@ -102,6 +183,45 @@ public final class SystemProxyManager {
 
         return NetworkSetupParser.autoProxySnapshot(serviceName: serviceName, output: result.stdout)
     }
+
+    private static func observedState(expectedURL: String, snapshot: ProxySnapshot) -> SystemPACObservedState {
+        guard snapshot.autoProxyEnabled else { return .notConfigured }
+        guard let observedURL = snapshot.autoProxyURL?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !observedURL.isEmpty else {
+            return .otherPAC
+        }
+        let expected = expectedURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        if observedURL == expected {
+            return .active
+        }
+        if normalizedPACURL(observedURL) == normalizedPACURL(expected) {
+            return .staleAutoTunnelPAC
+        }
+        return .otherPAC
+    }
+
+    private static func normalizedPACURL(_ value: String) -> String {
+        guard var components = URLComponents(string: value) else {
+            return value
+        }
+        components.query = nil
+        components.fragment = nil
+        return components.url?.absoluteString ?? value
+    }
 }
 
 extension ProxySnapshotStore: ProxySnapshotStoring {}
+
+private extension ShellResult {
+    var proxyStatusErrorMessage: String {
+        let stderrMessage = stderr.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !stderrMessage.isEmpty {
+            return stderrMessage
+        }
+        let stdoutMessage = stdout.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !stdoutMessage.isEmpty {
+            return stdoutMessage
+        }
+        return "networksetup exited with status \(exitCode)"
+    }
+}

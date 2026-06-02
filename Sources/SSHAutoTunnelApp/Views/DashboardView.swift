@@ -88,6 +88,7 @@ struct DashboardView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("SSH AutoTunnel")
                         .font(.title2.weight(.semibold))
+                    SystemPACStatusBadge()
                     Text(appState.lastProxyMessage)
                         .font(.callout)
                         .foregroundStyle(.secondary)
