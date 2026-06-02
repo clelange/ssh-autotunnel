@@ -69,6 +69,7 @@
 - Fixed System PAC active service detection on macOS 26 by using `/sbin/route` and resolving default interfaces through `networksetup -listnetworkserviceorder` before the hardware-port fallback.
 - Added observed System PAC status detection for the active service, with menu-bar, dashboard, Settings, local API, CLI, and diagnostics visibility.
 - Changed the main-window PAC toolbar action into an apply/disable toggle with a slashed network icon when disabling SSH AutoTunnel PAC.
+- Made main-window and menu-bar System PAC enable/disable actions toggle persistent automatic PAC management instead of applying a one-shot PAC URL.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Debounced SwiftUI edit-driven configuration saves while keeping explicit actions immediate.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
@@ -117,7 +118,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the System PAC status visibility update, the core test suite has 270 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the persistent System PAC toggle update, the core test suite has 274 XCTest cases.
 
 ## Known Gaps
 

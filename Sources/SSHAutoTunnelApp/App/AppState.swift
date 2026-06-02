@@ -587,6 +587,21 @@ final class AppState: ObservableObject {
     }
 
     @discardableResult
+    func enableSystemPACManagement() -> Bool {
+        configuration.proxyApplyMode = .activeNetworkServicePAC
+        saveConfiguration()
+        return systemPACStatus.state == .active || systemPACStatus.state == .staleAutoTunnelPAC
+    }
+
+    @discardableResult
+    func disableSystemPACManagement() -> Bool {
+        configuration.proxyApplyMode = .manual
+        let didRestore = restoreSystemPAC()
+        saveConfiguration()
+        return didRestore
+    }
+
+    @discardableResult
     func restoreSystemPAC() -> Bool {
         defer {
             refreshSystemPACStatus()

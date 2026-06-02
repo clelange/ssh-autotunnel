@@ -126,9 +126,9 @@ extension AppState {
 
     func toggleSystemPAC() {
         if systemPACToggleDisablesPAC {
-            restoreSystemPAC()
+            disableSystemPACManagement()
         } else {
-            applySystemPAC()
+            enableSystemPACManagement()
         }
     }
 

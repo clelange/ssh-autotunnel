@@ -82,13 +82,13 @@ struct MenuBarView: View {
             }
 
             Button {
-                appState.applySystemPAC()
+                appState.enableSystemPACManagement()
             } label: {
                 Label("Enable System PAC", systemImage: "network")
             }
 
             Button {
-                appState.restoreSystemPAC()
+                appState.disableSystemPACManagement()
             } label: {
                 Label("Restore System Proxy", systemImage: "arrow.uturn.backward")
             }
