@@ -83,28 +83,32 @@ struct DashboardView: View {
     }
 
     private var header: some View {
-        HStack(alignment: .firstTextBaseline) {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("SSH AutoTunnel")
-                    .font(.title2.weight(.semibold))
-                Text(appState.lastProxyMessage)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-                    .textSelection(.enabled)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .firstTextBaseline) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("SSH AutoTunnel")
+                        .font(.title2.weight(.semibold))
+                    Text(appState.lastProxyMessage)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                }
+                Spacer()
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text("PAC")
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                    Text(appState.pacURL)
+                        .font(.caption.monospaced())
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                }
             }
-            Spacer()
-            VStack(alignment: .trailing, spacing: 4) {
-                Text("PAC")
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(.secondary)
-                Text(appState.pacURL)
-                    .font(.caption.monospaced())
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-            }
+
+            InteractiveTerminalPreferenceControl(style: .dashboard)
         }
     }
 

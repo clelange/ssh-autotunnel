@@ -24,6 +24,7 @@ final class AppState: ObservableObject {
     @Published var sshAuto2FAServiceStatuses: [SSHAuto2FAServiceStatus] = []
     @Published var pacAppendSourceMessage = "Existing PAC appending disabled"
     @Published var diagnosticsSelectedProfileID: UUID?
+    @Published var interactiveTerminalInstallations: [InteractiveTerminalInstallation] = []
 
     private let configurationStore: ConfigurationStore
     private let tunnelManager = TunnelManager()
@@ -35,6 +36,7 @@ final class AppState: ObservableObject {
     private let sshLogStore = SSHLogStore()
     private let interactiveSessionRegistry = InteractiveSSHSessionRegistry()
     private let terminalLauncher = InteractiveTerminalLauncher()
+    private let terminalDiscovery = InteractiveTerminalDiscovery()
     private var pathMonitor: NWPathMonitor?
     private var pendingConfigurationSaveTask: Task<Void, Never>?
     private var pendingPACAppendSourceTask: Task<Void, Never>?
@@ -72,6 +74,7 @@ final class AppState: ObservableObject {
         refreshNetworkDecision()
         startServers()
         startNetworkMonitoring()
+        refreshInteractiveTerminalDiscovery()
         refreshPACAppendSource(force: true)
         writePACCopy()
     }
@@ -193,9 +196,30 @@ final class AppState: ObservableObject {
     }
 
     func interactiveTerminalAvailabilityMessage() -> String {
-        terminalLauncher.isAvailable(configuration.interactiveTerminal)
+        isInteractiveTerminalAvailable(configuration.interactiveTerminal)
             ? "\(configuration.interactiveTerminal.app.displayName) is available"
             : "\(configuration.interactiveTerminal.app.displayName) is not available"
+    }
+
+    func refreshInteractiveTerminalDiscovery() {
+        interactiveTerminalInstallations = terminalDiscovery.discoverInstalledTerminals()
+    }
+
+    func interactiveTerminalOptions() -> [InteractiveTerminalOption] {
+        InteractiveTerminalDiscovery.options(
+            for: interactiveTerminalInstallations,
+            currentApp: configuration.interactiveTerminal.app
+        )
+    }
+
+    func isInteractiveTerminalAvailable(_ preference: InteractiveTerminalPreference) -> Bool {
+        switch preference.app {
+        case .custom:
+            let path = preference.customApplicationPath.trimmingCharacters(in: .whitespacesAndNewlines)
+            return !path.isEmpty && FileManager.default.fileExists(atPath: path)
+        case .terminal, .iTerm2, .ghostty:
+            return interactiveTerminalInstallations.contains { $0.app == preference.app }
+        }
     }
 
     private func startTunnel(_ profile: TunnelProfile, message: String, options: SSHLaunchOptions) {

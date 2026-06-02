@@ -534,28 +534,7 @@ struct AppPreferencesView: View {
             }
 
             Section("Interactive SSH") {
-                Picker("Terminal app", selection: $appState.configuration.interactiveTerminal.app) {
-                    ForEach(InteractiveTerminalApp.allCases) { app in
-                        Text(app.displayName).tag(app)
-                    }
-                }
-
-                if appState.configuration.interactiveTerminal.app == .custom {
-                    HStack {
-                        TextField("Application", text: $appState.configuration.interactiveTerminal.customApplicationPath)
-                        Button("Choose...") {
-                            chooseTerminalApplication()
-                        }
-                        .help("Choose a custom terminal app for interactive SSH")
-                    }
-                    Text("Custom terminal apps must accept command launches with `-e /bin/zsh -lc ...`.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-
-                Text(appState.interactiveTerminalAvailabilityMessage())
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                InteractiveTerminalPreferenceControl(style: .settings)
             }
 
             Section("OpenSSH Config") {
@@ -770,18 +749,6 @@ struct AppPreferencesView: View {
         appState.configuration.pacAppendSource.location = url.path
         appState.saveConfiguration()
         appState.refreshPACAppendSource(force: true)
-    }
-
-    private func chooseTerminalApplication() {
-        let panel = NSOpenPanel()
-        panel.allowedContentTypes = [.applicationBundle]
-        panel.allowsMultipleSelection = false
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        appState.configuration.interactiveTerminal.app = .custom
-        appState.configuration.interactiveTerminal.customApplicationPath = url.path
-        appState.saveConfiguration()
     }
 
     private func openURL() -> URL? {

@@ -342,6 +342,10 @@ public enum InteractiveTerminalApp: String, Codable, CaseIterable, Identifiable,
 
     public var id: String { rawValue }
 
+    public static var supportedLaunchAdapters: [InteractiveTerminalApp] {
+        [.terminal, .iTerm2, .ghostty]
+    }
+
     public var displayName: String {
         switch self {
         case .terminal: "Terminal"
