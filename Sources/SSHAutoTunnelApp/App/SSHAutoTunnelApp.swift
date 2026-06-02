@@ -9,7 +9,7 @@ struct SSHAutoTunnelApp: App {
     @StateObject private var appState = AppState()
 
     var body: some Scene {
-        WindowGroup("SSH AutoTunnel", id: "main") {
+        Window("SSH AutoTunnel", id: "main") {
             DashboardView()
                 .environmentObject(appState)
                 .onAppear {
