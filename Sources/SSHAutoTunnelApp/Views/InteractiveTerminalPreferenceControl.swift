@@ -28,12 +28,6 @@ struct InteractiveTerminalPreferenceControl: View {
 
     private var dashboardControl: some View {
         HStack(alignment: .center, spacing: 12) {
-            TerminalApplicationIcon(
-                app: appState.configuration.interactiveTerminal.app,
-                applicationPath: selectedApplicationPath,
-                size: 36
-            )
-
             VStack(alignment: .leading, spacing: 2) {
                 Text("Interactive SSH Terminal")
                     .font(.headline)
@@ -101,7 +95,7 @@ struct InteractiveTerminalPreferenceControl: View {
                 TerminalApplicationIcon(
                     app: option.app,
                     applicationPath: applicationPath(for: option),
-                    size: 16
+                    size: 10
                 )
             }
             .tag(option.app)
@@ -131,16 +125,6 @@ struct InteractiveTerminalPreferenceControl: View {
 
     private var availabilityColor: Color {
         appState.isInteractiveTerminalAvailable(appState.configuration.interactiveTerminal) ? .secondary : .red
-    }
-
-    private var selectedApplicationPath: String? {
-        let app = appState.configuration.interactiveTerminal.app
-        if app == .custom {
-            return appState.configuration.interactiveTerminal.customApplicationPath
-        }
-        return appState.interactiveTerminalOptions()
-            .first { $0.app == app }?
-            .applicationPath
     }
 
     private func title(for option: InteractiveTerminalOption) -> String {
@@ -179,8 +163,6 @@ private struct TerminalApplicationIcon: View {
         Group {
             if let icon {
                 Image(nsImage: icon)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
             } else {
                 Image(systemName: fallbackSystemImage)
                     .resizable()
@@ -191,6 +173,7 @@ private struct TerminalApplicationIcon: View {
             }
         }
         .frame(width: size, height: size)
+        .fixedSize()
         .accessibilityHidden(true)
     }
 
@@ -200,10 +183,16 @@ private struct TerminalApplicationIcon: View {
               FileManager.default.fileExists(atPath: path) else {
             return nil
         }
-        return NSWorkspace.shared.icon(forFile: path)
+        return sizedIcon(NSWorkspace.shared.icon(forFile: path))
     }
 
     private var fallbackSystemImage: String {
         app == .custom ? "app.dashed" : "terminal"
+    }
+
+    private func sizedIcon(_ image: NSImage) -> NSImage {
+        let icon = image.copy() as? NSImage ?? image
+        icon.size = NSSize(width: size, height: size)
+        return icon
     }
 }
