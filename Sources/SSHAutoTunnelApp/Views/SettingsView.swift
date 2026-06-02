@@ -516,7 +516,7 @@ struct PACRulesView: View {
                         .frame(width: 16, height: 16)
                 }
 
-                HStack(spacing: 4) {
+                HStack(spacing: 8) {
                     iconButton(
                         systemImage: "chevron.up",
                         help: "Move rule up",
@@ -535,12 +535,13 @@ struct PACRulesView: View {
 
                     iconButton(
                         systemImage: "trash",
-                        help: "Delete rule",
-                        role: .destructive
+                        help: "Delete rule"
                     ) {
                         deleteRule(id: ruleID)
                     }
                 }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
                 .fixedSize()
 
                 TextField("Name", text: $appState.configuration.pacRules[index].name)
@@ -566,17 +567,12 @@ struct PACRulesView: View {
     private func iconButton(
         systemImage: String,
         help: String,
-        role: ButtonRole? = nil,
         disabled: Bool = false,
         action: @escaping () -> Void
     ) -> some View {
-        Button(role: role, action: action) {
-            Image(systemName: systemImage)
-                .frame(width: 22, height: 22)
-                .contentShape(Rectangle())
+        Button(action: action) {
+            Label(help, systemImage: systemImage)
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(role == .destructive ? .red : .secondary)
         .disabled(disabled)
         .help(help)
         .accessibilityLabel(Text(help))
