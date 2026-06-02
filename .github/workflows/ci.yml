@@ -6,7 +6,7 @@ on:
 jobs:
   build-test-package:
     name: Build, Test, Package
-    runs-on: macos-latest
+    runs-on: macos-26
     timeout-minutes: 20
 
     steps:
