@@ -95,7 +95,7 @@ struct InteractiveTerminalPreferenceControl: View {
                 TerminalApplicationIcon(
                     app: option.app,
                     applicationPath: applicationPath(for: option),
-                    size: 10
+                    size: 13
                 )
             }
             .tag(option.app)
