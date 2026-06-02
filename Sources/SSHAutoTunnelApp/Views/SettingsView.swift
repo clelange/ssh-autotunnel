@@ -535,32 +535,50 @@ struct PACRulesView: View {
 
                 Spacer(minLength: 8)
 
-                Button {
+                iconButton(
+                    systemImage: "chevron.up",
+                    help: "Move rule up",
+                    disabled: index == appState.configuration.pacRules.startIndex
+                ) {
                     moveRule(id: ruleID, by: -1)
-                } label: {
-                    Label("Move Up", systemImage: "chevron.up")
                 }
-                .disabled(index == appState.configuration.pacRules.startIndex)
-                .help("Move rule up")
 
-                Button {
+                iconButton(
+                    systemImage: "chevron.down",
+                    help: "Move rule down",
+                    disabled: index == appState.configuration.pacRules.index(before: appState.configuration.pacRules.endIndex)
+                ) {
                     moveRule(id: ruleID, by: 1)
-                } label: {
-                    Label("Move Down", systemImage: "chevron.down")
                 }
-                .disabled(index == appState.configuration.pacRules.index(before: appState.configuration.pacRules.endIndex))
-                .help("Move rule down")
 
-                Button(role: .destructive) {
+                iconButton(
+                    systemImage: "trash",
+                    help: "Delete rule",
+                    role: .destructive
+                ) {
                     deleteRule(id: ruleID)
-                } label: {
-                    Label("Delete Rule", systemImage: "trash")
                 }
-                .help("Delete rule")
             }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
         }
+    }
+
+    private func iconButton(
+        systemImage: String,
+        help: String,
+        role: ButtonRole? = nil,
+        disabled: Bool = false,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: action) {
+            Image(systemName: systemImage)
+                .frame(width: 22, height: 22)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(role == .destructive ? .red : .secondary)
+        .disabled(disabled)
+        .help(help)
+        .accessibilityLabel(Text(help))
     }
 
     private func moveRules(from offsets: IndexSet, to destination: Int) {
