@@ -103,6 +103,27 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(decoded.accounts, [account])
     }
 
+    func testProfileOrderSurvivesEncodeDecode() throws {
+        let first = TunnelProfile(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            name: "First",
+            host: "first.example.org",
+            localSocksPort: 1200
+        )
+        let second = TunnelProfile(
+            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            name: "Second",
+            host: "second.example.org",
+            localSocksPort: 1201
+        )
+        let config = AppConfiguration(profiles: [second, first])
+
+        let data = try JSONEncoder().encode(config)
+        let decoded = try JSONDecoder().decode(AppConfiguration.self, from: data)
+
+        XCTAssertEqual(decoded.profiles.map(\.id), [second.id, first.id])
+    }
+
     func testDecodesLegacyProfileWithoutHostKeyPolicy() throws {
         let json = Data("""
         {

@@ -674,11 +674,23 @@ final class AppState: ObservableObject {
         return result
     }
 
-    func addGenericProfile() {
+    @discardableResult
+    func addGenericProfile() -> UUID {
         let profile = TunnelProfile(name: "New tunnel", host: "example.org", localSocksPort: nextFreeSocksPort())
         configuration.profiles.append(profile)
         configuration.pacRules.append(PACRule(name: profile.name, domainPattern: "*.example.org", profileID: profile.id))
         saveConfiguration()
+        return profile.id
+    }
+
+    func reorderProfiles(profileIDs: [UUID]) {
+        do {
+            configuration = try ProfileConfigurationEditor.reorderProfiles(profileIDs: profileIDs, in: configuration)
+            saveConfiguration()
+            lastProxyMessage = "Reordered profiles"
+        } catch {
+            lastProxyMessage = "Could not reorder profiles: \(error.localizedDescription)"
+        }
     }
 
     func deleteProfile(id: UUID, deleteKeychainItems: Bool = false) {

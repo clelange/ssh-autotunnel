@@ -39,6 +39,86 @@ final class ProfileConfigurationEditorTests: XCTestCase {
         XCTAssertEqual(updated.networkRules[0].profileID, existingID)
     }
 
+    func testReordersProfilesByExactIDListPreservingReferences() throws {
+        let first = TunnelProfile(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            name: "First",
+            host: "first.example.org",
+            localSocksPort: 1200
+        )
+        let second = TunnelProfile(
+            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            name: "Second",
+            host: "second.example.org",
+            localSocksPort: 1201
+        )
+        let third = TunnelProfile(
+            id: UUID(uuidString: "33333333-3333-3333-3333-333333333333")!,
+            name: "Third",
+            host: "third.example.org",
+            localSocksPort: 1202
+        )
+        let configuration = AppConfiguration(
+            profiles: [first, second, third],
+            pacRules: [
+                PACRule(name: "First", domainPattern: "*.first.example.org", profileID: first.id),
+                PACRule(name: "Third", domainPattern: "*.third.example.org", profileID: third.id)
+            ],
+            networkRules: [
+                NetworkPolicyRule(name: "Second", match: NetworkMatch(wifiSSID: "Office"), action: .disableProxy, profileID: second.id)
+            ]
+        )
+
+        let updated = try ProfileConfigurationEditor.reorderProfiles(
+            profileIDs: [third.id, first.id, second.id],
+            in: configuration
+        )
+
+        XCTAssertEqual(updated.profiles.map(\.id), [third.id, first.id, second.id])
+        XCTAssertEqual(updated.pacRules.map(\.profileID), [first.id, third.id])
+        XCTAssertEqual(updated.networkRules.map(\.profileID), [second.id])
+    }
+
+    func testReorderRejectsDuplicateProfileIDs() {
+        let first = TunnelProfile(name: "First", host: "first.example.org", localSocksPort: 1200)
+        let second = TunnelProfile(name: "Second", host: "second.example.org", localSocksPort: 1201)
+        let configuration = AppConfiguration(profiles: [first, second])
+
+        XCTAssertThrowsError(try ProfileConfigurationEditor.reorderProfiles(profileIDs: [first.id, first.id], in: configuration)) { error in
+            guard case .invalidProfileOrder(let reason) = error as? ProfileConfigurationEditorError else {
+                return XCTFail("Expected invalid profile order error, got \(error)")
+            }
+            XCTAssertTrue(reason.contains("duplicate profile id"))
+        }
+    }
+
+    func testReorderRejectsUnknownProfileIDs() {
+        let first = TunnelProfile(name: "First", host: "first.example.org", localSocksPort: 1200)
+        let second = TunnelProfile(name: "Second", host: "second.example.org", localSocksPort: 1201)
+        let unknownID = UUID()
+        let configuration = AppConfiguration(profiles: [first, second])
+
+        XCTAssertThrowsError(try ProfileConfigurationEditor.reorderProfiles(profileIDs: [first.id, unknownID], in: configuration)) { error in
+            guard case .invalidProfileOrder(let reason) = error as? ProfileConfigurationEditorError else {
+                return XCTFail("Expected invalid profile order error, got \(error)")
+            }
+            XCTAssertTrue(reason.contains("unknown profile id"))
+        }
+    }
+
+    func testReorderRejectsMissingProfileIDs() {
+        let first = TunnelProfile(name: "First", host: "first.example.org", localSocksPort: 1200)
+        let second = TunnelProfile(name: "Second", host: "second.example.org", localSocksPort: 1201)
+        let configuration = AppConfiguration(profiles: [first, second])
+
+        XCTAssertThrowsError(try ProfileConfigurationEditor.reorderProfiles(profileIDs: [first.id], in: configuration)) { error in
+            guard case .invalidProfileOrder(let reason) = error as? ProfileConfigurationEditorError else {
+                return XCTFail("Expected invalid profile order error, got \(error)")
+            }
+            XCTAssertTrue(reason.contains("missing profile id"))
+        }
+    }
+
     func testDeleteRemovesProfileAndDependentRules() throws {
         let keep = TunnelProfile(name: "Keep", host: "keep.example.org", localSocksPort: 1200)
         let remove = TunnelProfile(name: "Remove", host: "remove.example.org", localSocksPort: 1201)

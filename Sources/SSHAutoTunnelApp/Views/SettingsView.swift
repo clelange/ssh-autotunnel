@@ -6,40 +6,58 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @State private var selectedProfileID: UUID?
+    @State private var sidebarDeleteCandidates: [TunnelProfile] = []
 
     var body: some View {
         NavigationSplitView {
-            List(selection: $selectedProfileID) {
-                Section("Profiles") {
-                    ForEach(appState.configuration.profiles) { profile in
-                        Label(profile.name, systemImage: "server.rack")
-                            .tag(profile.id)
-                    }
-                    .onDelete { offsets in
-                        let deletedIDs = Set(offsets.map { appState.configuration.profiles[$0].id })
-                        appState.deleteProfiles(at: offsets)
-                        if let selectedProfileID, deletedIDs.contains(selectedProfileID) {
-                            self.selectedProfileID = appState.configuration.profiles.first?.id
+            VStack(spacing: 0) {
+                List(selection: $selectedProfileID) {
+                    Section("Profiles") {
+                        ForEach(appState.configuration.profiles) { profile in
+                            Label(profile.name, systemImage: "server.rack")
+                                .tag(profile.id)
+                        }
+                        .onMove(perform: moveProfiles)
+                        .onDelete { offsets in
+                            sidebarDeleteCandidates = offsets
+                                .sorted()
+                                .compactMap { appState.configuration.profiles.indices.contains($0) ? appState.configuration.profiles[$0] : nil }
                         }
                     }
                 }
+                .listStyle(.sidebar)
+
+                Divider()
+                profileControlBar
             }
-            .listStyle(.sidebar)
-            .toolbar {
-                Button {
-                    appState.addGenericProfile()
-                    selectedProfileID = appState.configuration.profiles.last?.id
-                } label: {
-                    Label("Add Profile", systemImage: "plus")
+            .confirmationDialog(
+                sidebarDeleteConfirmationTitle,
+                isPresented: Binding(
+                    get: { !sidebarDeleteCandidates.isEmpty },
+                    set: { isPresented in
+                        if !isPresented {
+                            sidebarDeleteCandidates = []
+                        }
+                    }
+                ),
+                titleVisibility: .visible
+            ) {
+                Button("Delete Profile", role: .destructive) {
+                    confirmSidebarDelete(deleteKeychainItems: false)
                 }
-                .help("Create a new profile")
+                Button("Delete Profile and Keychain Items", role: .destructive) {
+                    confirmSidebarDelete(deleteKeychainItems: true)
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Keychain cleanup removes configured password and TOTP items only when no remaining profile references the same service and account.")
             }
         } detail: {
             TabView {
                 if let selectedProfileID, appState.configuration.profiles.contains(where: { $0.id == selectedProfileID }) {
-                    ProfileEditorView(profileID: selectedProfileID) { deletedProfileID in
+                    ProfileEditorView(profileID: selectedProfileID) { deletedProfileID, originalIndex in
                         if selectedProfileID == deletedProfileID {
-                            self.selectedProfileID = appState.configuration.profiles.first?.id
+                            selectNearestProfile(afterDeletingFromOriginalIndex: originalIndex)
                         }
                     }
                         .tabItem { Label("Profile", systemImage: "server.rack") }
@@ -63,12 +81,147 @@ struct SettingsView: View {
             selectedProfileID = selectedProfileID ?? appState.configuration.profiles.first?.id
         }
     }
+
+    private var selectedProfileIndex: Int? {
+        guard let selectedProfileID else { return nil }
+        return appState.configuration.profiles.firstIndex { $0.id == selectedProfileID }
+    }
+
+    private var selectedProfile: TunnelProfile? {
+        guard let selectedProfileIndex else { return nil }
+        return appState.configuration.profiles[selectedProfileIndex]
+    }
+
+    private var canMoveSelectedProfileUp: Bool {
+        guard let selectedProfileIndex else { return false }
+        return selectedProfileIndex > 0
+    }
+
+    private var canMoveSelectedProfileDown: Bool {
+        guard let selectedProfileIndex else { return false }
+        return selectedProfileIndex < appState.configuration.profiles.count - 1
+    }
+
+    private var sidebarDeleteConfirmationTitle: String {
+        if sidebarDeleteCandidates.count == 1, let profile = sidebarDeleteCandidates.first {
+            return "Delete \(profile.name)?"
+        }
+        return "Delete \(sidebarDeleteCandidates.count) Profiles?"
+    }
+
+    private var profileControlBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                let profileID = appState.addGenericProfile()
+                selectedProfileID = profileID
+            } label: {
+                Label("Add Profile", systemImage: "plus")
+            }
+            .help("Create a new profile")
+
+            Button(role: .destructive) {
+                if let selectedProfile {
+                    sidebarDeleteCandidates = [selectedProfile]
+                }
+            } label: {
+                Label("Delete Profile", systemImage: "trash")
+            }
+            .disabled(selectedProfile == nil)
+            .help("Delete the selected profile")
+
+            Spacer()
+
+            Button {
+                moveSelectedProfile(by: -1)
+            } label: {
+                Label("Move Up", systemImage: "chevron.up")
+            }
+            .disabled(!canMoveSelectedProfileUp)
+            .help("Move the selected profile up")
+
+            Button {
+                moveSelectedProfile(by: 1)
+            } label: {
+                Label("Move Down", systemImage: "chevron.down")
+            }
+            .disabled(!canMoveSelectedProfileDown)
+            .help("Move the selected profile down")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
+    private func moveProfiles(from offsets: IndexSet, to destination: Int) {
+        var profileIDs = appState.configuration.profiles.map(\.id)
+        profileIDs.move(fromOffsets: offsets, toOffset: destination)
+        appState.reorderProfiles(profileIDs: profileIDs)
+    }
+
+    private func moveSelectedProfile(by distance: Int) {
+        guard let selectedProfileID, let index = selectedProfileIndex else { return }
+        let newIndex = index + distance
+        guard appState.configuration.profiles.indices.contains(newIndex) else { return }
+
+        var profileIDs = appState.configuration.profiles.map(\.id)
+        profileIDs.remove(at: index)
+        profileIDs.insert(selectedProfileID, at: newIndex)
+        appState.reorderProfiles(profileIDs: profileIDs)
+        self.selectedProfileID = selectedProfileID
+    }
+
+    private func confirmSidebarDelete(deleteKeychainItems: Bool) {
+        let deletingIDs = sidebarDeleteCandidates.map(\.id)
+        let nextSelection = nearestSelectionAfterDeleting(ids: deletingIDs)
+        let deletingIDSet = Set(deletingIDs)
+        let offsets = IndexSet(appState.configuration.profiles.indices.filter { deletingIDSet.contains(appState.configuration.profiles[$0].id) })
+        sidebarDeleteCandidates = []
+        guard !offsets.isEmpty else { return }
+
+        appState.deleteProfiles(at: offsets, deleteKeychainItems: deleteKeychainItems)
+        selectedProfileID = nextSelection
+    }
+
+    private func nearestSelectionAfterDeleting(ids deletingIDs: [UUID]) -> UUID? {
+        let deletingIDSet = Set(deletingIDs)
+        let profiles = appState.configuration.profiles
+        if let selectedProfileID,
+           !deletingIDSet.contains(selectedProfileID),
+           profiles.contains(where: { $0.id == selectedProfileID }) {
+            return selectedProfileID
+        }
+
+        let targetIndex = selectedProfileID
+            .flatMap { id in profiles.firstIndex { $0.id == id } }
+            ?? deletingIDs.compactMap { id in profiles.firstIndex { $0.id == id } }.min()
+        let remainingProfiles = profiles.enumerated().filter { !deletingIDSet.contains($0.element.id) }
+        guard !remainingProfiles.isEmpty else { return nil }
+        guard let targetIndex else { return remainingProfiles.first?.element.id }
+
+        return remainingProfiles.first { $0.offset > targetIndex }?.element.id
+            ?? remainingProfiles.last?.element.id
+    }
+
+    private func selectNearestProfile(afterDeletingFromOriginalIndex originalIndex: Int?) {
+        guard !appState.configuration.profiles.isEmpty else {
+            selectedProfileID = nil
+            return
+        }
+        guard let originalIndex else {
+            selectedProfileID = appState.configuration.profiles.first?.id
+            return
+        }
+
+        let replacementIndex = min(originalIndex, appState.configuration.profiles.count - 1)
+        selectedProfileID = appState.configuration.profiles[replacementIndex].id
+    }
 }
 
 struct ProfileEditorView: View {
     @EnvironmentObject private var appState: AppState
     let profileID: UUID
-    var onDelete: (UUID) -> Void = { _ in }
+    var onDelete: (UUID, Int?) -> Void = { _, _ in }
     @State private var passwordSecret = ""
     @State private var totpSecret = ""
     @State private var secretMessage = ""
@@ -211,9 +364,10 @@ struct ProfileEditorView: View {
 
     private func confirmDelete(deleteKeychainItems: Bool) {
         guard let candidate = deleteCandidate else { return }
+        let originalIndex = appState.configuration.profiles.firstIndex { $0.id == candidate.id }
         deleteCandidate = nil
         appState.deleteProfile(id: candidate.id, deleteKeychainItems: deleteKeychainItems)
-        onDelete(candidate.id)
+        onDelete(candidate.id, originalIndex)
     }
 
     private func binding<T>(_ index: Int, _ keyPath: WritableKeyPath<TunnelProfile, T>) -> Binding<T> {
