@@ -3,7 +3,7 @@ import XCTest
 @testable import SSHAutoTunnelCore
 
 final class SSHConfigSetupServiceTests: XCTestCase {
-    func testManagedSnippetIncludesJumpHostAndFinalHosts() {
+    func testManagedSnippetIncludesJumpHostAndFinalHosts() throws {
         let profile = TunnelProfile(
             name: "PSI CMS Tier-3",
             host: "t3ui07.psi.ch",
@@ -13,7 +13,7 @@ final class SSHConfigSetupServiceTests: XCTestCase {
             jumpHost: "lange_c@t3hop01.psi.ch",
             keychain: KeychainReference(account: "lange_c")
         )
-        let snippet = SSHConfigSetupService.managedSnippet(for: AppConfiguration(profiles: [profile]))
+        let snippet = try SSHConfigSetupService.managedSnippet(for: AppConfiguration(profiles: [profile]))
 
         XCTAssertTrue(snippet.contains("Host t3hop01.psi.ch"))
         XCTAssertTrue(snippet.contains("  User lange_c"))
@@ -88,6 +88,21 @@ final class SSHConfigSetupServiceTests: XCTestCase {
         XCTAssertFalse(second.wroteManagedConfig)
         XCTAssertFalse(second.updatedMainConfig)
         XCTAssertNil(second.backupURL)
+    }
+
+    func testManagedSnippetRejectsUnsafeOpenSSHConfigFields() {
+        let profile = TunnelProfile(
+            name: "Bad",
+            host: "bad host.example.org",
+            user: "alice",
+            localSocksPort: 1082,
+            jumpHost: "alice@t3hop01.psi.ch",
+            keychain: KeychainReference(account: "alice")
+        )
+
+        XCTAssertThrowsError(try SSHConfigSetupService.managedSnippet(for: AppConfiguration(profiles: [profile]))) { error in
+            XCTAssertEqual(error as? SSHConfigSetupError, .unsafeField("Profile 'Bad' host"))
+        }
     }
 
     private func temporaryDirectory() throws -> URL {

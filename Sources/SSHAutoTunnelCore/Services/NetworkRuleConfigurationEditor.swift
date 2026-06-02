@@ -22,6 +22,7 @@ public enum NetworkRuleConfigurationEditorError: LocalizedError, Equatable, Send
 
 public enum NetworkRuleConfigurationEditor {
     public static func create(rule: NetworkPolicyRule, in configuration: AppConfiguration) throws -> AppConfiguration {
+        try ConfigurationContentValidator.validate(networkRule: rule)
         guard !configuration.networkRules.contains(where: { $0.id == rule.id }) else {
             throw NetworkRuleConfigurationEditorError.duplicateRuleID(rule.id)
         }
@@ -41,6 +42,7 @@ public enum NetworkRuleConfigurationEditor {
         guard let index = ruleIndex(id: ruleID ?? rule.id, name: ruleName, in: configuration) else {
             throw NetworkRuleConfigurationEditorError.ruleNotFound
         }
+        try ConfigurationContentValidator.validate(networkRule: rule)
         try validateProfileReference(rule.profileID, in: configuration)
 
         var updated = configuration

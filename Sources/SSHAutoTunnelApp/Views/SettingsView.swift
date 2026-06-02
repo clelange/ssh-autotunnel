@@ -656,7 +656,13 @@ struct NetworkRulesView: View {
                     appState.saveConfiguration()
                 }
                 Button("Add Network Rule") {
-                    appState.configuration.networkRules.append(NetworkPolicyRule(name: "Trusted network", match: NetworkMatch(), action: .disableProxy))
+                    appState.configuration.networkRules.append(
+                        NetworkPolicyRule(
+                            name: "Trusted network",
+                            match: NetworkMatch(searchDomainContains: "example.org"),
+                            action: .disableProxy
+                        )
+                    )
                     appState.saveConfiguration()
                 }
             }
@@ -808,7 +814,7 @@ struct AppPreferencesView: View {
                         .help("Install managed SSH include configuration")
                     }
                     ScrollView {
-                        Text(appState.managedSSHConfigSnippet())
+                        Text(managedSSHConfigPreview())
                             .font(.caption.monospaced())
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .textSelection(.enabled)
@@ -917,9 +923,14 @@ struct AppPreferencesView: View {
     }
 
     private func copyManagedSSHConfigSnippet() {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(appState.managedSSHConfigSnippet(), forType: .string)
-        sshConfigMessage = "Copied managed OpenSSH config snippet"
+        do {
+            let snippet = try appState.managedSSHConfigSnippet()
+            NSPasteboard.general.clearContents()
+            NSPasteboard.general.setString(snippet, forType: .string)
+            sshConfigMessage = "Copied managed OpenSSH config snippet"
+        } catch {
+            sshConfigMessage = "Could not copy managed OpenSSH config: \(error.localizedDescription)"
+        }
     }
 
     private func installManagedSSHConfig() {
@@ -930,6 +941,14 @@ struct AppPreferencesView: View {
             sshConfigMessage = "Installed \(result.managedConfigURL.path), \(includeStatus).\(backupStatus)"
         } catch {
             sshConfigMessage = "Could not install managed OpenSSH config: \(error.localizedDescription)"
+        }
+    }
+
+    private func managedSSHConfigPreview() -> String {
+        do {
+            return try appState.managedSSHConfigSnippet()
+        } catch {
+            return "Could not render managed OpenSSH config: \(error.localizedDescription)"
         }
     }
 
@@ -1029,17 +1048,19 @@ struct AppPreferencesView: View {
     }
 
     private func validationMessage(_ report: ConfigurationValidationReport) -> String {
+        let warningSuffix = report.warnings.isEmpty ? "" : " Warnings: \(report.warnings.joined(separator: "; "))"
         if report.ok {
-            return "Configuration is valid: \(report.profileCount) profiles, \(report.pacRuleCount) PAC rules, \(report.networkRuleCount) network rules"
+            return "Configuration is valid: \(report.profileCount) profiles, \(report.pacRuleCount) PAC rules, \(report.networkRuleCount) network rules.\(warningSuffix)"
         }
         let details = report.messages.isEmpty ? report.message : report.messages.joined(separator: "; ")
-        return "Configuration is invalid: \(details)"
+        return "Configuration is invalid: \(details).\(warningSuffix)"
     }
 
     private func confirmImport(_ report: ConfigurationValidationReport) -> Bool {
         let alert = NSAlert()
         alert.messageText = "Import Configuration?"
-        alert.informativeText = "This will replace the current profiles and rules with \(report.profileCount) profiles, \(report.pacRuleCount) PAC rules, and \(report.networkRuleCount) network rules. A private pre-import backup will be created first."
+        let warningText = report.warnings.isEmpty ? "" : "\n\nWarnings:\n\(report.warnings.joined(separator: "\n"))"
+        alert.informativeText = "This will replace the current profiles and rules with \(report.profileCount) profiles, \(report.pacRuleCount) PAC rules, and \(report.networkRuleCount) network rules. A private pre-import backup will be created first.\(warningText)"
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Import")
         alert.addButton(withTitle: "Cancel")

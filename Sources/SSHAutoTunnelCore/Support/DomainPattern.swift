@@ -21,9 +21,19 @@ public enum DomainPattern {
     }
 
     public static func pacExpression(for pattern: String) -> String {
-        let escaped = pattern
-            .replacingOccurrences(of: "\\", with: "\\\\")
-            .replacingOccurrences(of: "\"", with: "\\\"")
-        return "shExpMatch(host, \"\(escaped)\")"
+        "shExpMatch(host, \(JavaScriptStringLiteral.encode(pattern)))"
+    }
+}
+
+enum JavaScriptStringLiteral {
+    static func encode(_ value: String) -> String {
+        if let data = try? JSONEncoder().encode(value),
+           var encoded = String(data: data, encoding: .utf8) {
+            encoded = encoded
+                .replacingOccurrences(of: "\u{2028}", with: "\\u2028")
+                .replacingOccurrences(of: "\u{2029}", with: "\\u2029")
+            return encoded
+        }
+        return "\"\""
     }
 }

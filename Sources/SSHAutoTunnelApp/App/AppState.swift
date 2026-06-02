@@ -435,6 +435,7 @@ final class AppState: ObservableObject {
         pendingConfigurationSaveTask?.cancel()
         pendingConfigurationSaveTask = nil
         do {
+            try ConfigurationContentValidator.validate(configuration)
             try PortConfigurationValidator.validate(configuration)
             let didRestartServers = try restartLocalServersIfNeeded()
             try configurationStore.save(configuration)
@@ -455,6 +456,9 @@ final class AppState: ObservableObject {
                 lastProxyMessage = "Local servers restarted: PAC \(activeServerPorts.pacHTTPPort), API \(activeServerPorts.apiHTTPPort), blocking proxy \(activeServerPorts.blockingHTTPProxyPort)"
             }
         } catch let error as PortConfigurationError {
+            configurationValidationMessage = error.localizedDescription
+            lastProxyMessage = error.localizedDescription
+        } catch let error as ConfigurationContentValidationError {
             configurationValidationMessage = error.localizedDescription
             lastProxyMessage = error.localizedDescription
         } catch {
@@ -707,8 +711,8 @@ final class AppState: ObservableObject {
         return result
     }
 
-    func managedSSHConfigSnippet() -> String {
-        SSHConfigSetupService.managedSnippet(for: configuration)
+    func managedSSHConfigSnippet() throws -> String {
+        try SSHConfigSetupService.managedSnippet(for: configuration)
     }
 
     @discardableResult

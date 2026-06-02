@@ -22,6 +22,7 @@ public enum ProfileConfigurationEditorError: LocalizedError, Equatable, Sendable
 
 public enum ProfileConfigurationEditor {
     public static func create(profile: TunnelProfile, in configuration: AppConfiguration) throws -> AppConfiguration {
+        try ConfigurationContentValidator.validate(profile: profile)
         guard !configuration.profiles.contains(where: { $0.id == profile.id }) else {
             throw ProfileConfigurationEditorError.duplicateProfileID(profile.id)
         }
@@ -41,6 +42,7 @@ public enum ProfileConfigurationEditor {
         guard let index = profileIndex(id: profileID ?? profile.id, name: profileName, in: configuration) else {
             throw ProfileConfigurationEditorError.profileNotFound
         }
+        try ConfigurationContentValidator.validate(profile: profile)
 
         var updated = configuration
         var replacement = profile

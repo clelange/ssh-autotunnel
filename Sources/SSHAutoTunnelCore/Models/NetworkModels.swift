@@ -78,6 +78,15 @@ public struct NetworkMatch: Codable, Equatable, Sendable {
         if let vpnRequired, fingerprint.hasVPNInterface != vpnRequired { return false }
         return true
     }
+
+    public var isEmpty: Bool {
+        wifiSSID?.nonEmptyTrimmed == nil
+            && wifiBSSID?.nonEmptyTrimmed == nil
+            && serviceNameContains?.nonEmptyTrimmed == nil
+            && searchDomainContains?.nonEmptyTrimmed == nil
+            && gateway?.nonEmptyTrimmed == nil
+            && vpnRequired == nil
+    }
 }
 
 public struct NetworkPolicyRule: Identifiable, Codable, Equatable, Sendable {

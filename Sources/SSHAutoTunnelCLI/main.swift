@@ -228,6 +228,9 @@ struct SSHAutoTunnelCLI {
             for message in validation.messages {
                 print("- \(message)")
             }
+            for warning in validation.warnings {
+                print("- Warning: \(warning)")
+            }
         }
     }
 

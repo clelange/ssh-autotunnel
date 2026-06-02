@@ -123,14 +123,26 @@ public struct ConfigurationValidationReport: Codable, Equatable, Sendable {
     public var ok: Bool
     public var message: String
     public var messages: [String]
+    public var warnings: [String]
     public var profileCount: Int
     public var pacRuleCount: Int
     public var networkRuleCount: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case ok
+        case message
+        case messages
+        case warnings
+        case profileCount
+        case pacRuleCount
+        case networkRuleCount
+    }
 
     public init(
         ok: Bool,
         message: String,
         messages: [String] = [],
+        warnings: [String] = [],
         profileCount: Int,
         pacRuleCount: Int,
         networkRuleCount: Int
@@ -138,8 +150,20 @@ public struct ConfigurationValidationReport: Codable, Equatable, Sendable {
         self.ok = ok
         self.message = message
         self.messages = messages
+        self.warnings = warnings
         self.profileCount = profileCount
         self.pacRuleCount = pacRuleCount
         self.networkRuleCount = networkRuleCount
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        ok = try container.decode(Bool.self, forKey: .ok)
+        message = try container.decode(String.self, forKey: .message)
+        messages = try container.decodeIfPresent([String].self, forKey: .messages) ?? []
+        warnings = try container.decodeIfPresent([String].self, forKey: .warnings) ?? []
+        profileCount = try container.decode(Int.self, forKey: .profileCount)
+        pacRuleCount = try container.decode(Int.self, forKey: .pacRuleCount)
+        networkRuleCount = try container.decode(Int.self, forKey: .networkRuleCount)
     }
 }

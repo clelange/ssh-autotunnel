@@ -22,6 +22,7 @@ public enum PACRuleConfigurationEditorError: LocalizedError, Equatable, Sendable
 
 public enum PACRuleConfigurationEditor {
     public static func create(rule: PACRule, in configuration: AppConfiguration) throws -> AppConfiguration {
+        try ConfigurationContentValidator.validate(pacRule: rule)
         guard !configuration.pacRules.contains(where: { $0.id == rule.id }) else {
             throw PACRuleConfigurationEditorError.duplicateRuleID(rule.id)
         }
@@ -41,6 +42,7 @@ public enum PACRuleConfigurationEditor {
         guard let index = ruleIndex(id: ruleID ?? rule.id, name: ruleName, in: configuration) else {
             throw PACRuleConfigurationEditorError.ruleNotFound
         }
+        try ConfigurationContentValidator.validate(pacRule: rule)
         try validateProfileReference(rule.profileID, in: configuration)
 
         var updated = configuration

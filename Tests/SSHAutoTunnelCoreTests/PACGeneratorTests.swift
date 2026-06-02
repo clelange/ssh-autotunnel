@@ -152,4 +152,19 @@ final class PACGeneratorTests: XCTestCase {
         let docsRange = try XCTUnwrap(pac.range(of: #"shExpMatch(host, "*.docs.cern.ch")"#))
         XCTAssertLessThan(broadRange.lowerBound, docsRange.lowerBound)
     }
+
+    func testDomainPatternIsEmittedAsSafeJavaScriptStringLiteral() {
+        let profile = TunnelProfile(name: "Test", host: "ssh.example.org", localSocksPort: 1088)
+        let pattern = "*.example.\"quoted\"\\path\u{2028}"
+        let rule = PACRule(name: "Quoted", domainPattern: pattern, profileID: profile.id)
+        let config = AppConfiguration(profiles: [profile], pacRules: [rule])
+
+        let pac = PACGenerator.generate(context: PACGenerationContext(
+            configuration: config,
+            statuses: [profile.id: TunnelRuntimeStatus(profileID: profile.id, health: .healthy)]
+        ))
+
+        XCTAssertTrue(pac.contains(#"shExpMatch(host, "*.example.\"quoted\"\\path\u2028")"#))
+        XCTAssertFalse(pac.contains(pattern))
+    }
 }

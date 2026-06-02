@@ -25,15 +25,30 @@ public struct SSHConfigInstallResult: Equatable, Sendable {
     }
 }
 
+public enum SSHConfigSetupError: LocalizedError, Equatable, Sendable {
+    case noJumpHostProfiles
+    case unsafeField(String)
+
+    public var errorDescription: String? {
+        switch self {
+        case .noJumpHostProfiles:
+            "No jump-host profiles are configured"
+        case .unsafeField(let label):
+            "\(label) cannot be represented safely in OpenSSH config"
+        }
+    }
+}
+
 public enum SSHConfigSetupService {
     public static let managedIncludeStart = "# SSH AutoTunnel managed include"
     public static let managedIncludeEnd = "# End SSH AutoTunnel managed include"
     public static let managedConfigRelativePath = "config.d/ssh-autotunnel.conf"
 
-    public static func managedSnippet(for configuration: AppConfiguration) -> String {
+    public static func managedSnippet(for configuration: AppConfiguration) throws -> String {
         let profiles = configuration.profiles
             .filter { normalizedJumpHost($0.jumpHost) != nil }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
+        try validateManagedConfigFields(profiles)
         guard !profiles.isEmpty else {
             return [
                 "# SSH AutoTunnel managed SSH config",
@@ -101,10 +116,10 @@ public enum SSHConfigSetupService {
         sshDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh", isDirectory: true),
         now: Date = Date()
     ) throws -> SSHConfigInstallResult {
-        let snippet = managedSnippet(for: configuration)
+        let snippet = try managedSnippet(for: configuration)
         let profileCount = configuration.profiles.filter { normalizedJumpHost($0.jumpHost) != nil }.count
         guard profileCount > 0 else {
-            throw NSError(domain: "SSHConfigSetupService", code: 1, userInfo: [NSLocalizedDescriptionKey: "No jump-host profiles are configured"])
+            throw SSHConfigSetupError.noJumpHostProfiles
         }
 
         let fileManager = FileManager.default
@@ -195,6 +210,51 @@ public enum SSHConfigSetupService {
             hosts.append(interactiveHost)
         }
         return Array(Set(hosts.compactMap(normalizedValue))).sorted()
+    }
+
+    private static func validateManagedConfigFields(_ profiles: [TunnelProfile]) throws {
+        for profile in profiles {
+            if containsOpenSSHConfigUnsafeCharacters(profile.host) {
+                throw SSHConfigSetupError.unsafeField("Profile '\(profile.name)' host")
+            }
+            if let interactiveHost = normalizedValue(profile.interactiveHost),
+               containsOpenSSHConfigUnsafeCharacters(interactiveHost) {
+                throw SSHConfigSetupError.unsafeField("Profile '\(profile.name)' interactive host")
+            }
+            if let user = normalizedValue(profile.user),
+               containsOpenSSHConfigUnsafeCharacters(user) {
+                throw SSHConfigSetupError.unsafeField("Profile '\(profile.name)' user")
+            }
+            if containsOpenSSHConfigUnsafeCharacters(profile.keychain.account) {
+                throw SSHConfigSetupError.unsafeField("Profile '\(profile.name)' Keychain account")
+            }
+            if let jumpHost = normalizedJumpHost(profile.jumpHost) {
+                try validateProxyJumpTarget(jumpHost, profileName: profile.name)
+            }
+        }
+    }
+
+    private static func validateProxyJumpTarget(_ value: String, profileName: String) throws {
+        let parts = value.split(separator: "@", maxSplits: 1).map(String.init)
+        if parts.count == 2 {
+            if containsOpenSSHConfigUnsafeCharacters(parts[0]) {
+                throw SSHConfigSetupError.unsafeField("Profile '\(profileName)' jump host user")
+            }
+            if containsOpenSSHConfigUnsafeCharacters(parts[1]) {
+                throw SSHConfigSetupError.unsafeField("Profile '\(profileName)' jump host")
+            }
+        } else if containsOpenSSHConfigUnsafeCharacters(value) {
+            throw SSHConfigSetupError.unsafeField("Profile '\(profileName)' jump host")
+        }
+    }
+
+    private static func containsOpenSSHConfigUnsafeCharacters(_ value: String) -> Bool {
+        value.unicodeScalars.contains { scalar in
+            CharacterSet.whitespacesAndNewlines.contains(scalar)
+                || CharacterSet.controlCharacters.contains(scalar)
+                || scalar.value == 0x2028
+                || scalar.value == 0x2029
+        }
     }
 
     private static func normalizedJumpHost(_ value: String?) -> String? {

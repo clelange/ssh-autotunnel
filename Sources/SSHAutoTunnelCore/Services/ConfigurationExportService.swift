@@ -87,6 +87,7 @@ public enum ConfigurationExportService {
             pacAppendSource: export.pacAppendSource,
             interactiveTerminal: export.interactiveTerminal
         )
+        try ConfigurationContentValidator.validate(imported)
         try PortConfigurationValidator.validate(imported)
         return imported
     }
@@ -96,28 +97,34 @@ public enum ConfigurationExportService {
         preservingLocalValuesFrom currentConfiguration: AppConfiguration
     ) -> ConfigurationValidationReport {
         do {
-            _ = try importConfiguration(from: export, preservingLocalValuesFrom: currentConfiguration)
+            let imported = try importConfiguration(from: export, preservingLocalValuesFrom: currentConfiguration)
+            let warnings = ConfigurationContentValidator.warnings(for: imported)
             return ConfigurationValidationReport(
                 ok: true,
-                message: "Configuration export is valid",
+                message: warnings.isEmpty ? "Configuration export is valid" : "Configuration export is valid with warnings",
+                warnings: warnings,
                 profileCount: export.profiles.count,
                 pacRuleCount: export.pacRules.count,
                 networkRuleCount: export.networkRules.count
             )
         } catch let error as PortConfigurationError {
+            let warnings = ConfigurationContentValidator.warnings(for: export.asConfiguration(preservingLocalValuesFrom: currentConfiguration))
             return ConfigurationValidationReport(
                 ok: false,
                 message: error.localizedDescription,
                 messages: error.messages,
+                warnings: warnings,
                 profileCount: export.profiles.count,
                 pacRuleCount: export.pacRules.count,
                 networkRuleCount: export.networkRules.count
             )
         } catch {
+            let warnings = ConfigurationContentValidator.warnings(for: export.asConfiguration(preservingLocalValuesFrom: currentConfiguration))
             return ConfigurationValidationReport(
                 ok: false,
                 message: error.localizedDescription,
                 messages: [error.localizedDescription],
+                warnings: warnings,
                 profileCount: export.profiles.count,
                 pacRuleCount: export.pacRules.count,
                 networkRuleCount: export.networkRules.count
@@ -196,5 +203,23 @@ public enum ConfigurationExportService {
             return path
         }
         return path.replacingOccurrences(of: homeDirectoryPath, with: "~")
+    }
+}
+
+private extension ConfigurationExport {
+    func asConfiguration(preservingLocalValuesFrom currentConfiguration: AppConfiguration) -> AppConfiguration {
+        AppConfiguration(
+            accounts: accounts,
+            profiles: profiles,
+            pacRules: pacRules,
+            networkRules: networkRules,
+            pacHTTPPort: pacHTTPPort,
+            blockingHTTPProxyPort: blockingHTTPProxyPort,
+            apiHTTPPort: apiHTTPPort,
+            apiToken: currentConfiguration.apiToken,
+            proxyApplyMode: proxyApplyMode,
+            pacAppendSource: pacAppendSource,
+            interactiveTerminal: interactiveTerminal
+        )
     }
 }
