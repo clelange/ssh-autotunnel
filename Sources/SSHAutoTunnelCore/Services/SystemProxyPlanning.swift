@@ -42,9 +42,56 @@ public enum NetworkSetupParser {
         return nil
     }
 
+    public static func serviceName(forDevice device: String, serviceOrderOutput: String) -> String? {
+        var currentServiceName: String?
+
+        for rawLine in serviceOrderOutput.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = rawLine.trimmingCharacters(in: .whitespaces)
+            if let serviceName = serviceName(inServiceOrderLine: line) {
+                currentServiceName = serviceName
+            } else if let currentDevice = serviceOrderDevice(in: line), currentDevice == device {
+                return currentServiceName
+            }
+        }
+
+        return nil
+    }
+
     private static func value(in line: String, after prefix: String) -> String? {
         guard line.hasPrefix(prefix) else { return nil }
         return String(line.dropFirst(prefix.count)).trimmingCharacters(in: .whitespaces)
+    }
+
+    private static func serviceName(inServiceOrderLine line: String) -> String? {
+        guard line.hasPrefix("("),
+              let markerEnd = line.firstIndex(of: ")") else {
+            return nil
+        }
+        let markerStart = line.index(after: line.startIndex)
+        let marker = line[markerStart..<markerEnd]
+            .replacingOccurrences(of: "*", with: "")
+            .trimmingCharacters(in: .whitespaces)
+        guard Int(marker) != nil else { return nil }
+
+        let nameStart = line.index(after: markerEnd)
+        let name = line[nameStart...]
+            .trimmingCharacters(in: .whitespaces)
+            .trimmingPrefix("*")
+            .trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? nil : name
+    }
+
+    private static func serviceOrderDevice(in line: String) -> String? {
+        guard line.hasPrefix("(Hardware Port:"),
+              let range = line.range(of: "Device:") else {
+            return nil
+        }
+        var device = line[range.upperBound...].trimmingCharacters(in: .whitespaces)
+        if device.hasSuffix(")") {
+            device.removeLast()
+        }
+        let trimmed = device.trimmingCharacters(in: .whitespaces)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

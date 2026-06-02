@@ -59,7 +59,7 @@ final class NetworkIdentityServiceTests: XCTestCase {
     func testCurrentFingerprintUsesInjectedCommandOutputs() {
         var calls: [String] = []
         let outputs: [String: ShellResult] = [
-            Self.key("/usr/sbin/route", ["-n", "get", "default"]): ShellResult(
+            Self.key("/sbin/route", ["-n", "get", "default"]): ShellResult(
                 exitCode: 0,
                 stdout: """
                     gateway: 192.168.1.1
@@ -67,12 +67,12 @@ final class NetworkIdentityServiceTests: XCTestCase {
                 """,
                 stderr: ""
             ),
-            Self.key("/usr/sbin/networksetup", ["-listallhardwareports"]): ShellResult(
+            Self.key("/usr/sbin/networksetup", ["-listnetworkserviceorder"]): ShellResult(
                 exitCode: 0,
                 stdout: """
-                Hardware Port: Wi-Fi
-                Device: en0
-                Ethernet Address: aa:bb:cc:dd:ee:ff
+                An asterisk (*) denotes that a network service is disabled.
+                (1) Office Wi-Fi
+                (Hardware Port: Wi-Fi, Device: en0)
                 """,
                 stderr: ""
             ),
@@ -108,7 +108,7 @@ final class NetworkIdentityServiceTests: XCTestCase {
         let fingerprint = service.currentFingerprint()
 
         XCTAssertEqual(fingerprint.interfaceName, "en0")
-        XCTAssertEqual(fingerprint.serviceName, "Wi-Fi")
+        XCTAssertEqual(fingerprint.serviceName, "Office Wi-Fi")
         XCTAssertEqual(fingerprint.wifiSSID, "CERN")
         XCTAssertEqual(fingerprint.wifiBSSID, "AA:BB:CC:DD:EE:FF")
         XCTAssertEqual(fingerprint.gateway, "192.168.1.1")
@@ -120,6 +120,46 @@ final class NetworkIdentityServiceTests: XCTestCase {
             Dictionary(grouping: calls, by: { $0 }).mapValues(\.count),
             outputs.mapValues { _ in 1 }
         )
+    }
+
+    func testCurrentFingerprintFallsBackToHardwarePortsWhenServiceOrderHasNoMatch() {
+        let outputs: [String: ShellResult] = [
+            Self.key("/sbin/route", ["-n", "get", "default"]): ShellResult(
+                exitCode: 0,
+                stdout: """
+                    gateway: 192.168.1.1
+                  interface: en0
+                """,
+                stderr: ""
+            ),
+            Self.key("/usr/sbin/networksetup", ["-listnetworkserviceorder"]): ShellResult(
+                exitCode: 0,
+                stdout: """
+                An asterisk (*) denotes that a network service is disabled.
+                (1) USB LAN
+                (Hardware Port: USB LAN, Device: en7)
+                """,
+                stderr: ""
+            ),
+            Self.key("/usr/sbin/networksetup", ["-listallhardwareports"]): ShellResult(
+                exitCode: 0,
+                stdout: """
+                Hardware Port: Wi-Fi
+                Device: en0
+                Ethernet Address: aa:bb:cc:dd:ee:ff
+                """,
+                stderr: ""
+            )
+        ]
+        let service = NetworkIdentityService(
+            commandRunner: { executable, arguments in
+                outputs[Self.key(executable, arguments)] ?? ShellResult(exitCode: 1, stdout: "", stderr: "missing fake output")
+            },
+            wifiSSIDProvider: { nil },
+            wifiBSSIDProvider: { nil }
+        )
+
+        XCTAssertEqual(service.currentFingerprint().serviceName, "Wi-Fi")
     }
 
     private static func key(_ executable: String, _ arguments: [String]) -> String {

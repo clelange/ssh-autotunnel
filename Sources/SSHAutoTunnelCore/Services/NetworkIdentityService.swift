@@ -79,7 +79,7 @@ public final class NetworkIdentityService {
     }
 
     public func currentFingerprint() -> NetworkFingerprint {
-        let routeOutput = successfulOutput("/usr/sbin/route", ["-n", "get", "default"])
+        let routeOutput = successfulOutput("/sbin/route", ["-n", "get", "default"])
         let scutilDNSOutput = successfulOutput("/usr/sbin/scutil", ["--dns"])
         let ifconfigOutput = successfulOutput("/sbin/ifconfig", [])
         let interfaceName = routeOutput.flatMap { NetworkIdentityParser.defaultInterface(routeOutput: $0) }
@@ -128,6 +128,10 @@ public final class NetworkIdentityService {
     }
 
     private func serviceName(forDevice device: String) -> String? {
+        if let output = successfulOutput("/usr/sbin/networksetup", ["-listnetworkserviceorder"]),
+           let serviceName = NetworkSetupParser.serviceName(forDevice: device, serviceOrderOutput: output) {
+            return serviceName
+        }
         guard let output = successfulOutput("/usr/sbin/networksetup", ["-listallhardwareports"]) else {
             return nil
         }

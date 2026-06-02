@@ -66,6 +66,7 @@
 - Made persisted system PAC snapshot load errors explicit during restore instead of silently ignoring them.
 - Changed persisted system PAC snapshots to a backward-compatible per-network-service archive so Wi-Fi, Ethernet, and VPN service restores do not overwrite each other.
 - Added explicit unified logging for system PAC restore failures during app termination.
+- Fixed System PAC active service detection on macOS 26 by using `/sbin/route` and resolving default interfaces through `networksetup -listnetworkserviceorder` before the hardware-port fallback.
 - Added a first-launch setup window with quick actions for `ssh-auto2fa` import, settings, PAC URL copy, and diagnostics.
 - Debounced SwiftUI edit-driven configuration saves while keeping explicit actions immediate.
 - Added tested `ssh-auto2fa` Keychain service inspection and surfaced it in setup and settings before preset import.
@@ -113,7 +114,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the main-window and hop-workflow update, the core test suite has 226 XCTest cases.
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the System PAC service-detection fix, the core test suite has 258 XCTest cases.
 
 ## Known Gaps
 

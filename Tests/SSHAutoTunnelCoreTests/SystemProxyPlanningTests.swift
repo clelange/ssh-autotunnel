@@ -60,6 +60,35 @@ final class SystemProxyPlanningTests: XCTestCase {
         )
     }
 
+    func testFindsServiceNameForDeviceFromNetworkServiceOrder() {
+        let output = """
+        An asterisk (*) denotes that a network service is disabled.
+        (1) USB 10/100/1000 LAN
+        (Hardware Port: USB 10/100/1000 LAN, Device: en8)
+
+        (2) Wi-Fi
+        (Hardware Port: Wi-Fi, Device: en0)
+        """
+
+        XCTAssertEqual(
+            NetworkSetupParser.serviceName(forDevice: "en8", serviceOrderOutput: output),
+            "USB 10/100/1000 LAN"
+        )
+    }
+
+    func testFindsDisabledServiceNameFromNetworkServiceOrder() {
+        let output = """
+        An asterisk (*) denotes that a network service is disabled.
+        (*3) *Lab Ethernet
+        (Hardware Port: Ethernet, Device: en5)
+        """
+
+        XCTAssertEqual(
+            NetworkSetupParser.serviceName(forDevice: "en5", serviceOrderOutput: output),
+            "Lab Ethernet"
+        )
+    }
+
     func testReturnsNilForUnknownDevice() {
         let output = """
         Hardware Port: Wi-Fi
