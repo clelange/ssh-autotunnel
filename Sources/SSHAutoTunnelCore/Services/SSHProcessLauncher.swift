@@ -120,12 +120,12 @@ private final class PTYSSHProcessSession: SSHProcessSession {
 
     func terminate() {
         guard isRunning else { return }
-        kill(pid, SIGTERM)
+        signalProcessGroup(SIGTERM)
     }
 
     func forceKill() {
         guard isRunning else { return }
-        kill(pid, SIGKILL)
+        signalProcessGroup(SIGKILL)
     }
 
     func startReadLoop() {
@@ -162,6 +162,12 @@ private final class PTYSSHProcessSession: SSHProcessSession {
 
         if shouldNotify {
             onTermination(self)
+        }
+    }
+
+    private func signalProcessGroup(_ signal: Int32) {
+        if kill(-pid, signal) != 0 {
+            kill(pid, signal)
         }
     }
 

@@ -193,6 +193,37 @@ final class HopConnectionManagerTests: XCTestCase {
         XCTAssertEqual(manager.status(for: profile.id)?.health, .connecting)
     }
 
+    func testStopAllWaitingForceKillsStubbornHopBeforeReturning() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            reconnectDelay: { _ in 0.01 },
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "hop process started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH hop process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.exitsOnTerminate = false
+
+        let didExit = manager.stopAllWaiting(upTo: 0.2, forceKillAfter: 0.01)
+
+        XCTAssertTrue(didExit)
+        XCTAssertEqual(session.terminateCallCount, 1)
+        XCTAssertEqual(session.forceKillCallCount, 1)
+        XCTAssertFalse(session.isRunning)
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .stopped)
+        XCTAssertEqual(launcher.sessions.count, 1)
+    }
+
     func testExistingSessionMessageStopsReconnectAndMarksFailure() throws {
         let launcher = FakeHopSSHProcessLauncher()
         let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
@@ -477,7 +508,11 @@ private final class FakeHopSSHProcessSession: SSHProcessSession {
     private let onTermination: (SSHProcessSession) -> Void
     private(set) var terminationStatus: Int32 = 0
     private(set) var isRunning = true
+    private(set) var terminateCallCount = 0
+    private(set) var forceKillCallCount = 0
     private(set) var writes: [Data] = []
+    var exitsOnTerminate = true
+    var exitsOnForceKill = true
 
     init(pid: Int32, onOutput: @escaping (Data) -> Void, onTermination: @escaping (SSHProcessSession) -> Void) {
         processIdentifier = pid
@@ -498,11 +533,20 @@ private final class FakeHopSSHProcessSession: SSHProcessSession {
     }
 
     func terminate() {
-        isRunning = false
+        terminateCallCount += 1
         terminationStatus = SIGTERM
+        if exitsOnTerminate {
+            isRunning = false
+        }
     }
 
-    func forceKill() {}
+    func forceKill() {
+        forceKillCallCount += 1
+        terminationStatus = SIGKILL
+        if exitsOnForceKill {
+            isRunning = false
+        }
+    }
 
     func exit(status: Int32) {
         terminationStatus = status

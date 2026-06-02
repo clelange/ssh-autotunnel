@@ -102,6 +102,57 @@ public final class TunnelManager {
         }
     }
 
+    @discardableResult
+    public func stopAllWaiting(upTo timeout: TimeInterval, forceKillAfter: TimeInterval = 2.0) -> Bool {
+        let managedTunnels = queue.sync {
+            reconnectTokens.removeAll()
+            reconnectAttempts.removeAll()
+            let managedTunnels = Array(processes.values)
+            for managed in managedTunnels {
+                managed.stopReason = .user
+                if managed.session.isRunning {
+                    logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: managed.profile.id)
+                    managed.session.terminate()
+                }
+            }
+            return managedTunnels
+        }
+
+        let sessions = managedTunnels.map { $0.session! }
+        let didExit = SSHProcessStopper.waitForExit(
+            sessions: sessions,
+            timeout: timeout,
+            forceKillAfter: forceKillAfter,
+            onForceKill: { [weak self] session in
+                guard let self else { return }
+                let profileID = managedTunnels.first { $0.session.processIdentifier == session.processIdentifier }?.profile.id
+                guard let profileID else { return }
+                self.queue.async {
+                    self.logEventLocked("still running after stop timeout; sending SIGKILL to pid \(session.processIdentifier)", profileID: profileID)
+                }
+            }
+        )
+
+        queue.sync {
+            for managed in managedTunnels {
+                if processes[managed.profile.id] === managed {
+                    processes[managed.profile.id] = nil
+                }
+                if managed.session.isRunning {
+                    updateStatusLocked(
+                        managed.profile.id,
+                        .failed,
+                        "Could not stop SSH process before timeout",
+                        pid: managed.session.processIdentifier
+                    )
+                } else {
+                    updateStatusLocked(managed.profile.id, .stopped, "Stopped", pid: nil)
+                }
+            }
+        }
+        return didExit
+    }
+
     public func reconnect(profile: TunnelProfile, options: SSHLaunchOptions = .standard) {
         queue.async {
             self.reconnectTokens[profile.id] = nil
@@ -282,8 +333,13 @@ public final class TunnelManager {
         }
         managed.stopReason = reason
         if managed.session.isRunning {
+            logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: profileID)
             managed.session.terminate()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2) {
+            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self, weak managed] in
+                guard let managed, managed.session.isRunning else { return }
+                self?.queue.async {
+                    self?.logEventLocked("still running after stop timeout; sending SIGKILL to pid \(managed.session.processIdentifier)", profileID: profileID)
+                }
                 managed.session.forceKill()
             }
         }

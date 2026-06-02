@@ -19,7 +19,41 @@ INFO_PLIST="$APP_CONTENTS/Info.plist"
 
 cd "$ROOT_DIR"
 
-pkill -x "$APP_NAME" >/dev/null 2>&1 || true
+wait_for_app_exit() {
+  local timeout_seconds="${1:-10}"
+  local deadline=$((SECONDS + timeout_seconds))
+  while pgrep -x "$APP_NAME" >/dev/null 2>&1; do
+    if (( SECONDS >= deadline )); then
+      return 1
+    fi
+    sleep 0.2
+  done
+}
+
+quit_existing_app() {
+  if ! pgrep -x "$APP_NAME" >/dev/null 2>&1; then
+    return
+  fi
+
+  echo "Requesting $APP_NAME to quit..."
+  /usr/bin/osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
+  if wait_for_app_exit 12; then
+    return
+  fi
+
+  if [[ "${FORCE_QUIT_EXISTING_APP:-0}" == "1" ]]; then
+    echo "$APP_NAME did not quit gracefully; FORCE_QUIT_EXISTING_APP=1 is set, sending SIGKILL." >&2
+    pkill -KILL -x "$APP_NAME" >/dev/null 2>&1 || true
+    wait_for_app_exit 3 || true
+    return
+  fi
+
+  echo "$APP_NAME did not quit gracefully. Refusing to force-kill because that can orphan SSH tunnels." >&2
+  echo "Close the app manually, or rerun with FORCE_QUIT_EXISTING_APP=1 if you accept that risk." >&2
+  exit 1
+}
+
+quit_existing_app
 
 swift build --product "$APP_NAME"
 swift build --product ssh-autotunnelctl

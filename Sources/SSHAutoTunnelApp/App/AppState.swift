@@ -363,8 +363,11 @@ final class AppState: ObservableObject {
         pendingConfigurationSaveTask?.cancel()
         pendingPACAppendSourceTask?.cancel()
         pendingTunnelStartTokens.removeAll()
-        tunnelManager.stopAll()
-        hopManager.stopAll()
+        let tunnelsStopped = tunnelManager.stopAllWaiting(upTo: 4)
+        let hopsStopped = hopManager.stopAllWaiting(upTo: 4)
+        if !tunnelsStopped || !hopsStopped {
+            lastProxyMessage = "Some SSH processes did not confirm exit before app termination"
+        }
     }
 
     private func interactiveSSHHelperCommand(for profile: TunnelProfile) throws -> SSHCommand {

@@ -163,14 +163,17 @@ struct InteractiveTerminalLauncher {
         var lines: [String] = []
         if let markerPath {
             lines.append("ssh_autotunnel_marker=\(SSHCommand.shellQuoted(markerPath))")
-            lines.append("trap 'rm -f \"$ssh_autotunnel_marker\"' EXIT INT TERM HUP")
+            lines.append("ssh_autotunnel_marker_pid=\"${ssh_autotunnel_marker%.json}.pid\"")
+            lines.append("umask 077")
+            lines.append("printf '%d\\n' \"$$\" > \"$ssh_autotunnel_marker_pid\"")
+            lines.append("trap 'rm -f \"$ssh_autotunnel_marker\" \"$ssh_autotunnel_marker_pid\"' EXIT INT TERM HUP")
         }
         lines += [
             command.shellCommand,
             "ssh_autotunnel_status=$?",
         ]
         if markerPath != nil {
-            lines.append("rm -f \"$ssh_autotunnel_marker\"")
+            lines.append("rm -f \"$ssh_autotunnel_marker\" \"$ssh_autotunnel_marker_pid\"")
         }
         lines += [
             "printf '\\nSSH session ended with exit status %d. Press Ctrl-D to close this window.\\n' \"$ssh_autotunnel_status\""
