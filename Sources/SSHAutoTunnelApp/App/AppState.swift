@@ -361,6 +361,17 @@ final class AppState: ObservableObject {
         interactiveSessionRegistry.activeSessions()
     }
 
+    func activeQuitConnectionWarnings() -> [QuitConnectionWarning] {
+        let profileStatuses = configuration.profiles.map { profile in
+            ProfileStatusSnapshot(profile: profile, status: status(for: profile), hopStatus: hopStatus(for: profile))
+        }
+        return QuitConnectionWarningPolicy.warnings(
+            profiles: profileStatuses,
+            interactiveSessions: interactiveSessionRegistry.activeSessions(),
+            socks5Probe: { SOCKS5Probe.probe(port: $0, timeout: 1) }
+        )
+    }
+
     func prepareForTermination() {
         pendingConfigurationSaveTask?.cancel()
         pendingPACAppendSourceTask?.cancel()

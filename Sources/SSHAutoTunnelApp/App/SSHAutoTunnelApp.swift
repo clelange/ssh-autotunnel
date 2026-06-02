@@ -72,8 +72,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-        let activeSessions = appState?.activeHopInteractiveSessions() ?? []
-        guard !activeSessions.isEmpty else {
+        let activeConnections = appState?.activeQuitConnectionWarnings() ?? []
+        guard !activeConnections.isEmpty else {
             appState?.prepareForTermination()
             return .terminateNow
         }
@@ -81,8 +81,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Quit SSH AutoTunnel?"
-        alert.informativeText = quitWarningText(for: activeSessions)
-        alert.addButton(withTitle: "Quit and Disconnect")
+        alert.informativeText = quitWarningText(for: activeConnections)
+        alert.addButton(withTitle: "Quit and Stop App-Owned Connections")
         alert.addButton(withTitle: "Cancel")
 
         if alert.runModal() == .alertFirstButtonReturn {
@@ -102,14 +102,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    private func quitWarningText(for sessions: [ActiveInteractiveSSHSession]) -> String {
-        let shownSessions = sessions.prefix(5).map { session in
-            "\(session.profileName) via \(session.jumpHost)"
+    private func quitWarningText(for connections: [QuitConnectionWarning]) -> String {
+        let shownConnections = connections.prefix(5).map(\.displayLine)
+        var text = "SSH AutoTunnel detected active SSH connections or sessions.\n\n"
+        text += shownConnections.joined(separator: "\n")
+        if connections.count > shownConnections.count {
+            text += "\n...and \(connections.count - shownConnections.count) more"
         }
-        var text = "There are active interactive SSH sessions using hop connections. Quitting will stop SSH AutoTunnel tunnels and hop connections, which may disconnect those sessions.\n\n"
-        text += shownSessions.joined(separator: "\n")
-        if sessions.count > shownSessions.count {
-            text += "\n...and \(sessions.count - shownSessions.count) more"
+        if connections.contains(where: { !$0.isAppOwnedConnection }) {
+            text += "\n\nQuitting will stop app-owned tunnels and hop connections. Untracked listeners or terminal sessions may remain and may need manual cleanup."
+        } else {
+            text += "\n\nQuitting will stop app-owned tunnels and hop connections."
         }
         text += "\n\nCancel to keep SSH AutoTunnel running."
         return text
