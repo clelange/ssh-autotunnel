@@ -44,17 +44,11 @@ struct DashboardView: View {
                 }
                 .help("Copy the PAC URL")
                 Button {
-                    appState.applySystemPAC()
+                    appState.toggleSystemPAC()
                 } label: {
-                    Label("Apply PAC", systemImage: "network")
+                    SystemPACToggleLabel()
                 }
-                .help("Apply PAC settings to the active network")
-                Button {
-                    appState.restoreSystemPAC()
-                } label: {
-                    Label("Restore Proxy", systemImage: "arrow.uturn.backward")
-                }
-                .help("Restore system proxy settings from the last snapshot")
+                .help(appState.systemPACToggleHelp)
             }
             ToolbarItemGroup {
                 Button {

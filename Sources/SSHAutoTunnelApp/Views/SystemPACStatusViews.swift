@@ -32,6 +32,18 @@ struct SystemPACStatusBadge: View {
     }
 }
 
+struct SystemPACToggleLabel: View {
+    @EnvironmentObject private var appState: AppState
+
+    var body: some View {
+        Label {
+            Text(appState.systemPACToggleTitle)
+        } icon: {
+            SystemPACActionIcon(isDisabling: appState.systemPACToggleDisablesPAC)
+        }
+    }
+}
+
 struct SystemPACStatusDetailView: View {
     @EnvironmentObject private var appState: AppState
 
@@ -74,7 +86,52 @@ struct SystemPACStatusDetailView: View {
     }
 }
 
+private struct SystemPACActionIcon: View {
+    var isDisabling: Bool
+
+    var body: some View {
+        ZStack {
+            Image(systemName: "network")
+            if isDisabling {
+                RoundedRectangle(cornerRadius: 1)
+                    .fill(.primary)
+                    .frame(width: 2, height: 17)
+                    .rotationEffect(.degrees(-38))
+            }
+        }
+        .frame(width: 18, height: 18)
+    }
+}
+
 extension AppState {
+    var systemPACToggleDisablesPAC: Bool {
+        switch systemPACStatus.state {
+        case .active, .staleAutoTunnelPAC:
+            return true
+        case .notConfigured, .otherPAC, .unknown:
+            return false
+        }
+    }
+
+    var systemPACToggleTitle: String {
+        systemPACToggleDisablesPAC ? "Disable PAC" : "Apply PAC"
+    }
+
+    var systemPACToggleHelp: String {
+        if systemPACToggleDisablesPAC {
+            return "Disable SSH AutoTunnel PAC and restore the previous system proxy settings"
+        }
+        return "Apply SSH AutoTunnel PAC to the active network service"
+    }
+
+    func toggleSystemPAC() {
+        if systemPACToggleDisablesPAC {
+            restoreSystemPAC()
+        } else {
+            applySystemPAC()
+        }
+    }
+
     var systemPACMenuTitle: String {
         if networkDecision.shouldDisableProxy {
             return menuTitle(prefix: "PAC off: ", value: networkDecision.matchedRule?.name ?? activePACServiceName)
