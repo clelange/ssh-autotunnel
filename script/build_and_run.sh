@@ -5,6 +5,7 @@ MODE="${1:-run}"
 APP_NAME="SSHAutoTunnel"
 BUNDLE_ID="dev.clange.ssh-autotunnel"
 MIN_SYSTEM_VERSION="26.0"
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="$ROOT_DIR/dist"
@@ -53,6 +54,12 @@ cat >"$INFO_PLIST" <<PLIST
 </dict>
 </plist>
 PLIST
+
+if [[ "${SKIP_CODESIGN:-0}" != "1" ]]; then
+  /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" "$CLI_HELPER"
+  /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
+  /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"
+fi
 
 open_app() {
   /usr/bin/open -n "$APP_BUNDLE"
