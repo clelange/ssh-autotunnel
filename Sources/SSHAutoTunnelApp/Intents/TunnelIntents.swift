@@ -392,10 +392,10 @@ struct CreatePACRuleIntent: AppIntent {
         name = "New routing"
         domainPattern = "*.example.org"
         profileName = "CERN LxPlus"
-        failureMode = PACFailureMode.failClosed.rawValue
+        failureMode = PACFailureMode.directFallback.rawValue
     }
 
-    init(name: String, domainPattern: String, profileName: String, failureMode: String = PACFailureMode.failClosed.rawValue) {
+    init(name: String, domainPattern: String, profileName: String, failureMode: String = PACFailureMode.directFallback.rawValue) {
         self.name = name
         self.domainPattern = domainPattern
         self.profileName = profileName
@@ -438,7 +438,7 @@ struct UpdatePACRuleIntent: AppIntent {
         ruleName = "CERN"
         domainPattern = "*.cern.ch"
         profileName = "CERN LxPlus"
-        failureMode = PACFailureMode.failClosed.rawValue
+        failureMode = PACFailureMode.directFallback.rawValue
         enabled = true
     }
 
@@ -446,7 +446,7 @@ struct UpdatePACRuleIntent: AppIntent {
         ruleName: String,
         domainPattern: String,
         profileName: String,
-        failureMode: String = PACFailureMode.failClosed.rawValue,
+        failureMode: String = PACFailureMode.directFallback.rawValue,
         enabled: Bool = true
     ) {
         self.ruleName = ruleName

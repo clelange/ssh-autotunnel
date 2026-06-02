@@ -27,6 +27,7 @@ final class SSHAuto2FAImporterTests: XCTestCase {
 
         XCTAssertTrue(configuration.pacRules.contains { $0.domainPattern == "*.cern.ch" })
         XCTAssertTrue(configuration.pacRules.contains { $0.domainPattern == "*.psi.ch" })
+        XCTAssertTrue(configuration.pacRules.allSatisfy { $0.failureMode == .directFallback })
     }
 
     func testUpdatesExistingProfilesWithoutChangingIDsOrPorts() throws {
@@ -109,5 +110,22 @@ final class SSHAuto2FAImporterTests: XCTestCase {
         XCTAssertEqual(configuration.profiles[0].interactiveHost, "lxplus.cern.ch")
         XCTAssertEqual(configuration.profiles[1].interactiveHost, "t3ui07.psi.ch")
         XCTAssertEqual(configuration.profiles[2].user, "alice")
+    }
+
+    func testImportPreservesExistingPACRuleFailureMode() throws {
+        let profile = TunnelProfile(name: "CERN lxplus", host: "old.example.org", localSocksPort: 1081)
+        let existingRule = PACRule(
+            name: "CERN",
+            domainPattern: "*.cern.ch",
+            profileID: profile.id,
+            failureMode: .failClosed
+        )
+
+        let (configuration, _) = SSHAuto2FAImporter.apply(
+            to: AppConfiguration(profiles: [profile], pacRules: [existingRule]),
+            account: "clange"
+        )
+
+        XCTAssertEqual(configuration.pacRules.first { $0.name == "CERN" }?.failureMode, .failClosed)
     }
 }

@@ -35,7 +35,7 @@ public enum PACRuleTemplate {
             domainPattern: "*.example.org",
             profileID: profileID,
             enabled: true,
-            failureMode: .failClosed
+            failureMode: .directFallback
         )
     }
 }

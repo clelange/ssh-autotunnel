@@ -455,6 +455,14 @@ private struct PlaceholderView: View {
 struct PACRulesView: View {
     @EnvironmentObject private var appState: AppState
 
+    private var shadowWarningsByRuleID: [UUID: PACRuleShadowWarning] {
+        Dictionary(
+            uniqueKeysWithValues: PACRuleShadowAnalyzer
+                .warnings(configuration: appState.configuration)
+                .map { ($0.ruleID, $0) }
+        )
+    }
+
     var body: some View {
         VStack(alignment: .leading) {
             HStack {
@@ -469,30 +477,15 @@ struct PACRulesView: View {
                 } label: {
                     Label("Add Rule", systemImage: "plus")
                 }
+                .disabled(appState.configuration.profiles.isEmpty)
                 .help("Add a PAC routing rule")
             }
 
             List {
-                ForEach($appState.configuration.pacRules) { $rule in
-                    Grid(alignment: .leadingFirstTextBaseline) {
-                        GridRow {
-                            Toggle("", isOn: $rule.enabled)
-                                .labelsHidden()
-                            TextField("Name", text: $rule.name)
-                            TextField("Domain pattern", text: $rule.domainPattern)
-                            Picker("Profile", selection: $rule.profileID) {
-                                ForEach(appState.configuration.profiles) { profile in
-                                    Text(profile.name).tag(profile.id)
-                                }
-                            }
-                            Picker("Failure", selection: $rule.failureMode) {
-                                ForEach(PACFailureMode.allCases) { mode in
-                                    Text(mode.displayName).tag(mode)
-                                }
-                            }
-                        }
-                    }
+                ForEach(Array(appState.configuration.pacRules.indices), id: \.self) { index in
+                    pacRuleRow(index: index)
                 }
+                .onMove(perform: moveRules)
                 .onDelete { offsets in
                     appState.configuration.pacRules.remove(atOffsets: offsets)
                     appState.saveConfiguration()
@@ -502,6 +495,94 @@ struct PACRulesView: View {
                 appState.scheduleConfigurationSave()
             }
         }
+    }
+
+    @ViewBuilder
+    private func pacRuleRow(index: Int) -> some View {
+        let rule = appState.configuration.pacRules[index]
+        let warning = shadowWarningsByRuleID[rule.id]
+
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Toggle("", isOn: $appState.configuration.pacRules[index].enabled)
+                .labelsHidden()
+                .frame(width: 22)
+
+            if let warning {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+                    .help("This rule is shadowed by \(warning.shadowingRuleName), which appears earlier and matches first.")
+            } else {
+                Color.clear
+                    .frame(width: 16, height: 16)
+            }
+
+            TextField("Name", text: $appState.configuration.pacRules[index].name)
+                .frame(minWidth: 120)
+            TextField("Domain pattern", text: $appState.configuration.pacRules[index].domainPattern)
+                .frame(minWidth: 150)
+            Picker("Profile", selection: $appState.configuration.pacRules[index].profileID) {
+                ForEach(appState.configuration.profiles) { profile in
+                    Text(profile.name).tag(profile.id)
+                }
+            }
+            .frame(minWidth: 140)
+            Picker("Failure", selection: $appState.configuration.pacRules[index].failureMode) {
+                ForEach(PACFailureMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .frame(width: 130)
+
+            Spacer(minLength: 8)
+
+            Button {
+                moveRule(at: index, by: -1)
+            } label: {
+                Label("Move Up", systemImage: "chevron.up")
+            }
+            .disabled(index == appState.configuration.pacRules.startIndex)
+            .help("Move rule up")
+
+            Button {
+                moveRule(at: index, by: 1)
+            } label: {
+                Label("Move Down", systemImage: "chevron.down")
+            }
+            .disabled(index == appState.configuration.pacRules.index(before: appState.configuration.pacRules.endIndex))
+            .help("Move rule down")
+
+            Button(role: .destructive) {
+                deleteRule(at: index)
+            } label: {
+                Label("Delete Rule", systemImage: "trash")
+            }
+            .help("Delete rule")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+    }
+
+    private func moveRules(from offsets: IndexSet, to destination: Int) {
+        appState.configuration.pacRules.move(fromOffsets: offsets, toOffset: destination)
+        appState.saveConfiguration()
+    }
+
+    private func moveRule(at index: Int, by distance: Int) {
+        let newIndex = index + distance
+        guard appState.configuration.pacRules.indices.contains(index),
+              appState.configuration.pacRules.indices.contains(newIndex) else {
+            return
+        }
+
+        let rule = appState.configuration.pacRules.remove(at: index)
+        appState.configuration.pacRules.insert(rule, at: newIndex)
+        appState.saveConfiguration()
+    }
+
+    private func deleteRule(at index: Int) {
+        guard appState.configuration.pacRules.indices.contains(index) else { return }
+        appState.configuration.pacRules.remove(at: index)
+        appState.saveConfiguration()
     }
 }
 

@@ -14,9 +14,26 @@ final class PACGeneratorTests: XCTestCase {
         XCTAssertTrue(pac.contains("SOCKS5 127.0.0.1:1088"))
     }
 
-    func testUnhealthyProfileFailsClosedByDefault() {
+    func testUnhealthyProfileUsesDirectFallbackByDefault() {
         let profile = TunnelProfile(name: "Test", host: "ssh.example.org", localSocksPort: 1088)
         let rule = PACRule(name: "Example", domainPattern: "*.example.org", profileID: profile.id)
+        let config = AppConfiguration(profiles: [profile], pacRules: [rule])
+        let pac = PACGenerator.generate(context: PACGenerationContext(
+            configuration: config,
+            statuses: [profile.id: TunnelRuntimeStatus(profileID: profile.id, health: .failed)]
+        ))
+        XCTAssertTrue(pac.contains("return \"DIRECT\";"))
+        XCTAssertFalse(pac.contains(PACGenerator.blockingProxy(port: config.blockingHTTPProxyPort)))
+    }
+
+    func testUnhealthyProfileCanFailClosed() {
+        let profile = TunnelProfile(name: "Test", host: "ssh.example.org", localSocksPort: 1088)
+        let rule = PACRule(
+            name: "Example",
+            domainPattern: "*.example.org",
+            profileID: profile.id,
+            failureMode: .failClosed
+        )
         let config = AppConfiguration(profiles: [profile], pacRules: [rule])
         let pac = PACGenerator.generate(context: PACGenerationContext(
             configuration: config,
@@ -119,5 +136,20 @@ final class PACGeneratorTests: XCTestCase {
 
         XCTAssertTrue(pac.contains("return __sshAutoTunnelExistingFindProxyForURL(url, host);"))
         XCTAssertFalse(pac.contains(PACGenerator.blockingProxy(port: config.blockingHTTPProxyPort)))
+    }
+
+    func testRulesAreEmittedInConfiguredOrder() throws {
+        let profile = TunnelProfile(name: "Test", host: "ssh.example.org", localSocksPort: 1088)
+        let broad = PACRule(name: "CERN", domainPattern: "*.cern.ch", profileID: profile.id)
+        let docs = PACRule(name: "CERN Docs", domainPattern: "*.docs.cern.ch", profileID: profile.id, failureMode: .failClosed)
+        let config = AppConfiguration(profiles: [profile], pacRules: [broad, docs])
+        let pac = PACGenerator.generate(context: PACGenerationContext(
+            configuration: config,
+            statuses: [profile.id: TunnelRuntimeStatus(profileID: profile.id, health: .failed)]
+        ))
+
+        let broadRange = try XCTUnwrap(pac.range(of: #"shExpMatch(host, "*.cern.ch")"#))
+        let docsRange = try XCTUnwrap(pac.range(of: #"shExpMatch(host, "*.docs.cern.ch")"#))
+        XCTAssertLessThan(broadRange.lowerBound, docsRange.lowerBound)
     }
 }

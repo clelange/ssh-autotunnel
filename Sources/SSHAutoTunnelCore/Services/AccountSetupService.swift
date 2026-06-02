@@ -434,7 +434,6 @@ public enum AccountSetupService {
             configuration.pacRules[index].domainPattern = pattern
             configuration.pacRules[index].profileID = profileID
             configuration.pacRules[index].enabled = true
-            configuration.pacRules[index].failureMode = .failClosed
             result.updatedPACRules += 1
             return
         }

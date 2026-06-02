@@ -32,7 +32,7 @@ final class ProfileTemplateTests: XCTestCase {
         XCTAssertEqual(rule.domainPattern, "*.example.org")
         XCTAssertEqual(rule.profileID, ProfileTemplate.exampleProfileID)
         XCTAssertTrue(rule.enabled)
-        XCTAssertEqual(rule.failureMode, .failClosed)
+        XCTAssertEqual(rule.failureMode, .directFallback)
 
         let data = try JSONEncoder().encode(rule)
         let decoded = try JSONDecoder().decode(PACRule.self, from: data)

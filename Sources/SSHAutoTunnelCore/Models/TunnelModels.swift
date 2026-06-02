@@ -278,7 +278,7 @@ public struct PACRule: Identifiable, Codable, Equatable, Sendable {
         domainPattern: String,
         profileID: UUID,
         enabled: Bool = true,
-        failureMode: PACFailureMode = .failClosed
+        failureMode: PACFailureMode = .directFallback
     ) {
         self.id = id
         self.name = name

@@ -101,6 +101,7 @@ final class AccountSetupServiceTests: XCTestCase {
         XCTAssertEqual(profile.keychain.passwordService, "cern-lxplus-password")
         XCTAssertNil(profile.keychain.totpService)
         XCTAssertEqual(configuration.pacRules.map(\.domainPattern), ["*.cern.ch"])
+        XCTAssertEqual(configuration.pacRules.map(\.failureMode), [.directFallback])
     }
 
     func testAppliesPSIGeneralThroughHopxToLoginHost() throws {
@@ -124,6 +125,7 @@ final class AccountSetupServiceTests: XCTestCase {
         XCTAssertEqual(profile.keychain.passwordService, "psi-general-password")
         XCTAssertEqual(profile.keychain.totpService, "psi-general-otp-secret")
         XCTAssertEqual(configuration.pacRules.map(\.domainPattern), ["*.psi.ch"])
+        XCTAssertEqual(configuration.pacRules.map(\.failureMode), [.directFallback])
     }
 
     func testTier3SelectedWithoutTunnelStoresCredentialsOnly() throws {
@@ -165,7 +167,32 @@ final class AccountSetupServiceTests: XCTestCase {
 
         XCTAssertEqual(configuration.pacRules.map(\.domainPattern), ["worker01.psi.ch", "*.psi.ch"])
         XCTAssertEqual(configuration.pacRules.map(\.name), ["PSI Tier-3", "PSI"])
+        XCTAssertEqual(configuration.pacRules.map(\.failureMode), [.directFallback, .directFallback])
         XCTAssertEqual(tier3Profile.interactiveHost, "worker01.psi.ch")
+    }
+
+    func testUpdatingExistingGeneratedRulePreservesFailureMode() throws {
+        let profile = TunnelProfile(name: "CERN LxPlus", host: "lxtunnel.cern.ch", localSocksPort: 1081)
+        let existingRule = PACRule(
+            name: "CERN",
+            domainPattern: "*.cern.ch",
+            profileID: profile.id,
+            failureMode: .failClosed
+        )
+        let input = AccountSetupInput(
+            id: .cernLxPlus,
+            username: "clange",
+            passwordAvailable: true,
+            useForTunnelling: true,
+            tunnelHost: "lxtunnel.cern.ch"
+        )
+
+        let (configuration, _) = try AccountSetupService.apply(
+            inputs: [input],
+            to: AppConfiguration(profiles: [profile], pacRules: [existingRule])
+        )
+
+        XCTAssertEqual(configuration.pacRules.first?.failureMode, .failClosed)
     }
 
     func testSkippingPreviouslyConfiguredPresetRemovesGeneratedTunnel() throws {

@@ -181,7 +181,7 @@ struct CreatePACRuleForSelectedProfileIntent: AppIntent {
         name = "New routing"
         domainPattern = "*.example.org"
         profile = .placeholder
-        failureMode = .failClosed
+        failureMode = .directFallback
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -219,7 +219,7 @@ struct UpdateSelectedPACRuleIntent: AppIntent {
         rule = .placeholder
         domainPattern = "*.example.org"
         profile = .placeholder
-        failureMode = .failClosed
+        failureMode = .directFallback
         enabled = true
     }
 
