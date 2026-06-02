@@ -516,6 +516,33 @@ struct PACRulesView: View {
                         .frame(width: 16, height: 16)
                 }
 
+                HStack(spacing: 4) {
+                    iconButton(
+                        systemImage: "chevron.up",
+                        help: "Move rule up",
+                        disabled: index == appState.configuration.pacRules.startIndex
+                    ) {
+                        moveRule(id: ruleID, by: -1)
+                    }
+
+                    iconButton(
+                        systemImage: "chevron.down",
+                        help: "Move rule down",
+                        disabled: index == appState.configuration.pacRules.index(before: appState.configuration.pacRules.endIndex)
+                    ) {
+                        moveRule(id: ruleID, by: 1)
+                    }
+
+                    iconButton(
+                        systemImage: "trash",
+                        help: "Delete rule",
+                        role: .destructive
+                    ) {
+                        deleteRule(id: ruleID)
+                    }
+                }
+                .fixedSize()
+
                 TextField("Name", text: $appState.configuration.pacRules[index].name)
                     .frame(minWidth: 120)
                 TextField("Domain pattern", text: $appState.configuration.pacRules[index].domainPattern)
@@ -532,32 +559,6 @@ struct PACRulesView: View {
                     }
                 }
                 .frame(width: 130)
-
-                Spacer(minLength: 8)
-
-                iconButton(
-                    systemImage: "chevron.up",
-                    help: "Move rule up",
-                    disabled: index == appState.configuration.pacRules.startIndex
-                ) {
-                    moveRule(id: ruleID, by: -1)
-                }
-
-                iconButton(
-                    systemImage: "chevron.down",
-                    help: "Move rule down",
-                    disabled: index == appState.configuration.pacRules.index(before: appState.configuration.pacRules.endIndex)
-                ) {
-                    moveRule(id: ruleID, by: 1)
-                }
-
-                iconButton(
-                    systemImage: "trash",
-                    help: "Delete rule",
-                    role: .destructive
-                ) {
-                    deleteRule(id: ruleID)
-                }
             }
         }
     }
