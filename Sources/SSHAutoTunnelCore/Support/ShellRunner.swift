@@ -20,11 +20,42 @@ public enum ShellRunner {
         process.standardError = error
 
         try process.run()
+        let outputGroup = DispatchGroup()
+        let stdout = ShellOutputCapture()
+        let stderr = ShellOutputCapture()
+
+        outputGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            stdout.set(output.fileHandleForReading.readDataToEndOfFile())
+            outputGroup.leave()
+        }
+
+        outputGroup.enter()
+        DispatchQueue.global(qos: .utility).async {
+            stderr.set(error.fileHandleForReading.readDataToEndOfFile())
+            outputGroup.leave()
+        }
+
         process.waitUntilExit()
+        outputGroup.wait()
 
-        let stdout = String(data: output.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-        let stderr = String(data: error.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        return ShellResult(exitCode: process.terminationStatus, stdout: stdout.text, stderr: stderr.text)
+    }
+}
 
-        return ShellResult(exitCode: process.terminationStatus, stdout: stdout, stderr: stderr)
+private final class ShellOutputCapture: @unchecked Sendable {
+    private let lock = NSLock()
+    private var data = Data()
+
+    var text: String {
+        lock.lock()
+        defer { lock.unlock() }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    func set(_ data: Data) {
+        lock.lock()
+        self.data = data
+        lock.unlock()
     }
 }

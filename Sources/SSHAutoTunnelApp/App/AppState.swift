@@ -4,7 +4,7 @@ import Network
 import SSHAutoTunnelCore
 import SwiftUI
 
-private struct ProfileDeletionResult {
+struct ProfileDeletionResult {
     var profileCount: Int
     var requestedKeychainCleanup: Bool
     var deletedKeychainItemCount: Int
@@ -35,6 +35,7 @@ final class AppState: ObservableObject {
     private let proxyManager = SystemProxyManager()
     private let notifications = AppNotificationService()
     private let sshLogStore = SSHLogStore()
+    private let configurationArtifacts = AppConfigurationArtifactService()
     private let interactiveSessionRegistry = InteractiveSSHSessionRegistry()
     private let terminalLauncher = InteractiveTerminalLauncher()
     private let terminalDiscovery = InteractiveTerminalDiscovery()
@@ -770,7 +771,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func performProfileDeletion(ids: [UUID], deleteKeychainItems: Bool) throws -> ProfileDeletionResult {
+    func performProfileDeletion(ids: [UUID], deleteKeychainItems: Bool) throws -> ProfileDeletionResult {
         let idSet = Set(ids)
         let keychainItems = deleteKeychainItems
             ? ProfileKeychainCleanupPlanner.removableItems(removingProfileIDs: idSet, from: configuration)
@@ -819,7 +820,7 @@ final class AppState: ObservableObject {
         return deletedCount
     }
 
-    private func profileDeletionMessage(profileName: String?, result: ProfileDeletionResult) -> String {
+    func profileDeletionMessage(profileName: String?, result: ProfileDeletionResult) -> String {
         let base: String
         if let profileName {
             base = "Deleted profile \(profileName)"
@@ -892,11 +893,11 @@ final class AppState: ObservableObject {
     }
 
     func configurationExport(exportedAt: Date = Date()) -> ConfigurationExport {
-        ConfigurationExportService.makeExport(from: configuration, exportedAt: exportedAt)
+        configurationArtifacts.export(configuration: configuration, exportedAt: exportedAt)
     }
 
     func configurationValidationReport(for export: ConfigurationExport) -> ConfigurationValidationReport {
-        ConfigurationExportService.validationReport(
+        configurationArtifacts.validationReport(
             for: export,
             preservingLocalValuesFrom: configuration
         )
@@ -904,7 +905,7 @@ final class AppState: ObservableObject {
 
     func supportBundle(generatedAt: Date = Date()) -> SupportBundle {
         let diagnostics = diagnosticsSnapshot(generatedAt: generatedAt)
-        return ConfigurationExportService.makeSupportBundle(
+        return configurationArtifacts.supportBundle(
             configuration: configuration,
             diagnostics: diagnostics,
             generatedAt: diagnostics.generatedAt
@@ -933,7 +934,7 @@ final class AppState: ObservableObject {
 
     func importConfigurationExport(_ export: ConfigurationExport) -> ControlResponse {
         do {
-            let imported = try ConfigurationExportService.importConfiguration(
+            let imported = try configurationArtifacts.importConfiguration(
                 from: export,
                 preservingLocalValuesFrom: configuration
             )
@@ -1132,255 +1133,7 @@ final class AppState: ObservableObject {
     }
 
     private func handleControlRequest(_ request: ControlRequest) -> ControlResponse {
-        let profile = resolveProfile(id: request.profileID, name: request.profileName)
-        switch request.action {
-        case .connect:
-            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
-            connect(profile)
-            return ControlResponse(ok: true, message: "Connecting \(profile.name)", status: snapshot())
-        case .disconnect:
-            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
-            disconnect(profile)
-            return ControlResponse(ok: true, message: "Disconnecting \(profile.name)", status: snapshot())
-        case .reconnect:
-            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
-            reconnect(profile)
-            return ControlResponse(ok: true, message: "Reconnecting \(profile.name)", status: snapshot())
-        case .connectHop:
-            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
-            guard hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: snapshot()) }
-            connectHop(profile)
-            return ControlResponse(ok: true, message: "Connecting hop for \(profile.name)", status: snapshot())
-        case .disconnectHop:
-            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
-            guard hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: snapshot()) }
-            disconnectHop(profile)
-            return ControlResponse(ok: true, message: "Disconnecting hop for \(profile.name)", status: snapshot())
-        case .reconnectHop:
-            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
-            guard hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: snapshot()) }
-            reconnectHop(profile)
-            return ControlResponse(ok: true, message: "Reconnecting hop for \(profile.name)", status: snapshot())
-        case .reloadPAC:
-            refreshPACAppendSource(force: true)
-            writePACCopy()
-            return ControlResponse(ok: true, message: "PAC reloaded", status: snapshot())
-        case .pacURL:
-            return ControlResponse(ok: true, message: pacURL, status: snapshot())
-        case .status:
-            return ControlResponse(ok: true, message: "OK", status: snapshot())
-        case .applySystemPAC:
-            let ok = applySystemPAC()
-            return ControlResponse(ok: ok, message: lastProxyMessage, status: snapshot())
-        case .restoreSystemPAC:
-            let ok = restoreSystemPAC()
-            return ControlResponse(ok: ok, message: lastProxyMessage, status: snapshot())
-        case .importSSHAuto2FA:
-            let result = importSSHAuto2FAPresets()
-            return ControlResponse(
-                ok: true,
-                message: "Imported ssh-auto2fa presets: \(result.createdProfiles) created, \(result.updatedProfiles) updated, \(result.createdPACRules) PAC rules added",
-                status: snapshot()
-            )
-        case .checkSSHAuto2FA:
-            refreshSSHAuto2FAServiceStatuses()
-            return ControlResponse(
-                ok: true,
-                message: "Checked \(sshAuto2FAServiceStatuses.count) ssh-auto2fa Keychain services",
-                status: snapshot(),
-                sshAuto2FAServiceStatuses: sshAuto2FAServiceStatuses
-            )
-        case .importSSHConfig:
-            do {
-                let result = try importSSHConfig()
-                return ControlResponse(
-                    ok: true,
-                    message: "Imported SSH config: \(result.createdProfiles) created, \(result.updatedProfiles) updated, \(result.skippedHosts) skipped",
-                    status: snapshot()
-                )
-            } catch {
-                return ControlResponse(ok: false, message: "Could not import SSH config: \(error.localizedDescription)", status: snapshot())
-            }
-        case .createProfile:
-            guard let requestProfile = request.profile else {
-                return ControlResponse(ok: false, message: ProfileConfigurationEditorError.missingProfilePayload.localizedDescription, status: snapshot())
-            }
-            do {
-                let updated = try ProfileConfigurationEditor.create(profile: requestProfile, in: configuration)
-                configuration = updated
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Created profile \(requestProfile.name)", status: snapshot())
-            } catch {
-                return ControlResponse(ok: false, message: "Could not create profile: \(error.localizedDescription)", status: snapshot())
-            }
-        case .updateProfile:
-            guard let requestProfile = request.profile else {
-                return ControlResponse(ok: false, message: ProfileConfigurationEditorError.missingProfilePayload.localizedDescription, status: snapshot())
-            }
-            do {
-                let updated = try ProfileConfigurationEditor.update(
-                    profile: requestProfile,
-                    matchingID: request.profileID,
-                    matchingName: request.profileName,
-                    in: configuration
-                )
-                configuration = updated
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Updated profile \(requestProfile.name)", status: snapshot())
-            } catch {
-                return ControlResponse(ok: false, message: "Could not update profile: \(error.localizedDescription)", status: snapshot())
-            }
-        case .deleteProfile:
-            guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: snapshot()) }
-            do {
-                let result = try performProfileDeletion(
-                    ids: [profile.id],
-                    deleteKeychainItems: request.deleteKeychainItems == true
-                )
-                let message = profileDeletionMessage(profileName: profile.name, result: result)
-                return ControlResponse(
-                    ok: result.keychainCleanupError == nil,
-                    message: message,
-                    status: snapshot()
-                )
-            } catch {
-                return ControlResponse(ok: false, message: "Could not delete profile: \(error.localizedDescription)", status: snapshot())
-            }
-        case .createPACRule:
-            guard let requestRule = request.pacRule else {
-                return ControlResponse(ok: false, message: PACRuleConfigurationEditorError.missingRulePayload.localizedDescription, status: snapshot())
-            }
-            do {
-                configuration = try PACRuleConfigurationEditor.create(rule: requestRule, in: configuration)
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Created PAC rule \(requestRule.name)", status: snapshot())
-            } catch {
-                return ControlResponse(ok: false, message: "Could not create PAC rule: \(error.localizedDescription)", status: snapshot())
-            }
-        case .updatePACRule:
-            guard let requestRule = request.pacRule else {
-                return ControlResponse(ok: false, message: PACRuleConfigurationEditorError.missingRulePayload.localizedDescription, status: snapshot())
-            }
-            do {
-                configuration = try PACRuleConfigurationEditor.update(
-                    rule: requestRule,
-                    matchingID: request.pacRuleID,
-                    matchingName: request.pacRuleName,
-                    in: configuration
-                )
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Updated PAC rule \(requestRule.name)", status: snapshot())
-            } catch {
-                return ControlResponse(ok: false, message: "Could not update PAC rule: \(error.localizedDescription)", status: snapshot())
-            }
-        case .deletePACRule:
-            do {
-                configuration = try PACRuleConfigurationEditor.delete(
-                    ruleID: request.pacRuleID,
-                    ruleName: request.pacRuleName,
-                    in: configuration
-                )
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Deleted PAC rule", status: snapshot())
-            } catch {
-                return ControlResponse(ok: false, message: "Could not delete PAC rule: \(error.localizedDescription)", status: snapshot())
-            }
-        case .createNetworkRule:
-            guard let requestRule = request.networkRule else {
-                return ControlResponse(ok: false, message: NetworkRuleConfigurationEditorError.missingRulePayload.localizedDescription, status: snapshot())
-            }
-            do {
-                configuration = try NetworkRuleConfigurationEditor.create(rule: requestRule, in: configuration)
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Created network rule \(requestRule.name)", status: snapshot())
-            } catch {
-                return ControlResponse(ok: false, message: "Could not create network rule: \(error.localizedDescription)", status: snapshot())
-            }
-        case .updateNetworkRule:
-            guard let requestRule = request.networkRule else {
-                return ControlResponse(ok: false, message: NetworkRuleConfigurationEditorError.missingRulePayload.localizedDescription, status: snapshot())
-            }
-            do {
-                configuration = try NetworkRuleConfigurationEditor.update(
-                    rule: requestRule,
-                    matchingID: request.networkRuleID,
-                    matchingName: request.networkRuleName,
-                    in: configuration
-                )
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Updated network rule \(requestRule.name)", status: snapshot())
-            } catch {
-                return ControlResponse(ok: false, message: "Could not update network rule: \(error.localizedDescription)", status: snapshot())
-            }
-        case .deleteNetworkRule:
-            do {
-                configuration = try NetworkRuleConfigurationEditor.delete(
-                    ruleID: request.networkRuleID,
-                    ruleName: request.networkRuleName,
-                    in: configuration
-                )
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Deleted network rule", status: snapshot())
-            } catch {
-                return ControlResponse(ok: false, message: "Could not delete network rule: \(error.localizedDescription)", status: snapshot())
-            }
-        case .createNetworkRuleFromCurrentNetwork:
-            refreshNetworkDecision()
-            guard var rule = NetworkPolicyRule.disableProxyRule(from: currentNetworkFingerprint) else {
-                return ControlResponse(ok: false, message: "Current network does not expose enough fingerprint data for a rule", status: snapshot())
-            }
-            if request.profileID != nil || request.profileName != nil {
-                guard let profile else {
-                    return ControlResponse(ok: false, message: "Profile not found", status: snapshot())
-                }
-                rule.profileID = profile.id
-            }
-            do {
-                configuration = try NetworkRuleConfigurationEditor.create(rule: rule, in: configuration)
-                saveConfiguration()
-                return ControlResponse(ok: true, message: "Created network rule \(rule.name)", status: snapshot())
-            } catch {
-                return ControlResponse(ok: false, message: "Could not create network rule: \(error.localizedDescription)", status: snapshot())
-            }
-        case .diagnostics:
-            return ControlResponse(
-                ok: true,
-                message: "Diagnostics",
-                status: snapshot(),
-                diagnostics: diagnosticsSnapshot()
-            )
-        case .exportConfiguration:
-            return ControlResponse(
-                ok: true,
-                message: "Configuration export",
-                status: snapshot(),
-                configurationExport: configurationExport()
-            )
-        case .importConfiguration:
-            guard let export = request.configurationExport else {
-                return ControlResponse(ok: false, message: "A configuration export payload is required.", status: snapshot())
-            }
-            return importConfigurationExport(export)
-        case .validateConfigurationExport:
-            guard let export = request.configurationExport else {
-                return ControlResponse(ok: false, message: "A configuration export payload is required.", status: snapshot())
-            }
-            let report = configurationValidationReport(for: export)
-            return ControlResponse(
-                ok: report.ok,
-                message: report.message,
-                status: snapshot(),
-                configurationValidation: report
-            )
-        case .supportBundle:
-            let bundle = supportBundle()
-            return ControlResponse(
-                ok: true,
-                message: "Support bundle",
-                status: snapshot(),
-                supportBundle: bundle
-            )
-        }
+        AppControlRequestDispatcher(appState: self).response(for: request)
     }
 
     private func diagnosticFileStatuses() -> [DiagnosticFileStatus] {
@@ -1443,7 +1196,7 @@ final class AppState: ObservableObject {
         }
     }
 
-    private func resolveProfile(id: UUID?, name: String?) -> TunnelProfile? {
+    func resolveProfile(id: UUID?, name: String?) -> TunnelProfile? {
         if let id {
             return configuration.profiles.first { $0.id == id }
         }
@@ -1458,7 +1211,7 @@ final class AppState: ObservableObject {
         return jumpHost.isEmpty ? nil : jumpHost
     }
 
-    private func refreshNetworkDecision() {
+    func refreshNetworkDecision() {
         currentNetworkFingerprint = networkIdentity.currentFingerprint()
         networkDecision = networkIdentity.evaluate(configuration: configuration, fingerprint: currentNetworkFingerprint)
     }
@@ -1507,7 +1260,7 @@ final class AppState: ObservableObject {
         networkDecision.disabledProfileIDs.sorted { $0.uuidString < $1.uuidString }
     }
 
-    private func writePACCopy() {
+    func writePACCopy() {
         do {
             let url = try AppPaths.pacCopyURL()
             try currentPAC().write(to: url, atomically: true, encoding: .utf8)
