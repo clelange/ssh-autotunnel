@@ -224,7 +224,9 @@ public final class HopConnectionManager {
     }
 
     private func resetControlMaster(_ controlMaster: JumpHostControlMaster) throws {
-        _ = try? ShellRunner.run("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "exit", controlMaster.jumpHost])
+        if FileManager.default.fileExists(atPath: controlMaster.controlPath) {
+            _ = try? ShellRunner.run("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "exit", controlMaster.jumpHost])
+        }
         try? FileManager.default.removeItem(at: controlMaster.directory)
         try FileManager.default.createDirectory(at: controlMaster.directory, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: controlMaster.directory.path)

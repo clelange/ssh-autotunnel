@@ -11,6 +11,7 @@ public final class TunnelManager {
     private let reconnectDelay: (Int) -> TimeInterval
     private let totpGenerator: (String) throws -> String
     private let initialReadinessGracePeriod: TimeInterval
+    private let processExitOutputSettleDelay: TimeInterval
     private let now: () -> Date
     private let queue = DispatchQueue(label: "dev.clange.ssh-autotunnel.tunnels")
     private var processes: [UUID: ManagedTunnel] = [:]
@@ -37,6 +38,7 @@ public final class TunnelManager {
         reconnectDelay: @escaping (Int) -> TimeInterval = { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
         initialReadinessGracePeriod: TimeInterval = 60,
+        processExitOutputSettleDelay: TimeInterval = 0.05,
         now: @escaping () -> Date = Date.init,
         startsHealthTimer: Bool = true
     ) {
@@ -46,6 +48,7 @@ public final class TunnelManager {
         self.reconnectDelay = reconnectDelay
         self.totpGenerator = totpGenerator
         self.initialReadinessGracePeriod = initialReadinessGracePeriod
+        self.processExitOutputSettleDelay = processExitOutputSettleDelay
         self.now = now
         if startsHealthTimer {
             startHealthTimer()
@@ -221,21 +224,7 @@ public final class TunnelManager {
                 self?.queue.async {
                     guard let self, let managed else { return }
                     guard self.processes[profile.id] === managed else { return }
-                    self.flushRedactedOutputLocked(managed)
-                    self.processes[profile.id] = nil
-
-                    let decision = TunnelLifecyclePolicy.processExitDecision(
-                        terminationStatus: session.terminationStatus,
-                        wasIntentionalStop: managed.stopReason != nil,
-                        autoReconnect: profile.autoReconnect
-                    )
-                    self.applyProcessExitDecisionLocked(
-                        decision,
-                        profile: profile,
-                        options: managed.launchOptions,
-                        terminationStatus: session.terminationStatus,
-                        exitDetail: managed.lastOutputLine
-                    )
+                    self.observeProcessTerminationLocked(managed, terminationStatus: session.terminationStatus)
                 }
             }
         )
@@ -380,6 +369,55 @@ public final class TunnelManager {
         }
     }
 
+    private func observeProcessTerminationLocked(_ managed: ManagedTunnel, terminationStatus: Int32) {
+        guard processes[managed.profile.id] === managed else { return }
+        guard managed.observedTerminationStatus == nil else { return }
+
+        managed.observedTerminationStatus = terminationStatus
+        flushRedactedOutputLocked(managed)
+
+        let finalize = { [weak self, weak managed] in
+            guard let self, let managed else { return }
+            self.finalizeProcessTerminationLocked(managed)
+        }
+
+        if processExitOutputSettleDelay <= 0 {
+            finalize()
+        } else {
+            queue.asyncAfter(deadline: .now() + processExitOutputSettleDelay, execute: finalize)
+        }
+    }
+
+    private func finalizeProcessTerminationLocked(_ managed: ManagedTunnel) {
+        guard processes[managed.profile.id] === managed,
+              let terminationStatus = managed.observedTerminationStatus else {
+            return
+        }
+
+        flushRedactedOutputLocked(managed)
+        processes[managed.profile.id] = nil
+
+        let forwardingFailure = managed.forwardingFailure
+        let decision: TunnelLifecyclePolicy.ProcessExitDecision
+        if forwardingFailure != nil, managed.stopReason == nil {
+            decision = .markFailed
+        } else {
+            decision = TunnelLifecyclePolicy.processExitDecision(
+                terminationStatus: terminationStatus,
+                wasIntentionalStop: managed.stopReason != nil,
+                autoReconnect: managed.profile.autoReconnect
+            )
+        }
+
+        applyProcessExitDecisionLocked(
+            decision,
+            profile: managed.profile,
+            options: managed.launchOptions,
+            terminationStatus: terminationStatus,
+            exitDetail: forwardingFailure?.statusDetail ?? managed.lastOutputLine
+        )
+    }
+
     private func sshExitMessage(status: Int32, detail: String?) -> String {
         guard let detail, !detail.isEmpty else {
             return "SSH exited with status \(status)"
@@ -442,21 +480,12 @@ public final class TunnelManager {
 
     private func checkHealthLocked() {
         for (profileID, managed) in Array(processes) {
+            if managed.observedTerminationStatus != nil {
+                continue
+            }
+
             guard managed.session.isRunning else {
-                flushRedactedOutputLocked(managed)
-                processes[profileID] = nil
-                let decision = TunnelLifecyclePolicy.processExitDecision(
-                    terminationStatus: managed.session.terminationStatus,
-                    wasIntentionalStop: managed.stopReason != nil,
-                    autoReconnect: managed.profile.autoReconnect
-                )
-                applyProcessExitDecisionLocked(
-                    decision,
-                    profile: managed.profile,
-                    options: managed.launchOptions,
-                    terminationStatus: managed.session.terminationStatus,
-                    exitDetail: managed.lastOutputLine
-                )
+                observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
                 continue
             }
 
@@ -524,9 +553,18 @@ private final class ManagedTunnel {
     var redactedSecrets: [String]
     var redactor: SSHTranscriptRedactor
     var stopReason: StopReason?
+    var observedTerminationStatus: Int32?
     var sentHostKeyConfirmation = false
     var sentPassword = false
     var sentTOTP = false
+
+    var forwardingFailure: SSHForwardingFailure? {
+        guard let text = String(data: outputBuffer, encoding: .utf8) else {
+            return nil
+        }
+        let redacted = SSHTranscriptLog.redact(text, secrets: redactedSecrets)
+        return SSHForwardingFailureDetector.detect(in: redacted)
+    }
 
     var lastOutputLine: String? {
         guard let text = String(data: outputBuffer, encoding: .utf8) else {

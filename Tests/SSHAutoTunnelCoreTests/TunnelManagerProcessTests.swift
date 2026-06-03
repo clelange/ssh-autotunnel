@@ -95,6 +95,68 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertEqual(manager.status(for: profile.id).health, .connecting)
     }
 
+    func testLocalForwardingFailureDoesNotReconnectWhenOutputArrivesBeforeTermination() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            reconnectDelay: { _ in 0.01 },
+            processExitOutputSettleDelay: 0,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+
+        session.emit(cernForwardingFailureTranscript)
+        session.exit(status: 255)
+        waitUntil("forwarding failure is marked failed") {
+            manager.status(for: profile.id).health == .failed
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("port 12345 is already in use"))
+    }
+
+    func testLocalForwardingFailureDoesNotReconnectWhenOutputArrivesAfterTermination() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            reconnectDelay: { _ in 0.01 },
+            processExitOutputSettleDelay: 0.05,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+
+        session.exit(status: 255)
+        session.emit(cernForwardingFailureTranscript)
+        waitUntil("late forwarding failure is marked failed") {
+            manager.status(for: profile.id).health == .failed
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("port 12345 is already in use"))
+    }
+
     func testUnexpectedExitIncludesLastSSHOutputInStatus() throws {
         let launcher = FakeSSHProcessLauncher()
         let profile = testProfile(autoReconnect: false)
@@ -412,6 +474,13 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTFail("Timed out waiting for \(description)")
     }
 }
+
+private let cernForwardingFailureTranscript = """
+(clange@lxtunnel.cern.ch) Your 2nd factor (clange): <redacted>
+bind [127.0.0.1]:12345: Address already in use\r
+channel_setup_fwd_listener_tcpip: cannot listen to port: 12345\r
+Could not request local forwarding.\r
+"""
 
 private final class FakeSSHProcessLauncher: SSHProcessLaunching {
     private var nextPID: Int32 = 10_000
