@@ -101,6 +101,58 @@ final class HopConnectionManagerTests: XCTestCase {
         XCTAssertFalse(log.contains("654321"))
     }
 
+    func testLogsRedactSecretsSplitAcrossOutputChunks() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let keychain = FakeHopKeychain(values: [
+            "password-service|alice": "secret-password",
+            "totp-service|alice": "SEED"
+        ])
+        let profile = psiGeneralProfile(autoReconnect: false)
+        let manager = HopConnectionManager(
+            keychain: keychain,
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            totpGenerator: { _ in "654321" },
+            startsHealthTimer: false
+        )
+        var log = ""
+        let started = expectation(description: "hop process started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH hop process started" {
+                started.fulfill()
+            }
+        }
+        manager.onLog = { profileID, text in
+            if profileID == profile.id {
+                log += text
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+
+        session.emit("Password:")
+        waitUntil("password reply is written") {
+            session.writtenStrings == ["secret-password\n"]
+        }
+        session.emit("secret-")
+        session.emit("password\r\nEnter Your Microsoft verification code:")
+        waitUntil("TOTP reply is written") {
+            session.writtenStrings == ["secret-password\n", "654321\n"]
+        }
+        session.emit("654")
+        session.emit("321\r\n")
+        manager.stop(profileID: profile.id)
+        waitUntil("hop stops") {
+            manager.status(for: profile.id)?.health == .stopped
+        }
+
+        XCTAssertTrue(log.contains("<redacted>"))
+        XCTAssertFalse(log.contains("secret-password"))
+        XCTAssertFalse(log.contains("654321"))
+    }
+
     func testReportsHealthyAfterControlMasterCheckSucceeds() throws {
         let launcher = FakeHopSSHProcessLauncher()
         let profile = psiGeneralProfile(authMode: .none)

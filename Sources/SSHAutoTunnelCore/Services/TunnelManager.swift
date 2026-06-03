@@ -135,6 +135,7 @@ public final class TunnelManager {
 
         queue.sync {
             for managed in managedTunnels {
+                flushRedactedOutputLocked(managed)
                 if processes[managed.profile.id] === managed {
                     processes[managed.profile.id] = nil
                 }
@@ -220,6 +221,7 @@ public final class TunnelManager {
                 self?.queue.async {
                     guard let self, let managed else { return }
                     guard self.processes[profile.id] === managed else { return }
+                    self.flushRedactedOutputLocked(managed)
                     self.processes[profile.id] = nil
 
                     let decision = TunnelLifecyclePolicy.processExitDecision(
@@ -243,7 +245,10 @@ public final class TunnelManager {
     private func handleOutput(_ data: Data, tunnel: ManagedTunnel) {
         tunnel.outputBuffer.append(data)
         let text = String(data: data, encoding: .utf8) ?? ""
-        onLog?(tunnel.profile.id, SSHTranscriptLog.redact(text, secrets: tunnel.redactedSecrets))
+        let redactedText = tunnel.redactor.redact(text)
+        if !redactedText.isEmpty {
+            onLog?(tunnel.profile.id, redactedText)
+        }
         respondIfNeeded(to: tunnel.outputBuffer, tunnel: tunnel)
         if tunnel.outputBuffer.count > 4096 {
             tunnel.outputBuffer.removeFirst(tunnel.outputBuffer.count - 2048)
@@ -280,7 +285,7 @@ public final class TunnelManager {
             logEventLocked("password prompt detected", profileID: tunnel.profile.id)
             if let password = tunnel.credentials.password {
                 tunnel.sentPassword = true
-                tunnel.redactedSecrets.append(password)
+                tunnel.addRedactedSecret(password)
                 logEventLocked("password sent (<redacted>)", profileID: tunnel.profile.id)
                 write(password + "\n", to: tunnel)
             } else {
@@ -294,7 +299,7 @@ public final class TunnelManager {
                     let seed = try readGenericPassword(service: totpReference.service, account: totpReference.account)
                     let totp = try totpGenerator(seed)
                     tunnel.sentTOTP = true
-                    tunnel.redactedSecrets.append(totp)
+                    tunnel.addRedactedSecret(totp)
                     logEventLocked("TOTP sent (<redacted>)", profileID: tunnel.profile.id)
                     write(totp + "\n", to: tunnel)
                 } catch {
@@ -331,6 +336,7 @@ public final class TunnelManager {
             }
             return
         }
+        flushRedactedOutputLocked(managed)
         managed.stopReason = reason
         if managed.session.isRunning {
             logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: profileID)
@@ -417,6 +423,13 @@ public final class TunnelManager {
         onLog?(profileID, SSHTranscriptLog.event(kind: "tunnel", message: message, at: now()))
     }
 
+    private func flushRedactedOutputLocked(_ managed: ManagedTunnel) {
+        let text = managed.redactor.flush()
+        if !text.isEmpty {
+            onLog?(managed.profile.id, text)
+        }
+    }
+
     private func startHealthTimer() {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 2, repeating: 5)
@@ -430,6 +443,7 @@ public final class TunnelManager {
     private func checkHealthLocked() {
         for (profileID, managed) in Array(processes) {
             guard managed.session.isRunning else {
+                flushRedactedOutputLocked(managed)
                 processes[profileID] = nil
                 let decision = TunnelLifecyclePolicy.processExitDecision(
                     terminationStatus: managed.session.terminationStatus,
@@ -508,6 +522,7 @@ private final class ManagedTunnel {
     var session: SSHProcessSession!
     var outputBuffer = Data()
     var redactedSecrets: [String]
+    var redactor: SSHTranscriptRedactor
     var stopReason: StopReason?
     var sentHostKeyConfirmation = false
     var sentPassword = false
@@ -532,6 +547,13 @@ private final class ManagedTunnel {
         self.credentials = credentials
         self.launchOptions = launchOptions
         self.startedAt = startedAt
-        redactedSecrets = [credentials.password].compactMap(\.self)
+        let initialSecrets = [credentials.password].compactMap(\.self)
+        redactedSecrets = initialSecrets
+        redactor = SSHTranscriptRedactor(secrets: initialSecrets)
+    }
+
+    func addRedactedSecret(_ secret: String) {
+        redactedSecrets.append(secret)
+        redactor.addSecret(secret)
     }
 }

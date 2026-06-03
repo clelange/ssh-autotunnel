@@ -331,6 +331,68 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertFalse(log.contains("654321"))
     }
 
+    func testLogsRedactSecretsSplitAcrossOutputChunks() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let keychain = FakeGenericPasswordReader(values: [
+            "password-service": "secret-password",
+            "otp-service": "JBSWY3DPEHPK3PXP"
+        ])
+        let profile = TunnelProfile(
+            name: "Redacted",
+            host: "ssh.example.org",
+            localSocksPort: 1099,
+            authMode: .passwordAndTOTP,
+            keychain: KeychainReference(
+                account: "alice",
+                passwordService: "password-service",
+                totpService: "otp-service"
+            ),
+            autoReconnect: false
+        )
+        let manager = TunnelManager(
+            keychain: keychain,
+            processLauncher: launcher,
+            totpGenerator: { _ in "654321" },
+            startsHealthTimer: false
+        )
+        var log = ""
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+        manager.onLog = { profileID, text in
+            if profileID == profile.id {
+                log += text
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+
+        session.emit("Password:")
+        waitUntil("password reply is written") {
+            session.writtenStrings == ["secret-password\n"]
+        }
+        session.emit("secret-")
+        session.emit("password\r\nVerification code:")
+        waitUntil("TOTP reply is written") {
+            session.writtenStrings == ["secret-password\n", "654321\n"]
+        }
+        session.emit("654")
+        session.emit("321\r\n")
+        manager.stop(profileID: profile.id)
+        waitUntil("tunnel stops") {
+            manager.status(for: profile.id).health == .stopped
+        }
+
+        XCTAssertTrue(log.contains("<redacted>"))
+        XCTAssertFalse(log.contains("secret-password"))
+        XCTAssertFalse(log.contains("654321"))
+    }
+
     private func testProfile(autoReconnect: Bool) -> TunnelProfile {
         TunnelProfile(
             name: "Test",

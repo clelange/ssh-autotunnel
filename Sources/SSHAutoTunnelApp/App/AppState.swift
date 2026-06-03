@@ -1100,7 +1100,8 @@ final class AppState: ObservableObject {
 
     private nonisolated func handlePACRequest(_ request: HTTPRequest) -> HTTPResponse {
         DispatchQueue.main.sync {
-            if request.path.hasPrefix("/proxy.pac") {
+            switch request.routePath {
+            case "/proxy.pac":
                 return HTTPResponse(
                     headers: [
                         "Content-Type": "application/x-ns-proxy-autoconfig; charset=utf-8",
@@ -1109,11 +1110,13 @@ final class AppState: ObservableObject {
                     ],
                     body: Data(currentPAC().utf8)
                 )
-            }
-            if request.path.hasPrefix("/status.json") {
+            case "/status.json":
                 return .json(snapshot(), encoder: jsonEncoder)
+            case "/status":
+                return .text(statusHTML(), contentType: "text/html; charset=utf-8")
+            default:
+                return .error(404, "Not Found", "Unknown local route")
             }
-            return .text(statusHTML(), contentType: "text/html; charset=utf-8")
         }
     }
 

@@ -23,6 +23,26 @@ final class ControlAPIRouterTests: XCTestCase {
         XCTAssertEqual(controlResponse.message, "status-ok")
     }
 
+    func testReturnsStatusForAuthorizedGETStatusRequestWithQuery() throws {
+        let router = makeRouter(statusMessage: "status-ok")
+
+        let response = router.response(for: request(method: "GET", path: "/status?format=json"))
+        let controlResponse = try decode(response)
+
+        XCTAssertEqual(response.statusCode, 200)
+        XCTAssertTrue(controlResponse.ok)
+        XCTAssertEqual(controlResponse.message, "status-ok")
+    }
+
+    func testRejectsStatusPrefixRoute() {
+        let router = makeRouter()
+
+        let response = router.response(for: request(method: "GET", path: "/status-extra"))
+
+        XCTAssertEqual(response.statusCode, 404)
+        XCTAssertEqual(String(data: response.body, encoding: .utf8), "Unknown API route")
+    }
+
     func testDispatchesAuthorizedPOSTAPIRequest() throws {
         var handledRequest: ControlRequest?
         let router = makeRouter { request in
@@ -38,6 +58,41 @@ final class ControlAPIRouterTests: XCTestCase {
         XCTAssertEqual(handledRequest?.profileName, "CERN lxplus")
         XCTAssertTrue(controlResponse.ok)
         XCTAssertEqual(controlResponse.message, "handled connect")
+    }
+
+    func testDispatchesAuthorizedPOSTAPIRequestWithQuery() throws {
+        var handledRequest: ControlRequest?
+        let router = makeRouter { request in
+            handledRequest = request
+            return ControlResponse(ok: true, message: "handled \(request.action.rawValue)")
+        }
+        let body = try JSONEncoder().encode(ControlRequest(action: .connect, profileName: "CERN lxplus"))
+
+        let response = router.response(for: request(path: "/api?source=test", body: body))
+        let controlResponse = try decode(response)
+
+        XCTAssertEqual(handledRequest?.action, .connect)
+        XCTAssertEqual(handledRequest?.profileName, "CERN lxplus")
+        XCTAssertTrue(controlResponse.ok)
+        XCTAssertEqual(controlResponse.message, "handled connect")
+    }
+
+    func testRejectsAPIPrefixRoute() {
+        let router = makeRouter()
+
+        let response = router.response(for: request(path: "/api-extra"))
+
+        XCTAssertEqual(response.statusCode, 404)
+        XCTAssertEqual(String(data: response.body, encoding: .utf8), "Unknown API route")
+    }
+
+    func testUnauthorizedPrefixRouteStillRequiresToken() {
+        let router = makeRouter(token: "expected-token")
+
+        let response = router.response(for: request(path: "/api-extra", headers: ["authorization": "Bearer wrong-token"]))
+
+        XCTAssertEqual(response.statusCode, 401)
+        XCTAssertEqual(String(data: response.body, encoding: .utf8), "Missing or invalid API token")
     }
 
     func testDispatchesHopControlAction() throws {

@@ -41,12 +41,13 @@ enum TestPortAllocator {
     static func startedLocalHTTPServer(
         label: String,
         retries: Int = 20,
+        limits: LocalHTTPServerLimits = .standard,
         handler: @escaping LocalHTTPServer.Handler
     ) throws -> (server: LocalHTTPServer, port: Int) {
         var lastError: Error?
         for attempt in 0..<max(1, retries) {
             let port = try freePort()
-            let server = try LocalHTTPServer(port: port, label: "\(label).\(attempt)", handler: handler)
+            let server = try LocalHTTPServer(port: port, label: "\(label).\(attempt)", limits: limits, handler: handler)
             do {
                 try server.start()
                 return (server, port)

@@ -6,6 +6,10 @@ public struct HTTPRequest: Sendable {
     public var path: String
     public var headers: [String: String]
     public var body: Data
+
+    public var routePath: String {
+        String(path.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).first ?? "")
+    }
 }
 
 public struct HTTPResponse: Sendable {
@@ -51,6 +55,18 @@ public struct HTTPResponse: Sendable {
     }
 }
 
+public struct LocalHTTPServerLimits: Equatable, Sendable {
+    public var maxHeaderBytes: Int
+    public var maxBodyBytes: Int
+
+    public static let standard = LocalHTTPServerLimits(maxHeaderBytes: 16 * 1024, maxBodyBytes: 1024 * 1024)
+
+    public init(maxHeaderBytes: Int, maxBodyBytes: Int) {
+        self.maxHeaderBytes = maxHeaderBytes
+        self.maxBodyBytes = maxBodyBytes
+    }
+}
+
 public enum LocalHTTPServerError: LocalizedError, Equatable, Sendable {
     case invalidPort(Int)
     case startupFailed(String)
@@ -78,16 +94,24 @@ public final class LocalHTTPServer {
 
     private let port: UInt16
     private let bindAddress: BindAddress
+    private let limits: LocalHTTPServerLimits
     private let handler: Handler
     private let queue: DispatchQueue
     private var listener: NWListener?
 
-    public init(port: Int, label: String, bindAddress: BindAddress = .loopback, handler: @escaping Handler) throws {
+    public init(
+        port: Int,
+        label: String,
+        bindAddress: BindAddress = .loopback,
+        limits: LocalHTTPServerLimits = .standard,
+        handler: @escaping Handler
+    ) throws {
         guard (1...65_535).contains(port), let validatedPort = UInt16(exactly: port) else {
             throw LocalHTTPServerError.invalidPort(port)
         }
         self.port = validatedPort
         self.bindAddress = bindAddress
+        self.limits = limits
         self.handler = handler
         self.queue = DispatchQueue(label: label)
     }
@@ -158,27 +182,88 @@ public final class LocalHTTPServer {
                 nextBuffer.append(data)
             }
 
-            if Self.isCompleteRequest(nextBuffer) || isComplete {
-                let request = Self.parseRequest(nextBuffer)
-                let response = request.map(handler) ?? HTTPResponse.error(400, "Bad Request", "Could not parse HTTP request")
+            switch Self.bufferedRequest(nextBuffer, limits: limits, isComplete: isComplete) {
+            case .ready(let request):
+                let response = handler(request)
                 connection.send(content: response.serialized(), completion: .contentProcessed { _ in
                     connection.cancel()
                 })
-            } else {
+            case .error(let response):
+                connection.send(content: response.serialized(), completion: .contentProcessed { _ in
+                    connection.cancel()
+                })
+            case .incomplete:
                 self.receive(connection, buffer: nextBuffer)
             }
         }
     }
 
-    private static func parseRequest(_ data: Data) -> HTTPRequest? {
-        guard let raw = String(data: data, encoding: .utf8),
-              let headerEnd = raw.range(of: "\r\n\r\n") ?? raw.range(of: "\n\n"),
-              let headerDataEnd = data.range(of: Data("\r\n\r\n".utf8))?.upperBound ?? data.range(of: Data("\n\n".utf8))?.upperBound else {
+    private enum BufferedRequest {
+        case incomplete
+        case ready(HTTPRequest)
+        case error(HTTPResponse)
+    }
+
+    private struct HeaderDelimiter {
+        var lowerBound: Data.Index
+        var upperBound: Data.Index
+    }
+
+    private static func bufferedRequest(_ data: Data, limits: LocalHTTPServerLimits, isComplete: Bool) -> BufferedRequest {
+        let delimiter = headerDelimiter(in: data)
+        guard let delimiter else {
+            if data.count > limits.maxHeaderBytes {
+                return .error(.error(431, "Request Header Fields Too Large", "HTTP request headers are too large"))
+            }
+            return isComplete
+                ? .error(.error(400, "Bad Request", "Could not parse HTTP request"))
+                : .incomplete
+        }
+
+        guard delimiter.upperBound <= limits.maxHeaderBytes else {
+            return .error(.error(431, "Request Header Fields Too Large", "HTTP request headers are too large"))
+        }
+
+        let headerData = data[..<delimiter.lowerBound]
+        guard let headerText = String(data: headerData, encoding: .utf8) else {
+            return .error(.error(400, "Bad Request", "Could not parse HTTP request headers"))
+        }
+
+        guard let contentLength = parsedContentLength(from: headerText) else {
+            return .error(.error(400, "Bad Request", "Invalid Content-Length header"))
+        }
+
+        guard contentLength <= limits.maxBodyBytes else {
+            return .error(.error(413, "Payload Too Large", "HTTP request body is too large"))
+        }
+
+        let totalLength = delimiter.upperBound + contentLength
+        guard totalLength >= delimiter.upperBound else {
+            return .error(.error(413, "Payload Too Large", "HTTP request body is too large"))
+        }
+
+        guard data.count >= totalLength else {
+            return isComplete
+                ? .error(.error(400, "Bad Request", "Incomplete HTTP request body"))
+                : .incomplete
+        }
+
+        guard let request = parseRequest(data, delimiter: delimiter, contentLength: contentLength) else {
+            return .error(.error(400, "Bad Request", "Could not parse HTTP request"))
+        }
+        return .ready(request)
+    }
+
+    private static func parseRequest(_ data: Data, delimiter: HeaderDelimiter, contentLength: Int) -> HTTPRequest? {
+        let headerData = data[..<delimiter.lowerBound]
+        guard let headerText = String(data: headerData, encoding: .utf8) else {
             return nil
         }
 
-        let headerText = String(raw[..<headerEnd.lowerBound])
-        let body = Data(data[headerDataEnd...])
+        let bodyStart = delimiter.upperBound
+        let bodyEnd = bodyStart + contentLength
+        guard bodyEnd <= data.endIndex else { return nil }
+        let body = Data(data[bodyStart..<bodyEnd])
         let lines = headerText.components(separatedBy: .newlines).filter { !$0.isEmpty }
         guard let requestLine = lines.first else { return nil }
         let parts = requestLine.split(separator: " ", maxSplits: 2).map(String.init)
@@ -195,23 +280,43 @@ public final class LocalHTTPServer {
         return HTTPRequest(method: parts[0], path: parts[1], headers: headers, body: body)
     }
 
-    private static func isCompleteRequest(_ data: Data) -> Bool {
-        guard let headerEnd = data.range(of: Data("\r\n\r\n".utf8))?.upperBound ?? data.range(of: Data("\n\n".utf8))?.upperBound else {
-            return false
+    private static func headerDelimiter(in data: Data) -> HeaderDelimiter? {
+        let crlf = data.range(of: Data("\r\n\r\n".utf8))
+        let lf = data.range(of: Data("\n\n".utf8))
+        let selected: Range<Data.Index>?
+        switch (crlf, lf) {
+        case (.some(let crlf), .some(let lf)):
+            selected = crlf.lowerBound <= lf.lowerBound ? crlf : lf
+        case (.some(let crlf), .none):
+            selected = crlf
+        case (.none, .some(let lf)):
+            selected = lf
+        case (.none, .none):
+            selected = nil
         }
-        let headerData = data[..<headerEnd]
-        guard let headerText = String(data: headerData, encoding: .utf8) else {
-            return false
-        }
-        let contentLength = headerText
+        guard let selected else { return nil }
+        return HeaderDelimiter(lowerBound: selected.lowerBound, upperBound: selected.upperBound)
+    }
+
+    private static func parsedContentLength(from headerText: String) -> Int? {
+        let contentLengthValues = headerText
             .components(separatedBy: .newlines)
-            .compactMap { line -> Int? in
+            .dropFirst()
+            .compactMap { line -> String? in
                 let parts = line.split(separator: ":", maxSplits: 1).map(String.init)
                 guard parts.count == 2, parts[0].lowercased() == "content-length" else { return nil }
-                return Int(parts[1].trimmingCharacters(in: .whitespaces))
+                return parts[1].trimmingCharacters(in: .whitespaces)
             }
-            .first ?? 0
-        return data.count >= headerEnd + contentLength
+        guard contentLengthValues.count <= 1 else {
+            return nil
+        }
+        guard let value = contentLengthValues.first else {
+            return 0
+        }
+        guard let contentLength = Int(value), contentLength >= 0 else {
+            return nil
+        }
+        return contentLength
     }
 }
 

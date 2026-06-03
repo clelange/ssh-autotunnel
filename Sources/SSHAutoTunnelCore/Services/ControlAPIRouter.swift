@@ -30,11 +30,11 @@ public struct ControlAPIRouter {
             return .error(401, "Unauthorized", "Missing or invalid API token")
         }
 
-        if request.method == "GET", request.path.hasPrefix("/status") {
+        if request.method == "GET", request.routePath == "/status" {
             return .json(statusProvider(), encoder: encoder)
         }
 
-        guard request.method == "POST", request.path.hasPrefix("/api") else {
+        guard request.method == "POST", request.routePath == "/api" else {
             return .error(404, "Not Found", "Unknown API route")
         }
 

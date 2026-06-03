@@ -147,6 +147,7 @@ public final class HopConnectionManager {
 
         queue.sync {
             for managed in managedHops {
+                flushRedactedOutputLocked(managed)
                 if processes[managed.profile.id] === managed {
                     processes[managed.profile.id] = nil
                 }
@@ -244,6 +245,7 @@ public final class HopConnectionManager {
                 self.queue.asyncAfter(deadline: .now() + self.processExitObservationDelay) { [weak self, weak managed] in
                     guard let self, let managed else { return }
                     guard self.processes[profile.id] === managed else { return }
+                    self.flushRedactedOutputLocked(managed)
                     self.processes[profile.id] = nil
 
                     let hasExistingSessionConflict = managed.hasExistingSessionConflict || managed.matchesExistingSessionConflict
@@ -274,7 +276,10 @@ public final class HopConnectionManager {
     private func handleOutput(_ data: Data, hop: ManagedHopConnection) {
         hop.outputBuffer.append(data)
         let text = String(data: data, encoding: .utf8) ?? ""
-        onLog?(hop.profile.id, SSHTranscriptLog.redact(text, secrets: hop.redactedSecrets))
+        let redactedText = hop.redactor.redact(text)
+        if !redactedText.isEmpty {
+            onLog?(hop.profile.id, redactedText)
+        }
         hop.readinessMarker?.handle(data)
         detectExistingSessionConflict(in: hop)
         respondIfNeeded(to: hop.outputBuffer, hop: hop)
@@ -349,7 +354,7 @@ public final class HopConnectionManager {
             logEventLocked("password prompt detected", profileID: hop.profile.id)
             if let password = hop.credentials.password {
                 hop.sentPassword = true
-                hop.redactedSecrets.append(password)
+                hop.addRedactedSecret(password)
                 logEventLocked("password sent (<redacted>)", profileID: hop.profile.id)
                 write(password + "\n", to: hop)
             } else {
@@ -363,7 +368,7 @@ public final class HopConnectionManager {
                     let seed = try readGenericPassword(service: totpReference.service, account: totpReference.account)
                     let totp = try totpGenerator(seed)
                     hop.sentTOTP = true
-                    hop.redactedSecrets.append(totp)
+                    hop.addRedactedSecret(totp)
                     logEventLocked("TOTP sent (<redacted>)", profileID: hop.profile.id)
                     write(totp + "\n", to: hop)
                 } catch {
@@ -402,6 +407,7 @@ public final class HopConnectionManager {
             }
             return
         }
+        flushRedactedOutputLocked(managed)
         managed.stopReason = reason
         if managed.session.isRunning {
             logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: profileID)
@@ -501,6 +507,13 @@ public final class HopConnectionManager {
         onLog?(profileID, SSHTranscriptLog.event(kind: "hop", message: message, at: now()))
     }
 
+    private func flushRedactedOutputLocked(_ managed: ManagedHopConnection) {
+        let text = managed.redactor.flush()
+        if !text.isEmpty {
+            onLog?(managed.profile.id, text)
+        }
+    }
+
     private func startHealthTimer() {
         let timer = DispatchSource.makeTimerSource(queue: queue)
         timer.schedule(deadline: .now() + 2, repeating: 5)
@@ -514,6 +527,7 @@ public final class HopConnectionManager {
     private func checkHealthLocked() {
         for (profileID, managed) in Array(processes) {
             guard managed.session.isRunning else {
+                flushRedactedOutputLocked(managed)
                 processes[profileID] = nil
                 let decision = TunnelLifecyclePolicy.processExitDecision(
                     terminationStatus: managed.session.terminationStatus,
@@ -606,6 +620,7 @@ private final class ManagedHopConnection {
     var session: SSHProcessSession!
     var outputBuffer = Data()
     var redactedSecrets: [String]
+    var redactor: SSHTranscriptRedactor
     var stopReason: StopReason?
     var hasExistingSessionConflict = false
     var sentHostKeyConfirmation = false
@@ -640,6 +655,13 @@ private final class ManagedHopConnection {
         self.launchOptions = launchOptions
         self.startedAt = startedAt
         readinessMarker = JumpHostReadinessMarker(controlMaster: controlMaster)
-        redactedSecrets = [credentials.password].compactMap(\.self)
+        let initialSecrets = [credentials.password].compactMap(\.self)
+        redactedSecrets = initialSecrets
+        redactor = SSHTranscriptRedactor(secrets: initialSecrets)
+    }
+
+    func addRedactedSecret(_ secret: String) {
+        redactedSecrets.append(secret)
+        redactor.addSecret(secret)
     }
 }
