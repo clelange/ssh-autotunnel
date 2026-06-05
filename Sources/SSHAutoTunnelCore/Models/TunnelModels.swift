@@ -214,13 +214,22 @@ public struct TunnelRuntimeStatus: Codable, Equatable, Sendable {
     public var health: TunnelHealth
     public var message: String
     public var pid: Int32?
+    public var effectiveLocalSocksPort: Int?
     public var lastChanged: Date
 
-    public init(profileID: UUID, health: TunnelHealth = .stopped, message: String = "Stopped", pid: Int32? = nil, lastChanged: Date = Date()) {
+    public init(
+        profileID: UUID,
+        health: TunnelHealth = .stopped,
+        message: String = "Stopped",
+        pid: Int32? = nil,
+        effectiveLocalSocksPort: Int? = nil,
+        lastChanged: Date = Date()
+    ) {
         self.profileID = profileID
         self.health = health
         self.message = message
         self.pid = pid
+        self.effectiveLocalSocksPort = effectiveLocalSocksPort
         self.lastChanged = lastChanged
     }
 }

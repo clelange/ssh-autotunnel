@@ -95,6 +95,134 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertEqual(manager.status(for: profile.id).health, .connecting)
     }
 
+    func testStartUsesAllocatedRuntimeSocksPortWithoutChangingProfile() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        var allocatorCalls: [(preferred: Int, reserved: Set<Int>)] = []
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socksPortAllocator: { preferred, reserved in
+                allocatorCalls.append((preferred, reserved))
+                return RuntimeSocksPortAllocation(port: 1100, usedPreferredPort: false)
+            },
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile, reservedSocksPorts: [1083, 1098])
+        wait(for: [started], timeout: 1)
+
+        XCTAssertEqual(allocatorCalls.count, 1)
+        XCTAssertEqual(allocatorCalls.first?.preferred, 1099)
+        XCTAssertEqual(allocatorCalls.first?.reserved, [1083, 1098])
+        XCTAssertEqual(try XCTUnwrap(launcher.commands.first).dynamicForwardPort, 1100)
+        XCTAssertEqual(profile.localSocksPort, 1099)
+        XCTAssertEqual(manager.status(for: profile.id).effectiveLocalSocksPort, 1100)
+    }
+
+    func testStartFailsBeforeReadingKeychainWhenNoRuntimeSocksPortIsAvailable() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let keychain = FakeGenericPasswordReader(values: ["password-service": "secret-password"])
+        let profile = TunnelProfile(
+            name: "Test",
+            host: "ssh.example.org",
+            localSocksPort: 1099,
+            authMode: .password,
+            keychain: KeychainReference(account: "alice", passwordService: "password-service")
+        )
+        let manager = TunnelManager(
+            keychain: keychain,
+            processLauncher: launcher,
+            socksPortAllocator: { preferred, _ in
+                throw RuntimeSocksPortAllocationError(preferredPort: preferred)
+            },
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("port allocation failure is reported") {
+            manager.status(for: profile.id).health == .failed
+        }
+
+        XCTAssertTrue(keychain.reads.isEmpty)
+        XCTAssertTrue(launcher.commands.isEmpty)
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("Could not find an available local SOCKS port"))
+    }
+
+    func testHealthProbeUsesAllocatedRuntimeSocksPort() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        var probedPorts: [Int] = []
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socks5Probe: { port in
+                probedPorts.append(port)
+                return port == 1100
+            },
+            socksPortAllocator: { _, _ in RuntimeSocksPortAllocation(port: 1100, usedPreferredPort: false) },
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        manager.runHealthCheckForTesting()
+
+        XCTAssertEqual(probedPorts, [1100])
+        XCTAssertEqual(manager.status(for: profile.id).health, .healthy)
+        XCTAssertEqual(manager.status(for: profile.id).effectiveLocalSocksPort, 1100)
+    }
+
+    func testAppOwnedForwardingFailureRetriesOnceWithAlternateRuntimePort() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        var allocatedPorts = [1099, 1100]
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socksPortAllocator: { _, reserved in
+                let next = allocatedPorts.removeFirst()
+                XCTAssertFalse(reserved.contains(next))
+                return RuntimeSocksPortAllocation(port: next, usedPreferredPort: next == 1099)
+            },
+            reconnectDelay: { _ in 0.01 },
+            processExitOutputSettleDelay: 0,
+            startsHealthTimer: false
+        )
+        let firstStart = expectation(description: "first start")
+        let secondStart = expectation(description: "second start")
+        var starts = 0
+        manager.onStatusChange = { status in
+            guard status.profileID == profile.id, status.message == "SSH process started" else { return }
+            starts += 1
+            if starts == 1 {
+                firstStart.fulfill()
+            } else if starts == 2 {
+                secondStart.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [firstStart], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.emit(forwardingFailureTranscript(port: 1099))
+        session.exit(status: 255)
+        wait(for: [secondStart], timeout: 1)
+
+        XCTAssertEqual(launcher.commands.map(\.dynamicForwardPort), [1099, 1100])
+        XCTAssertEqual(manager.status(for: profile.id).health, .connecting)
+        XCTAssertEqual(manager.status(for: profile.id).effectiveLocalSocksPort, 1100)
+    }
+
     func testLocalForwardingFailureDoesNotReconnectWhenOutputArrivesBeforeTermination() throws {
         let launcher = FakeSSHProcessLauncher()
         let profile = testProfile(autoReconnect: true)
@@ -481,6 +609,27 @@ bind [127.0.0.1]:12345: Address already in use\r
 channel_setup_fwd_listener_tcpip: cannot listen to port: 12345\r
 Could not request local forwarding.\r
 """
+
+private func forwardingFailureTranscript(port: Int) -> String {
+    """
+    bind [127.0.0.1]:\(port): Address already in use\r
+    channel_setup_fwd_listener_tcpip: cannot listen to port: \(port)\r
+    Could not request local forwarding.\r
+    """
+}
+
+private extension SSHCommand {
+    var dynamicForwardPort: Int? {
+        guard let index = arguments.firstIndex(of: "-D"),
+              arguments.indices.contains(arguments.index(after: index)) else {
+            return nil
+        }
+        return arguments[arguments.index(after: index)]
+            .split(separator: ":")
+            .last
+            .flatMap { Int($0) }
+    }
+}
 
 private final class FakeSSHProcessLauncher: SSHProcessLaunching {
     private var nextPID: Int32 = 10_000

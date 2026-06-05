@@ -79,6 +79,7 @@ public struct ProfileStatusSnapshot: Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
     public var localSocksPort: Int
+    public var effectiveLocalSocksPort: Int?
     public var hop: HopStatusSnapshot?
     public var health: TunnelHealth
     public var message: String
@@ -88,6 +89,7 @@ public struct ProfileStatusSnapshot: Codable, Equatable, Sendable {
         id = profile.id
         name = profile.name
         localSocksPort = profile.localSocksPort
+        effectiveLocalSocksPort = status.effectiveLocalSocksPort
         hop = hopStatus.map(HopStatusSnapshot.init(status:))
         health = status.health
         message = status.message

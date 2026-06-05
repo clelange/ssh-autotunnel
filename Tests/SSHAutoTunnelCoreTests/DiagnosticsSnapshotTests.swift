@@ -67,6 +67,25 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         XCTAssertEqual(decoded.systemPACStatus?.state, .notConfigured)
     }
 
+    func testProfileStatusSnapshotCarriesEffectiveRuntimeSocksPort() throws {
+        let profileID = try XCTUnwrap(UUID(uuidString: "22222222-2222-2222-2222-222222222222"))
+        let profile = TunnelProfile(id: profileID, name: "CERN LxPlus", host: "lxtunnel.cern.ch", localSocksPort: 1083)
+        let status = TunnelRuntimeStatus(
+            profileID: profileID,
+            health: .healthy,
+            message: "SOCKS5 OK",
+            effectiveLocalSocksPort: 1084
+        )
+        let snapshot = ProfileStatusSnapshot(profile: profile, status: status)
+
+        let data = try JSONEncoder().encode(snapshot)
+        let decoded = try JSONDecoder().decode(ProfileStatusSnapshot.self, from: data)
+
+        XCTAssertEqual(decoded, snapshot)
+        XCTAssertEqual(decoded.localSocksPort, 1083)
+        XCTAssertEqual(decoded.effectiveLocalSocksPort, 1084)
+    }
+
     func testControlResponseCanCarryDiagnostics() throws {
         let diagnostics = DiagnosticsSnapshot(
             appIdentifier: "dev.clange.ssh-autotunnel",

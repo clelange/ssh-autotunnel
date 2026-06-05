@@ -105,20 +105,19 @@
 - Added Settings actions to copy or install a managed OpenSSH config snippet for jump-host profiles without editing existing user config blocks.
 - Added hop connect/disconnect/reconnect coverage to the local API, CLI, Shortcuts/App Intents, status snapshots, diagnostics, and tests.
 - Added synchronous SSH stop-on-quit with SIGTERM/SIGKILL fallback, process-group signaling, safer graceful app relaunch in the run script, and pid-validated interactive session markers to prevent orphaned tunnels and stale quit warnings.
+- Added runtime SOCKS port fallback with loopback bind probing, effective-port PAC/status/CLI/dashboard reporting, and one retry for app-owned SSH forwarding conflicts.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
 
-Last known good checks:
+Latest feature validation:
 
 ```sh
 swift build
 swift test
-./script/build_and_run.sh --verify
-./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2. After the persistent System PAC toggle update, the core test suite has 274 XCTest cases.
+Both passed after the runtime SOCKS port fallback update. The core test suite has 308 XCTest cases.
 
 ## Known Gaps
 

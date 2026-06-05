@@ -178,7 +178,7 @@ struct SSHAutoTunnelCLI {
         }
         for profile in status.profiles {
             let pid = profile.pid.map { " pid=\($0)" } ?? ""
-            print("- \(profile.name): \(profile.health.rawValue)\(pid) - \(profile.message)")
+            print("- \(profile.name): \(profile.health.rawValue)\(pid) \(socksLabel(for: profile)) - \(profile.message)")
             if let hop = profile.hop {
                 let hopPID = hop.pid.map { " pid=\($0)" } ?? ""
                 print("  hop \(hop.jumpHost): \(hop.health.rawValue)\(hopPID) - \(hop.message)")
@@ -254,6 +254,14 @@ struct SSHAutoTunnelCLI {
             parts.append("error=\(errorMessage)")
         }
         return parts.joined(separator: ", ")
+    }
+
+    private static func socksLabel(for profile: ProfileStatusSnapshot) -> String {
+        guard let effectiveLocalSocksPort = profile.effectiveLocalSocksPort,
+              effectiveLocalSocksPort != profile.localSocksPort else {
+            return "socks=127.0.0.1:\(profile.localSocksPort)"
+        }
+        return "socks=127.0.0.1:\(effectiveLocalSocksPort) configured=\(profile.localSocksPort)"
     }
 
     private static func readProfile(from argument: String?) throws -> TunnelProfile {

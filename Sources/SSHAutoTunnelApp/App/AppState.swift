@@ -150,7 +150,7 @@ final class AppState: ObservableObject {
         } else {
             statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .reconnecting, message: "Reconnect requested")
             lastProxyMessage = "\(profile.name): Reconnect requested"
-            tunnelManager.reconnect(profile: profile, options: .standard)
+            tunnelManager.reconnect(profile: profile, options: .standard, reservedSocksPorts: reservedSocksPorts(excluding: profile.id))
         }
     }
 
@@ -228,7 +228,7 @@ final class AppState: ObservableObject {
     private func startTunnel(_ profile: TunnelProfile, message: String, options: SSHLaunchOptions) {
         statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: message)
         lastProxyMessage = "\(profile.name): \(message)"
-        tunnelManager.start(profile: profile, options: options)
+        tunnelManager.start(profile: profile, options: options, reservedSocksPorts: reservedSocksPorts(excluding: profile.id))
     }
 
     private func startHop(_ profile: TunnelProfile, resetLog: Bool, options: SSHLaunchOptions = .standard) {
@@ -252,7 +252,7 @@ final class AppState: ObservableObject {
             statuses[profile.id] = TunnelRuntimeStatus(profileID: profile.id, health: .connecting, message: "Starting tunnel through hop")
             lastProxyMessage = "\(profile.name): Starting tunnel through hop"
             pendingTunnelStartTokens[profile.id] = nil
-            tunnelManager.start(profile: tunnelProfile, options: options)
+            tunnelManager.start(profile: tunnelProfile, options: options, reservedSocksPorts: reservedSocksPorts(excluding: profile.id))
         } catch {
             guard pendingTunnelStartTokens[profile.id] == token else { return }
             pendingTunnelStartTokens[profile.id] = nil
@@ -1273,7 +1273,7 @@ final class AppState: ObservableObject {
     private func statusHTML() -> String {
         let rows = configuration.profiles.map { profile in
             let status = status(for: profile)
-            return "<tr><td>\(escape(profile.name))</td><td>\(escape(status.health.rawValue))</td><td>\(escape(status.message))</td></tr>"
+            return "<tr><td>\(escape(profile.name))</td><td>\(escape(status.health.rawValue))</td><td>\(escape(socksPortSummary(profile: profile, status: status)))</td><td>\(escape(status.message))</td></tr>"
         }.joined()
         return """
         <!doctype html>
@@ -1283,9 +1283,16 @@ final class AppState: ObservableObject {
         <h1>SSH AutoTunnel</h1>
         <p>PAC URL: <code>\(escape(pacURL))</code></p>
         <p>Network policy: \(networkDecision.shouldDisableProxy ? "proxy disabled" : "proxy allowed") \(escape(networkDecision.matchedRule?.name ?? ""))</p>
-        <table><tr><th>Profile</th><th>Status</th><th>Message</th></tr>\(rows)</table>
+        <table><tr><th>Profile</th><th>Status</th><th>SOCKS</th><th>Message</th></tr>\(rows)</table>
         </body></html>
         """
+    }
+
+    private func socksPortSummary(profile: TunnelProfile, status: TunnelRuntimeStatus) -> String {
+        guard let effectivePort = status.effectiveLocalSocksPort, effectivePort != profile.localSocksPort else {
+            return "127.0.0.1:\(profile.localSocksPort)"
+        }
+        return "127.0.0.1:\(effectivePort) (configured \(profile.localSocksPort))"
     }
 
     private func escape(_ value: String) -> String {
@@ -1307,5 +1314,20 @@ final class AppState: ObservableObject {
             port += 1
         }
         return port
+    }
+
+    private func reservedSocksPorts(excluding profileID: UUID) -> Set<Int> {
+        var ports = Set([
+            configuration.pacHTTPPort,
+            configuration.apiHTTPPort,
+            configuration.blockingHTTPProxyPort
+        ])
+        ports.formUnion(configuration.profiles.compactMap { profile in
+            profile.id == profileID ? nil : profile.localSocksPort
+        })
+        ports.formUnion(statuses.values.compactMap { status in
+            status.profileID == profileID ? nil : status.effectiveLocalSocksPort
+        })
+        return ports
     }
 }

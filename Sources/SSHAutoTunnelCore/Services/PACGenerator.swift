@@ -64,7 +64,7 @@ public enum PACGenerator {
             if context.networkDisabledProfileIDs.contains(profile.id) {
                 target = fallback
             } else if status.health.isUsableForPAC {
-                target = "\"SOCKS5 127.0.0.1:\(profile.localSocksPort)\""
+                target = "\"SOCKS5 127.0.0.1:\(status.effectiveLocalSocksPort ?? profile.localSocksPort)\""
             } else {
                 target = rule.failureMode == .directFallback
                     ? fallback

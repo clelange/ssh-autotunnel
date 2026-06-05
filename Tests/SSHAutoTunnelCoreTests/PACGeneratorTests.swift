@@ -14,6 +14,25 @@ final class PACGeneratorTests: XCTestCase {
         XCTAssertTrue(pac.contains("SOCKS5 127.0.0.1:1088"))
     }
 
+    func testHealthyProfileUsesEffectiveRuntimeSocksPortWhenPresent() {
+        let profile = TunnelProfile(name: "Test", host: "ssh.example.org", localSocksPort: 1088)
+        let rule = PACRule(name: "Example", domainPattern: "*.example.org", profileID: profile.id)
+        let config = AppConfiguration(profiles: [profile], pacRules: [rule])
+        let pac = PACGenerator.generate(context: PACGenerationContext(
+            configuration: config,
+            statuses: [
+                profile.id: TunnelRuntimeStatus(
+                    profileID: profile.id,
+                    health: .healthy,
+                    effectiveLocalSocksPort: 1090
+                )
+            ]
+        ))
+
+        XCTAssertTrue(pac.contains("SOCKS5 127.0.0.1:1090"))
+        XCTAssertFalse(pac.contains("SOCKS5 127.0.0.1:1088"))
+    }
+
     func testUnhealthyProfileUsesDirectFallbackByDefault() {
         let profile = TunnelProfile(name: "Test", host: "ssh.example.org", localSocksPort: 1088)
         let rule = PACRule(name: "Example", domainPattern: "*.example.org", profileID: profile.id)

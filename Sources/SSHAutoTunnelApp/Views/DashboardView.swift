@@ -246,7 +246,11 @@ private struct ProfileControlCard: View {
     }
 
     private var endpointSummary: String {
-        var parts = ["\(profile.sshDestination):\(profile.sshPort)", "SOCKS 127.0.0.1:\(profile.localSocksPort)"]
+        let socksPort = tunnelStatus.effectiveLocalSocksPort ?? profile.localSocksPort
+        let socksSummary = socksPort == profile.localSocksPort
+            ? "SOCKS 127.0.0.1:\(profile.localSocksPort)"
+            : "SOCKS 127.0.0.1:\(socksPort) (configured \(profile.localSocksPort))"
+        var parts = ["\(profile.sshDestination):\(profile.sshPort)", socksSummary]
         if let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines), !jumpHost.isEmpty {
             parts.append("via \(jumpHost)")
         }
