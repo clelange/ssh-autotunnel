@@ -110,6 +110,17 @@
 
 ## Validation Status
 
+Last full package verification:
+
+```sh
+swift build
+swift test
+./script/build_and_run.sh --verify
+./script/package_local.sh --verify
+```
+
+All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2 before the runtime SOCKS port fallback update.
+
 Latest feature validation:
 
 ```sh
@@ -117,7 +128,7 @@ swift build
 swift test
 ```
 
-Both passed after the runtime SOCKS port fallback update. The core test suite has 308 XCTest cases.
+Both passed after the runtime SOCKS port fallback update. The core test suite has 309 XCTest cases.
 
 ## Known Gaps
 

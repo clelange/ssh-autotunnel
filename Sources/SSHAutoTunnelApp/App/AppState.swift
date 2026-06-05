@@ -93,7 +93,10 @@ final class AppState: ObservableObject {
     private var pacVersion: Int {
         let statusHash = statuses.values
             .sorted { $0.profileID.uuidString < $1.profileID.uuidString }
-            .map { "\($0.profileID.uuidString):\($0.health.rawValue)" }
+            .map { status in
+                let effectivePort = status.effectiveLocalSocksPort.map(String.init) ?? "-"
+                return "\(status.profileID.uuidString):\(status.health.rawValue):\(effectivePort)"
+            }
             .joined(separator: "|")
             .hashValue
         return abs(statusHash)
