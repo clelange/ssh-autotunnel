@@ -13,6 +13,7 @@ APP_BUNDLE="$ARCHIVE_ROOT/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_HELPERS="$APP_CONTENTS/Helpers"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 CLI_HELPER="$APP_HELPERS/$CLI_NAME"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
@@ -30,11 +31,13 @@ swift build -c release --product "$CLI_NAME"
 BIN_DIR="$(swift build -c release --show-bin-path)"
 
 rm -rf "$ARCHIVE_ROOT" "$ZIP_PATH" "$CHECKSUM_PATH"
-mkdir -p "$APP_MACOS" "$APP_HELPERS"
+mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES"
 
 cp "$BIN_DIR/$APP_NAME" "$APP_BINARY"
 cp "$BIN_DIR/$CLI_NAME" "$ARCHIVE_ROOT/$CLI_NAME"
 cp "$BIN_DIR/$CLI_NAME" "$CLI_HELPER"
+cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
+cp "$ROOT_DIR/Resources/AppIconDark.icns" "$APP_RESOURCES/AppIconDark.icns"
 chmod +x "$APP_BINARY" "$ARCHIVE_ROOT/$CLI_NAME" "$CLI_HELPER"
 
 cat >"$INFO_PLIST" <<PLIST
@@ -46,6 +49,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleName</key>
   <string>SSH AutoTunnel</string>
   <key>CFBundlePackageType</key>

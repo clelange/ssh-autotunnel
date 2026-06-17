@@ -62,12 +62,15 @@ struct SSHAutoTunnelApp: App {
     }
 }
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let logger = Logger(subsystem: AppPaths.appIdentifier, category: "lifecycle")
+    private let appIconAppearanceController = AppIconAppearanceController()
     weak var appState: AppState?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
+        appIconAppearanceController.start()
         AppActivation.activate()
     }
 
@@ -93,6 +96,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        appIconAppearanceController.stop()
         appState?.prepareForTermination()
         do {
             try SystemProxyManager().restoreIfNeeded()

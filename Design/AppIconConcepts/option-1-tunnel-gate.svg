@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="SSH AutoTunnel app icon concept: secure tunnel gate">
+  <defs>
+    <linearGradient id="tile" x1="168" y1="96" x2="856" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#2B3642"/>
+      <stop offset="0.48" stop-color="#111820"/>
+      <stop offset="1" stop-color="#060A0E"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="50%" cy="48%" r="54%">
+      <stop offset="0" stop-color="#3EF3FF" stop-opacity="0.72"/>
+      <stop offset="0.42" stop-color="#1FBBD0" stop-opacity="0.22"/>
+      <stop offset="1" stop-color="#101820" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="portal" x1="298" y1="224" x2="726" y2="798" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#495768"/>
+      <stop offset="0.42" stop-color="#1D2833"/>
+      <stop offset="1" stop-color="#080D12"/>
+    </linearGradient>
+    <linearGradient id="portalEdge" x1="330" y1="244" x2="704" y2="742" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#9BA8B5" stop-opacity="0.65"/>
+      <stop offset="0.28" stop-color="#435463" stop-opacity="0.75"/>
+      <stop offset="1" stop-color="#0B1117" stop-opacity="0.9"/>
+    </linearGradient>
+    <linearGradient id="path" x1="210" y1="590" x2="824" y2="390" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#18A9C6"/>
+      <stop offset="0.45" stop-color="#7DF9FF"/>
+      <stop offset="1" stop-color="#22D3A8"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="610" y1="582" x2="742" y2="730" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE08A"/>
+      <stop offset="1" stop-color="#FF9F1C"/>
+    </linearGradient>
+    <filter id="softShadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="24" stdDeviation="26" flood-color="#000000" flood-opacity="0.38"/>
+    </filter>
+    <filter id="cyanBloom" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="13" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="tileClip">
+      <rect x="64" y="64" width="896" height="896" rx="210"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tileClip)">
+    <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#tile)"/>
+    <circle cx="512" cy="506" r="410" fill="url(#glow)"/>
+    <path d="M80 764 C230 685 326 728 454 648 C607 552 691 443 944 420 L944 960 L80 960 Z" fill="#0A1117" opacity="0.48"/>
+    <path d="M88 234 C264 118 407 156 544 120 C694 80 812 122 952 222 L952 64 L88 64 Z" fill="#728397" opacity="0.09"/>
+  </g>
+
+  <g filter="url(#softShadow)">
+    <path d="M319 767 V423 C319 316 405 230 512 230 C619 230 705 316 705 423 V767 Z" fill="url(#portalEdge)"/>
+    <path d="M371 767 V431 C371 353 434 290 512 290 C590 290 653 353 653 431 V767 Z" fill="url(#portal)"/>
+    <path d="M417 767 V444 C417 392 460 350 512 350 C564 350 607 392 607 444 V767 Z" fill="#070C11"/>
+    <path d="M371 453 C371 361 433 290 512 290 C591 290 653 361 653 453" fill="none" stroke="#84EFFF" stroke-width="10" opacity="0.22"/>
+    <path d="M319 768 H705 L662 822 H362 Z" fill="#070B10" opacity="0.68"/>
+  </g>
+
+  <g filter="url(#cyanBloom)">
+    <path d="M202 589 C319 540 388 552 465 516 C540 481 568 433 632 413 C700 391 758 411 826 375" fill="none" stroke="url(#path)" stroke-width="48" stroke-linecap="round"/>
+    <path d="M202 589 C319 540 388 552 465 516 C540 481 568 433 632 413 C700 391 758 411 826 375" fill="none" stroke="#D9FFFF" stroke-width="12" stroke-linecap="round" opacity="0.9"/>
+  </g>
+
+  <g transform="translate(637 581)" filter="url(#softShadow)">
+    <rect x="0" y="58" width="126" height="104" rx="30" fill="url(#amber)"/>
+    <path d="M32 66 V43 C32 19 51 0 75 0 C99 0 118 19 118 43 V66" fill="none" stroke="#FFD36A" stroke-width="24" stroke-linecap="round"/>
+    <circle cx="63" cy="109" r="13" fill="#3C2400" opacity="0.72"/>
+    <rect x="56" y="109" width="14" height="30" rx="7" fill="#3C2400" opacity="0.72"/>
+    <path d="M26 84 H101" stroke="#FFF1BB" stroke-width="7" stroke-linecap="round" opacity="0.55"/>
+  </g>
+
+  <path d="M292 344 L214 423 L292 502" fill="none" stroke="#9DEFF6" stroke-width="42" stroke-linecap="round" stroke-linejoin="round" opacity="0.24"/>
+</svg>

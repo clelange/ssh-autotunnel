@@ -13,6 +13,7 @@ APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
 APP_MACOS="$APP_CONTENTS/MacOS"
 APP_HELPERS="$APP_CONTENTS/Helpers"
+APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 CLI_HELPER="$APP_HELPERS/ssh-autotunnelctl"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
@@ -61,9 +62,11 @@ BUILD_BINARY="$(swift build --show-bin-path)/$APP_NAME"
 BUILD_CLI="$(swift build --show-bin-path)/ssh-autotunnelctl"
 
 rm -rf "$APP_BUNDLE"
-mkdir -p "$APP_MACOS" "$APP_HELPERS"
+mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES"
 cp "$BUILD_BINARY" "$APP_BINARY"
 cp "$BUILD_CLI" "$CLI_HELPER"
+cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
+cp "$ROOT_DIR/Resources/AppIconDark.icns" "$APP_RESOURCES/AppIconDark.icns"
 chmod +x "$APP_BINARY" "$CLI_HELPER"
 
 cat >"$INFO_PLIST" <<PLIST
@@ -75,6 +78,8 @@ cat >"$INFO_PLIST" <<PLIST
   <string>$APP_NAME</string>
   <key>CFBundleIdentifier</key>
   <string>$BUNDLE_ID</string>
+  <key>CFBundleIconFile</key>
+  <string>AppIcon</string>
   <key>CFBundleName</key>
   <string>SSH AutoTunnel</string>
   <key>CFBundlePackageType</key>

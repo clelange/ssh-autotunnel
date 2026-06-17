@@ -1,0 +1,81 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="SSH AutoTunnel app icon concept: proxy route through secure tunnel">
+  <defs>
+    <linearGradient id="tile" x1="128" y1="104" x2="896" y2="920" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#F8FBFA"/>
+      <stop offset="0.48" stop-color="#DDEAE8"/>
+      <stop offset="1" stop-color="#9DB1B4"/>
+    </linearGradient>
+    <radialGradient id="coolGlow" cx="50%" cy="48%" r="62%">
+      <stop offset="0" stop-color="#78F5FF" stop-opacity="0.6"/>
+      <stop offset="0.38" stop-color="#26B9C7" stop-opacity="0.18"/>
+      <stop offset="1" stop-color="#15323A" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="arch" x1="350" y1="250" x2="690" y2="748" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#415060"/>
+      <stop offset="0.52" stop-color="#17232C"/>
+      <stop offset="1" stop-color="#071015"/>
+    </linearGradient>
+    <linearGradient id="route" x1="174" y1="734" x2="820" y2="276" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#11A7C3"/>
+      <stop offset="0.48" stop-color="#7EF9FF"/>
+      <stop offset="1" stop-color="#29D19B"/>
+    </linearGradient>
+    <linearGradient id="routeSurface" x1="166" y1="718" x2="848" y2="252" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#C4F6F6"/>
+      <stop offset="0.5" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#D0F5E8"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="668" y1="628" x2="786" y2="760" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE38C"/>
+      <stop offset="1" stop-color="#F29F1F"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="26" stdDeviation="28" flood-color="#0B1C24" flood-opacity="0.3"/>
+    </filter>
+    <filter id="routeBloom" x="-40%" y="-40%" width="180%" height="180%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="tileClip">
+      <rect x="64" y="64" width="896" height="896" rx="210"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tileClip)">
+    <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#tile)"/>
+    <circle cx="512" cy="512" r="420" fill="url(#coolGlow)"/>
+    <path d="M90 772 C254 698 344 762 504 672 C662 583 742 466 952 418 V960 H90 Z" fill="#5B7177" opacity="0.16"/>
+    <path d="M80 188 C226 112 363 142 494 104 C676 52 817 108 960 236 V64 H80 Z" fill="#FFFFFF" opacity="0.34"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M368 747 V430 C368 338 434 264 516 264 C598 264 664 338 664 430 V747 Z" fill="#071015"/>
+    <path d="M332 747 V420 C332 309 414 220 516 220 C618 220 700 309 700 420 V747 Z M416 747 H616 V438 C616 379 571 332 516 332 C461 332 416 379 416 438 Z" fill="url(#arch)" fill-rule="evenodd"/>
+    <path d="M377 420 C377 326 438 262 516 262 C594 262 655 326 655 420" fill="none" stroke="#B7C5CC" stroke-width="9" opacity="0.42"/>
+  </g>
+
+  <g filter="url(#routeBloom)">
+    <path d="M181 686 C285 590 388 640 480 542 C546 472 546 396 624 350 C686 313 754 321 838 259" fill="none" stroke="url(#route)" stroke-width="86" stroke-linecap="round"/>
+    <path d="M181 686 C285 590 388 640 480 542 C546 472 546 396 624 350 C686 313 754 321 838 259" fill="none" stroke="url(#routeSurface)" stroke-width="50" stroke-linecap="round"/>
+    <path d="M181 686 C285 590 388 640 480 542 C546 472 546 396 624 350 C686 313 754 321 838 259" fill="none" stroke="#53DCEB" stroke-width="10" stroke-linecap="round" opacity="0.78"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <circle cx="181" cy="686" r="63" fill="#12313C"/>
+    <circle cx="181" cy="686" r="31" fill="#8AF7FF"/>
+    <circle cx="838" cy="259" r="63" fill="#12313C"/>
+    <circle cx="838" cy="259" r="31" fill="#74F0CD"/>
+  </g>
+
+  <g transform="translate(672 623)" filter="url(#shadow)">
+    <rect x="0" y="48" width="116" height="96" rx="28" fill="url(#amber)"/>
+    <path d="M30 56 V38 C30 17 47 0 68 0 C89 0 106 17 106 38 V56" fill="none" stroke="#FFD572" stroke-width="21" stroke-linecap="round"/>
+    <circle cx="58" cy="96" r="12" fill="#3B2605" opacity="0.72"/>
+    <rect x="52" y="96" width="12" height="28" rx="6" fill="#3B2605" opacity="0.72"/>
+  </g>
+
+  <path d="M262 256 C324 216 391 204 468 218" fill="none" stroke="#FFFFFF" stroke-width="14" stroke-linecap="round" opacity="0.48"/>
+</svg>

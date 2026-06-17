@@ -1,0 +1,90 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="SSH AutoTunnel app icon concept: jump host bridge">
+  <defs>
+    <linearGradient id="tile" x1="124" y1="100" x2="900" y2="916" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#243448"/>
+      <stop offset="0.5" stop-color="#101A26"/>
+      <stop offset="1" stop-color="#070B11"/>
+    </linearGradient>
+    <radialGradient id="centerGlow" cx="51%" cy="49%" r="56%">
+      <stop offset="0" stop-color="#42F4FF" stop-opacity="0.64"/>
+      <stop offset="0.35" stop-color="#2395B7" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="#071018" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="block" x1="186" y1="334" x2="378" y2="672" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#627789"/>
+      <stop offset="0.5" stop-color="#263645"/>
+      <stop offset="1" stop-color="#0A1118"/>
+    </linearGradient>
+    <linearGradient id="block2" x1="662" y1="328" x2="848" y2="678" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#657D8E"/>
+      <stop offset="0.5" stop-color="#263845"/>
+      <stop offset="1" stop-color="#0A1118"/>
+    </linearGradient>
+    <linearGradient id="gate" x1="382" y1="250" x2="654" y2="764" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#7F8C99"/>
+      <stop offset="0.42" stop-color="#283745"/>
+      <stop offset="1" stop-color="#080D13"/>
+    </linearGradient>
+    <linearGradient id="bridge" x1="238" y1="514" x2="786" y2="514" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#20D0E8"/>
+      <stop offset="0.52" stop-color="#DDFEFF"/>
+      <stop offset="1" stop-color="#28D99E"/>
+    </linearGradient>
+    <linearGradient id="amber" x1="466" y1="626" x2="574" y2="724" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFE796"/>
+      <stop offset="1" stop-color="#FF9F22"/>
+    </linearGradient>
+    <filter id="shadow" x="-22%" y="-22%" width="144%" height="152%">
+      <feDropShadow dx="0" dy="26" stdDeviation="28" flood-color="#000000" flood-opacity="0.38"/>
+    </filter>
+    <filter id="bloom" x="-45%" y="-45%" width="190%" height="190%">
+      <feGaussianBlur stdDeviation="12" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    <clipPath id="tileClip">
+      <rect x="64" y="64" width="896" height="896" rx="210"/>
+    </clipPath>
+  </defs>
+
+  <g clip-path="url(#tileClip)">
+    <rect x="64" y="64" width="896" height="896" rx="210" fill="url(#tile)"/>
+    <circle cx="512" cy="512" r="420" fill="url(#centerGlow)"/>
+    <path d="M84 748 C236 671 372 710 516 628 C658 548 745 451 944 408 V960 H84 Z" fill="#091018" opacity="0.54"/>
+    <path d="M108 214 C246 140 363 155 494 116 C662 66 812 103 936 220 V64 H108 Z" fill="#FFFFFF" opacity="0.08"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M206 368 L326 318 L412 378 V662 L292 726 L206 662 Z" fill="url(#block)"/>
+    <path d="M326 318 L412 378 L292 438 L206 368 Z" fill="#758899" opacity="0.72"/>
+    <path d="M292 438 L412 378 V662 L292 726 Z" fill="#111C25" opacity="0.88"/>
+    <path d="M252 476 H342 M252 536 H342 M252 596 H342" stroke="#8CF7FF" stroke-width="15" stroke-linecap="round" opacity="0.68"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M618 378 L738 318 L824 378 V662 L704 726 L618 662 Z" fill="url(#block2)"/>
+    <path d="M738 318 L824 378 L704 438 L618 378 Z" fill="#778C9D" opacity="0.74"/>
+    <path d="M704 438 L824 378 V662 L704 726 Z" fill="#111C25" opacity="0.88"/>
+    <path d="M664 476 H754 M664 536 H754 M664 596 H754" stroke="#8FFFD9" stroke-width="15" stroke-linecap="round" opacity="0.7"/>
+  </g>
+
+  <g filter="url(#bloom)">
+    <path d="M312 532 C398 486 441 486 512 512 C583 538 626 538 712 492" fill="none" stroke="url(#bridge)" stroke-width="70" stroke-linecap="round"/>
+    <path d="M312 532 C398 486 441 486 512 512 C583 538 626 538 712 492" fill="none" stroke="#ECFFFF" stroke-width="14" stroke-linecap="round" opacity="0.88"/>
+  </g>
+
+  <g filter="url(#shadow)">
+    <path d="M396 766 V438 C396 335 448 256 516 256 C584 256 636 335 636 438 V766 Z" fill="url(#gate)"/>
+    <path d="M446 766 V454 C446 394 475 348 516 348 C557 348 586 394 586 454 V766 Z" fill="#060A0F"/>
+    <path d="M396 454 C396 335 448 256 516 256 C584 256 636 335 636 454" fill="none" stroke="#B6C2CC" stroke-width="9" opacity="0.45"/>
+    <path d="M396 766 H636 L608 812 H424 Z" fill="#070C11" opacity="0.74"/>
+  </g>
+
+  <g filter="url(#bloom)">
+    <circle cx="476" cy="654" r="27" fill="url(#amber)"/>
+    <circle cx="558" cy="654" r="27" fill="url(#amber)"/>
+    <path d="M476 654 C502 626 532 626 558 654" fill="none" stroke="#FFEAA9" stroke-width="10" stroke-linecap="round" opacity="0.74"/>
+  </g>
+</svg>
