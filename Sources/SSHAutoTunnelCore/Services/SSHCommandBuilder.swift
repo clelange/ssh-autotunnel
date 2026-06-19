@@ -29,6 +29,10 @@ public enum SSHCommandBuilder {
             "-D", "127.0.0.1:\(profile.localSocksPort)",
             "-p", "\(profile.sshPort)",
             "-o", "ExitOnForwardFailure=yes",
+            "-o", "ControlMaster=no",
+            "-o", "ControlPath=none",
+            "-o", "ControlPersist=no",
+            "-o", "ForkAfterAuthentication=no",
             "-o", "ServerAliveInterval=20",
             "-o", "ServerAliveCountMax=2"
         ]
