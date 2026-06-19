@@ -125,6 +125,126 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertEqual(manager.status(for: profile.id).effectiveLocalSocksPort, 1100)
     }
 
+    func testStartRecordsLaunchedTunnelProcess() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let registry = FakeTunnelProcessRegistry()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socksPortAllocator: { preferred, _ in RuntimeSocksPortAllocation(port: preferred, usedPreferredPort: true) },
+            tunnelProcessRegistry: registry,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+
+        let record = try XCTUnwrap(registry.upserts.first)
+        XCTAssertEqual(record.profileID, profile.id)
+        XCTAssertEqual(record.configuredSocksPort, 1099)
+        XCTAssertEqual(record.effectiveSocksPort, 1099)
+        XCTAssertEqual(record.pid, 10_000)
+        XCTAssertEqual(record.arguments, try XCTUnwrap(launcher.commands.first).arguments)
+    }
+
+    func testStartReclaimsStalePreferredPortBeforeLaunching() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        var didReclaim = false
+        let reclaimer = FakeTunnelProcessReclaimer(
+            result: TunnelProcessReclaimResult(
+                reclaimed: [TunnelProcessReclaimedProcess(pid: 42, port: 1099, reason: "matching stale SSH tunnel listener")]
+            ),
+            onReclaim: { _, _, _ in didReclaim = true }
+        )
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socksPortAllocator: { preferred, _ in RuntimeSocksPortAllocation(port: preferred, usedPreferredPort: true) },
+            preferredSocksPortAvailable: { _ in didReclaim },
+            tunnelProcessReclaimer: reclaimer,
+            startsHealthTimer: false
+        )
+        var log = ""
+        let started = expectation(description: "started")
+        manager.onLog = { _, text in log += text }
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+
+        XCTAssertEqual(try XCTUnwrap(launcher.commands.first).dynamicForwardPort, 1099)
+        XCTAssertTrue(log.contains("reclaimed stale SSH tunnel pid 42 on 127.0.0.1:1099"))
+        XCTAssertEqual(reclaimer.calls.map(\.configuredPort), [1099])
+    }
+
+    func testStartFailsWhenPreferredPortHasUnsafeBlocker() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let keychain = FakeGenericPasswordReader(values: ["password-service": "secret-password"])
+        let profile = TunnelProfile(
+            name: "Test",
+            host: "ssh.example.org",
+            localSocksPort: 1099,
+            authMode: .password,
+            keychain: KeychainReference(account: "alice", passwordService: "password-service")
+        )
+        let reclaimer = FakeTunnelProcessReclaimer(
+            result: TunnelProcessReclaimResult(
+                blockers: [
+                    TunnelProcessReclaimBlocker(
+                        pid: 44,
+                        port: 1099,
+                        reason: "listener is not a verified stale SSH AutoTunnel process"
+                    )
+                ]
+            )
+        )
+        let manager = TunnelManager(
+            keychain: keychain,
+            processLauncher: launcher,
+            tunnelProcessReclaimer: reclaimer,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("unsafe blocker is reported") {
+            manager.status(for: profile.id).health == .failed
+        }
+
+        XCTAssertTrue(keychain.reads.isEmpty)
+        XCTAssertTrue(launcher.commands.isEmpty)
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("Local SOCKS port 1099 is already in use"))
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("pid 44"))
+    }
+
+    func testStartFailsWhenPreferredPortRemainsUnavailableAfterReclaim() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            preferredSocksPortAvailable: { _ in false },
+            tunnelProcessReclaimer: FakeTunnelProcessReclaimer(),
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("occupied preferred port is reported") {
+            manager.status(for: profile.id).health == .failed
+        }
+
+        XCTAssertTrue(launcher.commands.isEmpty)
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("refusing to switch to an alternate SOCKS port"))
+    }
+
     func testStartFailsBeforeReadingKeychainWhenNoRuntimeSocksPortIsAvailable() throws {
         let launcher = FakeSSHProcessLauncher()
         let keychain = FakeGenericPasswordReader(values: ["password-service": "secret-password"])
@@ -221,6 +341,46 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertEqual(launcher.commands.map(\.dynamicForwardPort), [1099, 1100])
         XCTAssertEqual(manager.status(for: profile.id).health, .connecting)
         XCTAssertEqual(manager.status(for: profile.id).effectiveLocalSocksPort, 1100)
+    }
+
+    func testAppOwnedForwardingFailureRetrySkipsPreferredPortReclaim() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let reclaimer = FakeTunnelProcessReclaimer()
+        var allocatedPorts = [1099, 1100]
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socksPortAllocator: { _, _ in
+                let next = allocatedPorts.removeFirst()
+                return RuntimeSocksPortAllocation(port: next, usedPreferredPort: next == 1099)
+            },
+            tunnelProcessReclaimer: reclaimer,
+            reconnectDelay: { _ in 0.01 },
+            processExitOutputSettleDelay: 0,
+            startsHealthTimer: false
+        )
+        let firstStart = expectation(description: "first start")
+        let secondStart = expectation(description: "second start")
+        var starts = 0
+        manager.onStatusChange = { status in
+            guard status.profileID == profile.id, status.message == "SSH process started" else { return }
+            starts += 1
+            if starts == 1 {
+                firstStart.fulfill()
+            } else if starts == 2 {
+                secondStart.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [firstStart], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.emit(forwardingFailureTranscript(port: 1099))
+        session.exit(status: 255)
+        wait(for: [secondStart], timeout: 1)
+
+        XCTAssertEqual(launcher.commands.map(\.dynamicForwardPort), [1099, 1100])
+        XCTAssertEqual(reclaimer.calls.map(\.configuredPort), [1099])
     }
 
     func testLocalForwardingFailureDoesNotReconnectWhenOutputArrivesBeforeTermination() throws {
@@ -728,5 +888,56 @@ private final class FakeGenericPasswordReader: GenericPasswordReading {
             throw ReaderError.missing
         }
         return value
+    }
+}
+
+private final class FakeTunnelProcessRegistry: TunnelProcessRecording {
+    private(set) var upserts: [TunnelProcessRecord] = []
+    private(set) var removals: [(profileID: UUID, pid: Int32)] = []
+
+    func records() -> [TunnelProcessRecord] { upserts }
+
+    func records(for profileID: UUID) -> [TunnelProcessRecord] {
+        upserts.filter { $0.profileID == profileID }
+    }
+
+    func upsert(_ record: TunnelProcessRecord) {
+        upserts.append(record)
+    }
+
+    func remove(profileID: UUID, pid: Int32) {
+        removals.append((profileID, pid))
+    }
+
+    func pruneInactive() {}
+}
+
+private final class FakeTunnelProcessReclaimer: TunnelProcessReclaiming {
+    struct Call: Equatable {
+        var profileID: UUID
+        var configuredPort: Int
+        var activePIDs: Set<Int32>
+    }
+
+    private let result: TunnelProcessReclaimResult
+    private let onReclaim: (TunnelProfile, Int, Set<Int32>) -> Void
+    private(set) var calls: [Call] = []
+
+    init(
+        result: TunnelProcessReclaimResult = TunnelProcessReclaimResult(),
+        onReclaim: @escaping (TunnelProfile, Int, Set<Int32>) -> Void = { _, _, _ in }
+    ) {
+        self.result = result
+        self.onReclaim = onReclaim
+    }
+
+    func reclaimStaleProcesses(
+        for profile: TunnelProfile,
+        configuredPort: Int,
+        activePIDs: Set<Int32>
+    ) -> TunnelProcessReclaimResult {
+        calls.append(Call(profileID: profile.id, configuredPort: configuredPort, activePIDs: activePIDs))
+        onReclaim(profile, configuredPort, activePIDs)
+        return result
     }
 }

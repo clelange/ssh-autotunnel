@@ -33,4 +33,8 @@ public enum AppPaths {
         try FileProtection.protectDirectory(directory)
         return directory
     }
+
+    public static func tunnelProcessRegistryURL() throws -> URL {
+        try applicationSupportDirectory().appendingPathComponent("tunnel-processes.json")
+    }
 }

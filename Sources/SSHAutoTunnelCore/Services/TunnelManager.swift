@@ -9,6 +9,9 @@ public final class TunnelManager {
     private let processLauncher: SSHProcessLaunching
     private let socks5Probe: (Int) -> Bool
     private let socksPortAllocator: (Int, Set<Int>) throws -> RuntimeSocksPortAllocation
+    private let preferredSocksPortAvailable: (Int) -> Bool
+    private let tunnelProcessRegistry: TunnelProcessRecording
+    private let tunnelProcessReclaimer: TunnelProcessReclaiming
     private let reconnectDelay: (Int) -> TimeInterval
     private let totpGenerator: (String) throws -> String
     private let initialReadinessGracePeriod: TimeInterval
@@ -22,10 +25,14 @@ public final class TunnelManager {
     private var healthTimer: DispatchSourceTimer?
 
     public convenience init(keychain: GenericPasswordReading = KeychainService()) {
+        let tunnelProcessRegistry = TunnelProcessRegistry()
         self.init(
             keychain: keychain,
             processLauncher: PTYSSHProcessLauncher(),
             socks5Probe: { SOCKS5Probe.probe(port: $0) },
+            preferredSocksPortAvailable: LoopbackPortProbe.canBind,
+            tunnelProcessRegistry: tunnelProcessRegistry,
+            tunnelProcessReclaimer: TunnelProcessReclaimer(registry: tunnelProcessRegistry),
             reconnectDelay: { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
             totpGenerator: { try TOTPGenerator.generate(secretBase32: $0) },
             startsHealthTimer: true
@@ -39,6 +46,9 @@ public final class TunnelManager {
         socksPortAllocator: @escaping (Int, Set<Int>) throws -> RuntimeSocksPortAllocation = {
             try RuntimeSocksPortAllocator.allocate(preferredPort: $0, reservedPorts: $1)
         },
+        preferredSocksPortAvailable: @escaping (Int) -> Bool = { _ in true },
+        tunnelProcessRegistry: TunnelProcessRecording = NoopTunnelProcessRegistry(),
+        tunnelProcessReclaimer: TunnelProcessReclaiming = NoopTunnelProcessReclaimer(),
         reconnectDelay: @escaping (Int) -> TimeInterval = { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
         initialReadinessGracePeriod: TimeInterval = 60,
@@ -50,6 +60,9 @@ public final class TunnelManager {
         self.processLauncher = processLauncher
         self.socks5Probe = socks5Probe
         self.socksPortAllocator = socksPortAllocator
+        self.preferredSocksPortAvailable = preferredSocksPortAvailable
+        self.tunnelProcessRegistry = tunnelProcessRegistry
+        self.tunnelProcessReclaimer = tunnelProcessReclaimer
         self.reconnectDelay = reconnectDelay
         self.totpGenerator = totpGenerator
         self.initialReadinessGracePeriod = initialReadinessGracePeriod
@@ -147,6 +160,7 @@ public final class TunnelManager {
                 if processes[managed.profile.id] === managed {
                     processes[managed.profile.id] = nil
                 }
+                tunnelProcessRegistry.remove(profileID: managed.profile.id, pid: managed.session.processIdentifier)
                 if managed.session.isRunning {
                     updateStatusLocked(
                         managed.profile.id,
@@ -182,6 +196,10 @@ public final class TunnelManager {
         stopLocked(profileID: profile.id, updateStatus: false, reason: .replacement)
         updateStatusLocked(profile.id, .connecting, message, pid: nil)
         do {
+            try reclaimConfiguredPortIfNeeded(
+                profile: profile,
+                excludedSocksPorts: excludedSocksPorts
+            )
             let runtimeProfile = try runtimeProfile(for: profile, reservedSocksPorts: reservedSocksPorts, excludedSocksPorts: excludedSocksPorts)
             if runtimeProfile.localSocksPort != profile.localSocksPort {
                 logEventLocked(
@@ -213,6 +231,33 @@ public final class TunnelManager {
         }
     }
 
+    private func reclaimConfiguredPortIfNeeded(profile: TunnelProfile, excludedSocksPorts: Set<Int>) throws {
+        guard !excludedSocksPorts.contains(profile.localSocksPort) else { return }
+
+        let result = tunnelProcessReclaimer.reclaimStaleProcesses(
+            for: profile,
+            configuredPort: profile.localSocksPort,
+            activePIDs: activeTunnelPIDs()
+        )
+        for reclaimed in result.reclaimed {
+            logEventLocked(
+                "reclaimed stale SSH tunnel pid \(reclaimed.pid) on 127.0.0.1:\(reclaimed.port) (\(reclaimed.reason))",
+                profileID: profile.id
+            )
+        }
+        if let blocker = result.blockers.first {
+            let pidDetail = blocker.pid.map { "pid \($0), " } ?? ""
+            throw TunnelProcessReclaimError(port: blocker.port, reason: "\(pidDetail)\(blocker.reason)")
+        }
+
+        guard preferredSocksPortAvailable(profile.localSocksPort) else {
+            throw TunnelProcessReclaimError(
+                port: profile.localSocksPort,
+                reason: "port is still occupied after stale-process reclamation; refusing to switch to an alternate SOCKS port"
+            )
+        }
+    }
+
     private func runtimeProfile(for profile: TunnelProfile, reservedSocksPorts: Set<Int>, excludedSocksPorts: Set<Int>) throws -> TunnelProfile {
         let reserved = reservedSocksPorts
             .union(excludedSocksPorts)
@@ -226,6 +271,12 @@ public final class TunnelManager {
     private func activeRuntimeSocksPorts(excluding profileID: UUID) -> Set<Int> {
         Set(processes.values.compactMap { managed in
             managed.profile.id == profileID ? nil : managed.runtimeProfile.localSocksPort
+        })
+    }
+
+    private func activeTunnelPIDs() -> Set<Int32> {
+        Set(processes.values.compactMap { managed in
+            managed.session?.processIdentifier
         })
     }
 
@@ -293,6 +344,17 @@ public final class TunnelManager {
                     self.observeProcessTerminationLocked(managed, terminationStatus: session.terminationStatus)
                 }
             }
+        )
+        tunnelProcessRegistry.upsert(
+            TunnelProcessRecord(
+                profileID: profile.id,
+                profileName: profile.name,
+                configuredSocksPort: profile.localSocksPort,
+                effectiveSocksPort: runtimeProfile.localSocksPort,
+                pid: managed.session.processIdentifier,
+                command: command,
+                startedAt: managed.startedAt
+            )
         )
         return managed
     }
@@ -464,6 +526,7 @@ public final class TunnelManager {
 
         flushRedactedOutputLocked(managed)
         processes[managed.profile.id] = nil
+        tunnelProcessRegistry.remove(profileID: managed.profile.id, pid: managed.session.processIdentifier)
 
         let forwardingFailure = managed.forwardingFailure
         if shouldRetryAppForwardingFailure(forwardingFailure, managed: managed) {
