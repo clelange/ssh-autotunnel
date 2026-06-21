@@ -6,12 +6,24 @@ struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.openWindow) private var openWindow
     @State private var selection: DashboardSelection? = .overview
+    @State private var deleteCandidates: [TunnelProfile] = []
 
     var body: some View {
         NavigationSplitView {
-            Sidebar(selection: $selection)
+            VStack(spacing: 0) {
+                Sidebar(
+                    selection: $selection,
+                    onDeleteProfile: { profile in
+                        deleteCandidates = [profile]
+                    },
+                    onMoveProfile: moveProfile
+                )
                 .environmentObject(appState)
-                .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 340)
+
+                Divider()
+                profileControlBar
+            }
+            .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 340)
         } detail: {
             detail
                 .toolbar {
@@ -58,6 +70,28 @@ struct DashboardView: View {
                     }
                 }
         }
+        .confirmationDialog(
+            deleteConfirmationTitle,
+            isPresented: Binding(
+                get: { !deleteCandidates.isEmpty },
+                set: { isPresented in
+                    if !isPresented {
+                        deleteCandidates = []
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Delete Profile", role: .destructive) {
+                confirmDelete(deleteKeychainItems: false)
+            }
+            Button("Delete Profile and Keychain Items", role: .destructive) {
+                confirmDelete(deleteKeychainItems: true)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("Keychain cleanup removes configured password and TOTP items only when no remaining profile references the same service and account.")
+        }
     }
 
     @ViewBuilder
@@ -75,13 +109,25 @@ struct DashboardView: View {
             ProfileCollectionPage(title: "Needs Attention", profiles: attentionProfiles)
                 .environmentObject(appState)
                 .navigationTitle("Needs Attention")
+        case .pacRules:
+            PACRulesView()
+                .environmentObject(appState)
+                .navigationTitle("PAC Rules")
+        case .networkRules:
+            NetworkRulesView()
+                .environmentObject(appState)
+                .navigationTitle("Network Rules")
         case .tag(let tag):
             ProfileCollectionPage(title: tag, profiles: appState.configuration.profiles.filter { $0.tags.contains(tag) })
                 .environmentObject(appState)
                 .navigationTitle(tag)
         case .profile(let id):
             if let profile = appState.configuration.profiles.first(where: { $0.id == id }) {
-                ProfileDetailPage(profile: profile)
+                ProfileDetailPage(profile: profile) { deletedProfileID, originalIndex in
+                    if selection == .profile(deletedProfileID) {
+                        selectNearestProfile(afterDeletingFromOriginalIndex: originalIndex)
+                    }
+                }
                     .environmentObject(appState)
                     .navigationTitle(profile.name)
             } else {
@@ -90,12 +136,154 @@ struct DashboardView: View {
         }
     }
 
+    private var selectedProfileIndex: Int? {
+        guard case .profile(let id) = selection else { return nil }
+        return appState.configuration.profiles.firstIndex { $0.id == id }
+    }
+
+    private var selectedProfile: TunnelProfile? {
+        guard let selectedProfileIndex else { return nil }
+        return appState.configuration.profiles[selectedProfileIndex]
+    }
+
+    private var canMoveSelectedProfileUp: Bool {
+        guard let selectedProfileIndex else { return false }
+        return selectedProfileIndex > 0
+    }
+
+    private var canMoveSelectedProfileDown: Bool {
+        guard let selectedProfileIndex else { return false }
+        return selectedProfileIndex < appState.configuration.profiles.count - 1
+    }
+
+    private var deleteConfirmationTitle: String {
+        if deleteCandidates.count == 1, let profile = deleteCandidates.first {
+            return "Delete \(profile.name)?"
+        }
+        return "Delete \(deleteCandidates.count) Profiles?"
+    }
+
+    private var profileControlBar: some View {
+        HStack(spacing: 8) {
+            Button {
+                let profileID = appState.addGenericProfile()
+                selection = .profile(profileID)
+            } label: {
+                Label("Add Profile", systemImage: "plus")
+            }
+            .help("Create a new profile")
+
+            Button(role: .destructive) {
+                if let selectedProfile {
+                    deleteCandidates = [selectedProfile]
+                }
+            } label: {
+                Label("Delete Profile", systemImage: "trash")
+            }
+            .disabled(selectedProfile == nil)
+            .help("Delete the selected profile")
+
+            Spacer()
+
+            Button {
+                moveSelectedProfile(by: -1)
+            } label: {
+                Label("Move Up", systemImage: "chevron.up")
+            }
+            .disabled(!canMoveSelectedProfileUp)
+            .help("Move the selected profile up")
+
+            Button {
+                moveSelectedProfile(by: 1)
+            } label: {
+                Label("Move Down", systemImage: "chevron.down")
+            }
+            .disabled(!canMoveSelectedProfileDown)
+            .help("Move the selected profile down")
+        }
+        .labelStyle(.iconOnly)
+        .buttonStyle(.borderless)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+    }
+
     private var attentionProfiles: [TunnelProfile] {
         appState.configuration.profiles.filter { profile in
             let tunnel = appState.status(for: profile).health
             let hop = appState.hopStatus(for: profile)?.health
             return tunnel.needsAttention || hop?.needsAttention == true || appState.networkDecision.disabledProfileIDs.contains(profile.id)
         }
+    }
+
+    private func moveSelectedProfile(by distance: Int) {
+        guard case .profile(let profileID) = selection,
+              let index = selectedProfileIndex else {
+            return
+        }
+        moveProfile(id: profileID, from: index, by: distance)
+    }
+
+    private func moveProfile(_ profile: TunnelProfile, by distance: Int) {
+        guard let index = appState.configuration.profiles.firstIndex(where: { $0.id == profile.id }) else { return }
+        moveProfile(id: profile.id, from: index, by: distance)
+    }
+
+    private func moveProfile(id profileID: UUID, from index: Int, by distance: Int) {
+        let newIndex = index + distance
+        guard appState.configuration.profiles.indices.contains(index),
+              appState.configuration.profiles.indices.contains(newIndex) else {
+            return
+        }
+
+        var profileIDs = appState.configuration.profiles.map(\.id)
+        profileIDs.remove(at: index)
+        profileIDs.insert(profileID, at: newIndex)
+        appState.reorderProfiles(profileIDs: profileIDs)
+        selection = .profile(profileID)
+    }
+
+    private func confirmDelete(deleteKeychainItems: Bool) {
+        let deletingIDs = deleteCandidates.map(\.id)
+        let nextSelection = nearestSelectionAfterDeleting(ids: deletingIDs)
+        let deletingIDSet = Set(deletingIDs)
+        let offsets = IndexSet(appState.configuration.profiles.indices.filter { deletingIDSet.contains(appState.configuration.profiles[$0].id) })
+        deleteCandidates = []
+        guard !offsets.isEmpty else { return }
+
+        appState.deleteProfiles(at: offsets, deleteKeychainItems: deleteKeychainItems)
+        selection = nextSelection.map(DashboardSelection.profile) ?? .overview
+    }
+
+    private func nearestSelectionAfterDeleting(ids deletingIDs: [UUID]) -> UUID? {
+        let deletingIDSet = Set(deletingIDs)
+        let profiles = appState.configuration.profiles
+        if case .profile(let selectedID) = selection,
+           !deletingIDSet.contains(selectedID),
+           profiles.contains(where: { $0.id == selectedID }) {
+            return selectedID
+        }
+
+        let targetIndex = deletingIDs.compactMap { id in profiles.firstIndex { $0.id == id } }.min()
+        let remainingProfiles = profiles.enumerated().filter { !deletingIDSet.contains($0.element.id) }
+        guard !remainingProfiles.isEmpty else { return nil }
+        guard let targetIndex else { return remainingProfiles.first?.element.id }
+
+        return remainingProfiles.first { $0.offset > targetIndex }?.element.id
+            ?? remainingProfiles.last?.element.id
+    }
+
+    private func selectNearestProfile(afterDeletingFromOriginalIndex originalIndex: Int?) {
+        guard !appState.configuration.profiles.isEmpty else {
+            selection = .overview
+            return
+        }
+        guard let originalIndex else {
+            selection = .profile(appState.configuration.profiles[0].id)
+            return
+        }
+
+        let replacementIndex = min(originalIndex, appState.configuration.profiles.count - 1)
+        selection = .profile(appState.configuration.profiles[replacementIndex].id)
     }
 
     private func copy(_ value: String) {
@@ -108,6 +296,8 @@ private enum DashboardSelection: Hashable {
     case overview
     case allProfiles
     case needsAttention
+    case pacRules
+    case networkRules
     case tag(String)
     case profile(UUID)
 }
@@ -115,6 +305,8 @@ private enum DashboardSelection: Hashable {
 private struct Sidebar: View {
     @EnvironmentObject private var appState: AppState
     @Binding var selection: DashboardSelection?
+    var onDeleteProfile: (TunnelProfile) -> Void
+    var onMoveProfile: (TunnelProfile, Int) -> Void
 
     private var tags: [String] {
         Array(Set(appState.configuration.profiles.flatMap(\.tags))).sorted {
@@ -142,6 +334,12 @@ private struct Sidebar: View {
                 NavigationLink(value: DashboardSelection.needsAttention) {
                     CountedSidebarLabel(title: "Needs Attention", count: attentionCount, systemImage: "exclamationmark.triangle")
                 }
+                NavigationLink(value: DashboardSelection.pacRules) {
+                    CountedSidebarLabel(title: "PAC Rules", count: appState.configuration.pacRules.count, systemImage: "point.3.connected.trianglepath.dotted")
+                }
+                NavigationLink(value: DashboardSelection.networkRules) {
+                    CountedSidebarLabel(title: "Network Rules", count: appState.configuration.networkRules.count, systemImage: "wifi.router")
+                }
             }
 
             if !tags.isEmpty {
@@ -163,6 +361,40 @@ private struct Sidebar: View {
                     NavigationLink(value: DashboardSelection.profile(profile.id)) {
                         SidebarProfileRow(profile: profile)
                             .environmentObject(appState)
+                    }
+                    .contextMenu {
+                        Button {
+                            appState.connect(profile)
+                        } label: {
+                            Label("Connect", systemImage: "play.fill")
+                        }
+                        Button {
+                            appState.disconnect(profile)
+                        } label: {
+                            Label("Disconnect", systemImage: "stop.fill")
+                        }
+                        Button {
+                            appState.connectInteractiveSSH(profile)
+                        } label: {
+                            Label("Interactive SSH", systemImage: "terminal")
+                        }
+                        Divider()
+                        Button {
+                            onMoveProfile(profile, -1)
+                        } label: {
+                            Label("Move Up", systemImage: "chevron.up")
+                        }
+                        Button {
+                            onMoveProfile(profile, 1)
+                        } label: {
+                            Label("Move Down", systemImage: "chevron.down")
+                        }
+                        Divider()
+                        Button(role: .destructive) {
+                            onDeleteProfile(profile)
+                        } label: {
+                            Label("Delete Profile", systemImage: "trash")
+                        }
                     }
                 }
             }
@@ -446,8 +678,8 @@ private struct ProfileSummaryPanel: View {
 
 private struct ProfileDetailPage: View {
     @EnvironmentObject private var appState: AppState
-    @Environment(\.openWindow) private var openWindow
     let profile: TunnelProfile
+    var onDelete: (UUID, Int?) -> Void
 
     private var tunnel: TunnelRuntimeStatus {
         appState.status(for: profile)
@@ -457,95 +689,20 @@ private struct ProfileDetailPage: View {
         appState.hopStatus(for: profile)
     }
 
-    private var profileLog: String {
-        let log = appState.fullSSHLog(for: profile.id)
-        return String(log.suffix(6_000))
-    }
-
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
+        VStack(alignment: .leading, spacing: 0) {
+            header
+                .padding(.horizontal, 24)
+                .padding(.top, 22)
+                .padding(.bottom, 12)
 
-                SectionPanel(title: "Connection", systemImage: "point.3.connected.trianglepath.dotted") {
-                    VStack(alignment: .leading, spacing: 8) {
-                        StatusLine(label: "Tunnel", health: tunnel.health, message: tunnel.message, pid: tunnel.pid)
-                        if let hop {
-                            StatusLine(label: "Hop", health: hop.health, message: hop.message, pid: hop.pid)
-                        }
-                    }
-                }
-
-                SectionPanel(title: "Forwarding", systemImage: "arrow.left.arrow.right") {
-                    VStack(alignment: .leading, spacing: 10) {
-                        ForwardingRow(
-                            title: "Dynamic SOCKS",
-                            source: "127.0.0.1:\(tunnel.effectiveLocalSocksPort ?? profile.localSocksPort)",
-                            target: "Dynamic targets",
-                            enabled: true
-                        )
-
-                        if profile.localPortForwardings.isEmpty {
-                            Text("No local port forwards configured.")
-                                .foregroundStyle(.secondary)
-                        } else {
-                            ForEach(profile.localPortForwardings) { forwarding in
-                                ForwardingRow(
-                                    title: "Local",
-                                    source: "\(forwarding.bindAddress?.trimmedNonEmpty ?? "127.0.0.1"):\(forwarding.localPort)",
-                                    target: "\(forwarding.targetHost):\(forwarding.targetPort)",
-                                    enabled: forwarding.enabled
-                                )
-                            }
-                        }
-                    }
-                }
-
-                SectionPanel(title: "Authentication and 2FA", systemImage: "key") {
-                    KeyValueGrid(rows: [
-                        KeyValueRow("Auth Mode", profile.authMode.displayName),
-                        KeyValueRow("Host Key Policy", profile.hostKeyPolicy.displayName),
-                        KeyValueRow("Keychain Account", profile.keychain.account),
-                        KeyValueRow("Password Service", profile.keychain.passwordService ?? "Not configured"),
-                        KeyValueRow("TOTP Service", profile.keychain.totpService ?? "Not configured")
-                    ])
-                }
-
-                SectionPanel(title: "PAC and Network Rules", systemImage: "list.bullet.rectangle") {
-                    RuleList(profile: profile)
-                        .environmentObject(appState)
-                }
-
-                SectionPanel(title: "Reconnect and Notifications", systemImage: "bell.badge") {
-                    KeyValueGrid(rows: [
-                        KeyValueRow("Auto Reconnect", profile.autoReconnect ? "Enabled" : "Disabled"),
-                        KeyValueRow("Reconnect Limit", profile.curatedSSHOptions.maxReconnectAttempts.map(String.init) ?? "Unlimited"),
-                        KeyValueRow("Connect on Launch", profile.connectOnLaunch ? "Enabled" : "Disabled"),
-                        KeyValueRow("Notification Policy", profile.notificationPolicy.displayName)
-                    ])
-                }
-
-                SectionPanel(title: "SSH Options", systemImage: "slider.horizontal.3") {
-                    KeyValueGrid(rows: sshOptionRows)
-                }
-
-                SectionPanel(title: "Recent Log", systemImage: "doc.text.magnifyingglass") {
-                    if profileLog.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Text("No SSH log captured for this profile yet.")
-                            .foregroundStyle(.secondary)
-                    } else {
-                        ScrollView(.horizontal) {
-                            Text(profileLog)
-                                .font(.system(.caption, design: .monospaced))
-                                .textSelection(.enabled)
-                                .frame(maxWidth: .infinity, alignment: .leading)
-                        }
-                        .frame(maxHeight: 220)
-                    }
-                }
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            ProfileEditorView(
+                profileID: profile.id,
+                onDelete: onDelete,
+                showsProfileRuleSections: true,
+                showsRecentLog: true
+            )
+            .environmentObject(appState)
         }
     }
 
@@ -572,56 +729,6 @@ private struct ProfileDetailPage: View {
                     StatusBadge(label: "Tunnel", health: tunnel.health)
                 }
             }
-
-            HStack(spacing: 8) {
-                if hop != nil {
-                    Button {
-                        if hop?.health.isRunning == true {
-                            appState.disconnectHop(profile)
-                        } else {
-                            appState.connectHop(profile)
-                        }
-                    } label: {
-                        Label(hop?.health.isRunning == true ? "Stop Hop" : "Start Hop", systemImage: "point.3.connected.trianglepath.dotted")
-                    }
-                    .help(hop?.health.isRunning == true ? "Stop the app-owned hop" : "Start the app-owned hop")
-                }
-
-                Button {
-                    if tunnel.health.isRunning {
-                        appState.disconnect(profile)
-                    } else {
-                        appState.connect(profile)
-                    }
-                } label: {
-                    Label(tunnel.health.isRunning ? "Stop Tunnel" : "Start Tunnel", systemImage: "arrow.left.arrow.right")
-                }
-                .help(tunnel.health.isRunning ? "Stop the tunnel" : "Start the tunnel")
-
-                Button {
-                    appState.reconnect(profile)
-                } label: {
-                    Label("Reconnect", systemImage: "arrow.clockwise")
-                }
-                .help("Reconnect this profile")
-
-                Button {
-                    appState.connectInteractiveSSH(profile)
-                } label: {
-                    Label("Interactive SSH", systemImage: "terminal")
-                }
-                .help("Open an interactive SSH session")
-
-                Button {
-                    openDiagnostics()
-                } label: {
-                    Label("Diagnostics", systemImage: "stethoscope")
-                }
-                .help("Open diagnostics for this profile")
-
-                Spacer()
-            }
-            .buttonStyle(.bordered)
         }
     }
 
@@ -637,74 +744,6 @@ private struct ProfileDetailPage: View {
         return parts.joined(separator: " | ")
     }
 
-    private var sshOptionRows: [KeyValueRow] {
-        [
-            KeyValueRow("Log Level", profile.sshLogLevel.displayName),
-            KeyValueRow("Tunnel Requests Remote Session", profile.tunnelRequestsRemoteSession ? "Yes" : "No (-N)"),
-            KeyValueRow("Bind Address", profile.curatedSSHOptions.bindAddress ?? "Default"),
-            KeyValueRow("Address Family", profile.curatedSSHOptions.addressFamily.displayName),
-            KeyValueRow("Compression", profile.curatedSSHOptions.compression.displayName),
-            KeyValueRow("Forward Agent", profile.curatedSSHOptions.forwardAgent.displayName),
-            KeyValueRow("Identity Files", profile.curatedSSHOptions.identityFiles.joined(separator: ", ").nilIfEmpty ?? "Default"),
-            KeyValueRow("Certificate Files", profile.curatedSSHOptions.certificateFiles.joined(separator: ", ").nilIfEmpty ?? "Default"),
-            KeyValueRow("ProxyJump", profile.jumpHost ?? "Not configured"),
-            KeyValueRow("ProxyCommand", profile.curatedSSHOptions.proxyCommand ?? "Not configured"),
-            KeyValueRow("Extra SSH Options", profile.extraSSHOptions.joined(separator: " ").nilIfEmpty ?? "None")
-        ]
-    }
-
-    private func openDiagnostics() {
-        appState.selectDiagnosticsProfile(profile.id)
-        openWindow(id: "diagnostics")
-        AppActivation.activate()
-    }
-}
-
-private struct RuleList: View {
-    @EnvironmentObject private var appState: AppState
-    let profile: TunnelProfile
-
-    private var pacRules: [PACRule] {
-        appState.configuration.pacRules.filter { $0.profileID == profile.id }
-    }
-
-    private var networkRules: [NetworkPolicyRule] {
-        appState.configuration.networkRules.filter { $0.profileID == profile.id }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 6) {
-                Text("PAC Rules")
-                    .font(.headline)
-                if pacRules.isEmpty {
-                    Text("No PAC rules reference this profile.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(pacRules) { rule in
-                        KeyValueGrid(rows: [
-                            KeyValueRow(rule.name, "\(rule.domainPattern) | \(rule.failureMode.displayName) | \(rule.enabled ? "Enabled" : "Disabled")")
-                        ])
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Network Rules")
-                    .font(.headline)
-                if networkRules.isEmpty {
-                    Text("No scoped network rules reference this profile.")
-                        .foregroundStyle(.secondary)
-                } else {
-                    ForEach(networkRules) { rule in
-                        KeyValueGrid(rows: [
-                            KeyValueRow(rule.name, "\(rule.action.rawValue) | \(rule.enabled ? "Enabled" : "Disabled")")
-                        ])
-                    }
-                }
-            }
-        }
-    }
 }
 
 private struct SectionPanel<Content: View>: View {

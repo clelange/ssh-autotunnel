@@ -37,13 +37,17 @@ Shortcuts identity, package names, or persisted paths.
 - Overview shows System PAC state, active network state, unhealthy/reconnecting
   profiles, running tunnels/hops, PAC/status URLs, local server ports, recent
   connection changes, terminal preference, and quick actions.
-- Profile detail pages show tunnel, interactive SSH, optional hop, forwarding
-  rows, authentication/2FA, PAC/network rules, reconnect/notification settings,
-  SSH options, and recent logs.
-- Settings exposes profile editing for the new fields while retaining the
-  existing app-level settings, PAC/network rule editing, import/export, support
-  bundle, terminal preference, launch-at-login, OpenSSH config, and PAC append
+- Profile detail pages are directly editable and cover tunnel, interactive SSH,
+  optional hop, forwarding rows, authentication/2FA, PAC/network rules,
+  reconnect/notification settings, SSH options, Keychain secrets, and recent
+  logs.
+- Main window sidebar owns profile add, delete, reorder, and context-menu
   controls.
+- PAC and network rule management moved into main-window pages, with
+  profile-scoped rule editing also available from each profile detail.
+- Settings is app-level only: System PAC/server ports, API token, terminal
+  preference, OpenSSH config, import/export/support bundle, launch-at-login,
+  and PAC append source.
 - Menu bar provides Connect All, Disconnect All, grouped profile submenus,
   hop controls, interactive SSH, System PAC toggle, settings, diagnostics,
   setup, and quit.
@@ -138,6 +142,12 @@ Shortcuts identity, package names, or persisted paths.
 - 2026-06-21 redesign batch:
   - `swift build` passed.
   - `swift test` passed with 335 tests.
+  - `./script/build_and_run.sh --verify` passed.
+  - `./script/package_local.sh --verify` passed and verified
+    `dist/package/SSH-AutoTunnel-local.zip`.
+- 2026-06-21 direct main-window editing batch:
+  - `swift build` passed.
+  - `swift test` passed with 336 tests.
   - `./script/build_and_run.sh --verify` passed.
   - `./script/package_local.sh --verify` passed and verified
     `dist/package/SSH-AutoTunnel-local.zip`.

@@ -14,4 +14,15 @@ final class RedesignTrackerTests: XCTestCase {
         XCTAssertTrue(contents.contains("Migration/Compatibility"))
         XCTAssertTrue(contents.contains("Validation History"))
     }
+
+    func testRedesignTrackerDocumentsDirectMainWindowEditing() throws {
+        let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Docs/RedesignTracker.md")
+        let contents = try String(contentsOf: url, encoding: .utf8)
+
+        XCTAssertTrue(contents.contains("Profile detail pages are directly editable"))
+        XCTAssertTrue(contents.contains("Main window sidebar owns profile add, delete, reorder"))
+        XCTAssertTrue(contents.contains("PAC and network rule management moved into main-window pages"))
+        XCTAssertTrue(contents.contains("Settings is app-level only"))
+    }
 }

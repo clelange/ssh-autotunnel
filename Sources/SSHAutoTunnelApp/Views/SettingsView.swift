@@ -5,223 +5,24 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
-    @State private var selectedProfileID: UUID?
-    @State private var sidebarDeleteCandidates: [TunnelProfile] = []
 
     var body: some View {
-        NavigationSplitView {
-            VStack(spacing: 0) {
-                List(selection: $selectedProfileID) {
-                    Section("Profiles") {
-                        ForEach(appState.configuration.profiles) { profile in
-                            Label(profile.name, systemImage: "server.rack")
-                                .tag(profile.id)
-                        }
-                        .onMove(perform: moveProfiles)
-                        .onDelete { offsets in
-                            sidebarDeleteCandidates = offsets
-                                .sorted()
-                                .compactMap { appState.configuration.profiles.indices.contains($0) ? appState.configuration.profiles[$0] : nil }
-                        }
-                    }
-                }
-                .listStyle(.sidebar)
-
-                Divider()
-                profileControlBar
-            }
-            .confirmationDialog(
-                sidebarDeleteConfirmationTitle,
-                isPresented: Binding(
-                    get: { !sidebarDeleteCandidates.isEmpty },
-                    set: { isPresented in
-                        if !isPresented {
-                            sidebarDeleteCandidates = []
-                        }
-                    }
-                ),
-                titleVisibility: .visible
-            ) {
-                Button("Delete Profile", role: .destructive) {
-                    confirmSidebarDelete(deleteKeychainItems: false)
-                }
-                Button("Delete Profile and Keychain Items", role: .destructive) {
-                    confirmSidebarDelete(deleteKeychainItems: true)
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text("Keychain cleanup removes configured password and TOTP items only when no remaining profile references the same service and account.")
-            }
-        } detail: {
-            TabView {
-                if let selectedProfileID, appState.configuration.profiles.contains(where: { $0.id == selectedProfileID }) {
-                    ProfileEditorView(profileID: selectedProfileID) { deletedProfileID, originalIndex in
-                        if selectedProfileID == deletedProfileID {
-                            selectNearestProfile(afterDeletingFromOriginalIndex: originalIndex)
-                        }
-                    }
-                        .tabItem { Label("Profile", systemImage: "server.rack") }
-                } else {
-                    PlaceholderView(title: "Select a Profile", systemImage: "server.rack")
-                        .tabItem { Label("Profile", systemImage: "server.rack") }
-                }
-
-                PACRulesView()
-                    .tabItem { Label("PAC Rules", systemImage: "point.3.connected.trianglepath.dotted") }
-
-                NetworkRulesView()
-                    .tabItem { Label("Networks", systemImage: "wifi.router") }
-
-                AppPreferencesView()
-                    .tabItem { Label("App", systemImage: "gearshape") }
-            }
-            .padding()
+        TabView {
+            AppPreferencesView()
+                .tabItem { Label("App", systemImage: "gearshape") }
         }
-        .onAppear {
-            selectedProfileID = selectedProfileID ?? appState.configuration.profiles.first?.id
-        }
-    }
-
-    private var selectedProfileIndex: Int? {
-        guard let selectedProfileID else { return nil }
-        return appState.configuration.profiles.firstIndex { $0.id == selectedProfileID }
-    }
-
-    private var selectedProfile: TunnelProfile? {
-        guard let selectedProfileIndex else { return nil }
-        return appState.configuration.profiles[selectedProfileIndex]
-    }
-
-    private var canMoveSelectedProfileUp: Bool {
-        guard let selectedProfileIndex else { return false }
-        return selectedProfileIndex > 0
-    }
-
-    private var canMoveSelectedProfileDown: Bool {
-        guard let selectedProfileIndex else { return false }
-        return selectedProfileIndex < appState.configuration.profiles.count - 1
-    }
-
-    private var sidebarDeleteConfirmationTitle: String {
-        if sidebarDeleteCandidates.count == 1, let profile = sidebarDeleteCandidates.first {
-            return "Delete \(profile.name)?"
-        }
-        return "Delete \(sidebarDeleteCandidates.count) Profiles?"
-    }
-
-    private var profileControlBar: some View {
-        HStack(spacing: 8) {
-            Button {
-                let profileID = appState.addGenericProfile()
-                selectedProfileID = profileID
-            } label: {
-                Label("Add Profile", systemImage: "plus")
-            }
-            .help("Create a new profile")
-
-            Button(role: .destructive) {
-                if let selectedProfile {
-                    sidebarDeleteCandidates = [selectedProfile]
-                }
-            } label: {
-                Label("Delete Profile", systemImage: "trash")
-            }
-            .disabled(selectedProfile == nil)
-            .help("Delete the selected profile")
-
-            Spacer()
-
-            Button {
-                moveSelectedProfile(by: -1)
-            } label: {
-                Label("Move Up", systemImage: "chevron.up")
-            }
-            .disabled(!canMoveSelectedProfileUp)
-            .help("Move the selected profile up")
-
-            Button {
-                moveSelectedProfile(by: 1)
-            } label: {
-                Label("Move Down", systemImage: "chevron.down")
-            }
-            .disabled(!canMoveSelectedProfileDown)
-            .help("Move the selected profile down")
-        }
-        .labelStyle(.iconOnly)
-        .buttonStyle(.borderless)
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-    }
-
-    private func moveProfiles(from offsets: IndexSet, to destination: Int) {
-        var profileIDs = appState.configuration.profiles.map(\.id)
-        profileIDs.move(fromOffsets: offsets, toOffset: destination)
-        appState.reorderProfiles(profileIDs: profileIDs)
-    }
-
-    private func moveSelectedProfile(by distance: Int) {
-        guard let selectedProfileID, let index = selectedProfileIndex else { return }
-        let newIndex = index + distance
-        guard appState.configuration.profiles.indices.contains(newIndex) else { return }
-
-        var profileIDs = appState.configuration.profiles.map(\.id)
-        profileIDs.remove(at: index)
-        profileIDs.insert(selectedProfileID, at: newIndex)
-        appState.reorderProfiles(profileIDs: profileIDs)
-        self.selectedProfileID = selectedProfileID
-    }
-
-    private func confirmSidebarDelete(deleteKeychainItems: Bool) {
-        let deletingIDs = sidebarDeleteCandidates.map(\.id)
-        let nextSelection = nearestSelectionAfterDeleting(ids: deletingIDs)
-        let deletingIDSet = Set(deletingIDs)
-        let offsets = IndexSet(appState.configuration.profiles.indices.filter { deletingIDSet.contains(appState.configuration.profiles[$0].id) })
-        sidebarDeleteCandidates = []
-        guard !offsets.isEmpty else { return }
-
-        appState.deleteProfiles(at: offsets, deleteKeychainItems: deleteKeychainItems)
-        selectedProfileID = nextSelection
-    }
-
-    private func nearestSelectionAfterDeleting(ids deletingIDs: [UUID]) -> UUID? {
-        let deletingIDSet = Set(deletingIDs)
-        let profiles = appState.configuration.profiles
-        if let selectedProfileID,
-           !deletingIDSet.contains(selectedProfileID),
-           profiles.contains(where: { $0.id == selectedProfileID }) {
-            return selectedProfileID
-        }
-
-        let targetIndex = selectedProfileID
-            .flatMap { id in profiles.firstIndex { $0.id == id } }
-            ?? deletingIDs.compactMap { id in profiles.firstIndex { $0.id == id } }.min()
-        let remainingProfiles = profiles.enumerated().filter { !deletingIDSet.contains($0.element.id) }
-        guard !remainingProfiles.isEmpty else { return nil }
-        guard let targetIndex else { return remainingProfiles.first?.element.id }
-
-        return remainingProfiles.first { $0.offset > targetIndex }?.element.id
-            ?? remainingProfiles.last?.element.id
-    }
-
-    private func selectNearestProfile(afterDeletingFromOriginalIndex originalIndex: Int?) {
-        guard !appState.configuration.profiles.isEmpty else {
-            selectedProfileID = nil
-            return
-        }
-        guard let originalIndex else {
-            selectedProfileID = appState.configuration.profiles.first?.id
-            return
-        }
-
-        let replacementIndex = min(originalIndex, appState.configuration.profiles.count - 1)
-        selectedProfileID = appState.configuration.profiles[replacementIndex].id
+        .padding()
+        .frame(minWidth: 640, minHeight: 620)
     }
 }
 
 struct ProfileEditorView: View {
     @EnvironmentObject private var appState: AppState
+    @Environment(\.openWindow) private var openWindow
     let profileID: UUID
     var onDelete: (UUID, Int?) -> Void = { _, _ in }
+    var showsProfileRuleSections = false
+    var showsRecentLog = false
     @State private var passwordSecret = ""
     @State private var totpSecret = ""
     @State private var secretMessage = ""
@@ -375,18 +176,44 @@ struct ProfileEditorView: View {
                     }
                 }
 
+                if showsProfileRuleSections {
+                    ProfileScopedRulesEditor(profile: profile)
+                }
+
+                if showsRecentLog {
+                    ProfileRecentLogSection(profile: profile)
+                }
+
                 Section("Actions") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
                             Button("Connect") { appState.connect(profile) }
                             Button("Disconnect") { appState.disconnect(profile) }
                             Button("Reconnect") { appState.reconnect(profile) }
+                            if appState.hasJumpHost(profile) {
+                                let hopStatus = appState.hopStatus(for: profile)
+                                Button(isRunning(hopStatus?.health) ? "Disconnect Hop" : "Connect Hop") {
+                                    if isRunning(hopStatus?.health) {
+                                        appState.disconnectHop(profile)
+                                    } else {
+                                        appState.connectHop(profile)
+                                    }
+                                }
+                            }
                             Button {
                                 appState.connectInteractiveSSH(profile)
                             } label: {
                                 Label("Interactive SSH", systemImage: "terminal")
                             }
                             .help("Open an interactive SSH session")
+                            Button {
+                                appState.selectDiagnosticsProfile(profile.id)
+                                openWindow(id: "diagnostics")
+                                AppActivation.activate()
+                            } label: {
+                                Label("Diagnostics", systemImage: "stethoscope")
+                            }
+                            .help("Open diagnostics for this profile")
                         }
                         Button(role: .destructive) {
                             deleteCandidate = profile
@@ -599,12 +426,181 @@ struct ProfileEditorView: View {
         }
     }
 
+    private func isRunning(_ health: TunnelHealth?) -> Bool {
+        switch health {
+        case .healthy, .connecting, .degraded, .reconnecting:
+            true
+        case .stopped, .unhealthy, .failed, nil:
+            false
+        }
+    }
+
     private func color(for health: TunnelHealth) -> Color {
         switch health {
         case .healthy: .green
         case .degraded, .connecting, .reconnecting: .orange
         case .unhealthy, .failed: .red
         case .stopped: .secondary
+        }
+    }
+}
+
+private struct ProfileScopedRulesEditor: View {
+    @EnvironmentObject private var appState: AppState
+    let profile: TunnelProfile
+
+    private var pacRuleIDs: [UUID] {
+        appState.configuration.pacRules
+            .filter { $0.profileID == profile.id }
+            .map(\.id)
+    }
+
+    private var networkRuleIDs: [UUID] {
+        appState.configuration.networkRules
+            .filter { $0.profileID == profile.id }
+            .map(\.id)
+    }
+
+    var body: some View {
+        Section("PAC Rules for This Profile") {
+            if pacRuleIDs.isEmpty {
+                Text("No PAC rules reference this profile.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(pacRuleIDs, id: \.self) { ruleID in
+                    if let index = appState.configuration.pacRules.firstIndex(where: { $0.id == ruleID }) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Toggle("", isOn: $appState.configuration.pacRules[index].enabled)
+                                .labelsHidden()
+                                .frame(width: 22)
+                            TextField("Name", text: $appState.configuration.pacRules[index].name)
+                                .frame(minWidth: 120)
+                            TextField("Domain pattern", text: $appState.configuration.pacRules[index].domainPattern)
+                                .frame(minWidth: 170)
+                            Picker("Failure", selection: $appState.configuration.pacRules[index].failureMode) {
+                                ForEach(PACFailureMode.allCases) { mode in
+                                    Text(mode.displayName).tag(mode)
+                                }
+                            }
+                            .frame(width: 140)
+                            Button(role: .destructive) {
+                                deletePACRule(id: ruleID)
+                            } label: {
+                                Label("Delete PAC Rule", systemImage: "trash")
+                            }
+                            .labelStyle(.iconOnly)
+                            .buttonStyle(.borderless)
+                            .help("Delete this PAC rule")
+                        }
+                    }
+                }
+            }
+
+            Button {
+                addPACRule()
+            } label: {
+                Label("Add PAC Rule", systemImage: "plus")
+            }
+        }
+
+        Section("Network Rules for This Profile") {
+            if networkRuleIDs.isEmpty {
+                Text("No scoped network rules reference this profile.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(networkRuleIDs, id: \.self) { ruleID in
+                    if let index = appState.configuration.networkRules.firstIndex(where: { $0.id == ruleID }) {
+                        DisclosureGroup(appState.configuration.networkRules[index].name) {
+                            Toggle("Enabled", isOn: $appState.configuration.networkRules[index].enabled)
+                            TextField("Name", text: $appState.configuration.networkRules[index].name)
+                            TextField("Wi-Fi SSID", text: optionalRuleBinding($appState.configuration.networkRules[index].match.wifiSSID))
+                            TextField("Wi-Fi BSSID", text: optionalRuleBinding($appState.configuration.networkRules[index].match.wifiBSSID))
+                            TextField("Service contains", text: optionalRuleBinding($appState.configuration.networkRules[index].match.serviceNameContains))
+                            TextField("Search domain contains", text: optionalRuleBinding($appState.configuration.networkRules[index].match.searchDomainContains))
+                            TextField("Gateway", text: optionalRuleBinding($appState.configuration.networkRules[index].match.gateway))
+                            Picker("Action", selection: $appState.configuration.networkRules[index].action) {
+                                ForEach(NetworkPolicyAction.allCases) { action in
+                                    Text(action.rawValue).tag(action)
+                                }
+                            }
+                            Button(role: .destructive) {
+                                deleteNetworkRule(id: ruleID)
+                            } label: {
+                                Label("Delete Network Rule", systemImage: "trash")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Button {
+                addNetworkRule()
+            } label: {
+                Label("Add Network Rule", systemImage: "plus")
+            }
+        }
+    }
+
+    private func addPACRule() {
+        appState.configuration.pacRules.append(
+            PACRule(name: "\(profile.name) routing", domainPattern: "*.example.org", profileID: profile.id)
+        )
+        appState.saveConfiguration()
+    }
+
+    private func deletePACRule(id ruleID: UUID) {
+        appState.configuration.pacRules.removeAll { $0.id == ruleID }
+        appState.saveConfiguration()
+    }
+
+    private func addNetworkRule() {
+        appState.configuration.networkRules.append(
+            NetworkPolicyRule(
+                name: "\(profile.name) trusted network",
+                match: NetworkMatch(searchDomainContains: "example.org"),
+                action: .disableProxy,
+                profileID: profile.id
+            )
+        )
+        appState.saveConfiguration()
+    }
+
+    private func deleteNetworkRule(id ruleID: UUID) {
+        appState.configuration.networkRules.removeAll { $0.id == ruleID }
+        appState.saveConfiguration()
+    }
+
+    private func optionalRuleBinding(_ value: Binding<String?>) -> Binding<String> {
+        Binding {
+            value.wrappedValue ?? ""
+        } set: { newValue in
+            value.wrappedValue = newValue.isEmpty ? nil : newValue
+        }
+    }
+}
+
+private struct ProfileRecentLogSection: View {
+    @EnvironmentObject private var appState: AppState
+    let profile: TunnelProfile
+
+    private var profileLog: String {
+        String(appState.fullSSHLog(for: profile.id).suffix(6_000))
+    }
+
+    var body: some View {
+        Section("Recent Log") {
+            if profileLog.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("No SSH log captured for this profile yet.")
+                    .foregroundStyle(.secondary)
+            } else {
+                ScrollView(.horizontal) {
+                    Text(profileLog)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .frame(maxHeight: 220)
+            }
         }
     }
 }
