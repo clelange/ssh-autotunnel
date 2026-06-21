@@ -86,6 +86,40 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         XCTAssertEqual(decoded.effectiveLocalSocksPort, 1084)
     }
 
+    func testProfileStatusSnapshotCarriesRedesignFields() throws {
+        let profileID = try XCTUnwrap(UUID(uuidString: "33333333-3333-3333-3333-333333333333"))
+        let profile = TunnelProfile(
+            id: profileID,
+            name: "Work",
+            host: "ssh.example.org",
+            localSocksPort: 1083,
+            interactiveHost: "login.example.org",
+            jumpHost: "jump.example.org",
+            tags: ["infrastructure"],
+            connectOnLaunch: true,
+            notificationPolicy: .allStatusChanges,
+            sshLogLevel: .debug2,
+            tunnelRequestsRemoteSession: true,
+            localPortForwardings: [
+                LocalPortForward(localPort: 10201, targetHost: "10.0.0.5", targetPort: 22)
+            ],
+            curatedSSHOptions: CuratedSSHOptions(proxyCommand: "ssh jump -W %h:%p", maxReconnectAttempts: 2)
+        )
+        let status = TunnelRuntimeStatus(profileID: profileID, health: .healthy, message: "OK")
+
+        let snapshot = ProfileStatusSnapshot(profile: profile, status: status)
+
+        XCTAssertEqual(snapshot.interactiveHost, "login.example.org")
+        XCTAssertEqual(snapshot.jumpHost, "jump.example.org")
+        XCTAssertEqual(snapshot.tags, ["infrastructure"])
+        XCTAssertTrue(snapshot.connectOnLaunch)
+        XCTAssertEqual(snapshot.notificationPolicy, .allStatusChanges)
+        XCTAssertEqual(snapshot.sshLogLevel, .debug2)
+        XCTAssertTrue(snapshot.tunnelRequestsRemoteSession)
+        XCTAssertEqual(snapshot.localPortForwardings.map(\.localPort), [10201])
+        XCTAssertEqual(snapshot.curatedSSHOptions.maxReconnectAttempts, 2)
+    }
+
     func testControlResponseCanCarryDiagnostics() throws {
         let diagnostics = DiagnosticsSnapshot(
             appIdentifier: "dev.clange.ssh-autotunnel",

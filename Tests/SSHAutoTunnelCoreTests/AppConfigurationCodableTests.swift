@@ -139,6 +139,13 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(profile.sshPort, 22)
         XCTAssertEqual(profile.hostKeyPolicy, .acceptNew)
         XCTAssertNil(profile.interactiveHost)
+        XCTAssertEqual(profile.tags, [])
+        XCTAssertFalse(profile.connectOnLaunch)
+        XCTAssertEqual(profile.notificationPolicy, .failuresAndRecoveries)
+        XCTAssertEqual(profile.sshLogLevel, .info)
+        XCTAssertFalse(profile.tunnelRequestsRemoteSession)
+        XCTAssertEqual(profile.localPortForwardings, [])
+        XCTAssertEqual(profile.curatedSSHOptions, CuratedSSHOptions())
     }
 
     func testEncodesProfileInteractiveHostAndHostKeyPolicy() throws {
@@ -154,6 +161,38 @@ final class AppConfigurationCodableTests: XCTestCase {
 
         XCTAssertEqual(object["hostKeyPolicy"] as? String, "strict")
         XCTAssertEqual(object["interactiveHost"] as? String, "login.example.org")
+    }
+
+    func testProfileRedesignFieldsRoundTrip() throws {
+        let profile = TunnelProfile(
+            name: "Redesign",
+            host: "ssh.example.org",
+            localSocksPort: 1080,
+            tags: ["infrastructure", "production"],
+            connectOnLaunch: true,
+            notificationPolicy: .allStatusChanges,
+            sshLogLevel: .debug1,
+            tunnelRequestsRemoteSession: true,
+            localPortForwardings: [
+                LocalPortForward(bindAddress: "127.0.0.1", localPort: 10201, targetHost: "10.0.0.5", targetPort: 22)
+            ],
+            curatedSSHOptions: CuratedSSHOptions(
+                bindAddress: "192.0.2.10",
+                addressFamily: .ipv4,
+                compression: .enabled,
+                identityFiles: ["~/.ssh/id_ed25519"],
+                certificateFiles: ["~/.ssh/id_ed25519-cert.pub"],
+                forwardAgent: .disabled,
+                proxyCommand: "ssh bastion -W %h:%p",
+                maxReconnectAttempts: 3
+            )
+        )
+
+        let data = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(TunnelProfile.self, from: data)
+
+        XCTAssertEqual(decoded, profile)
+        XCTAssertEqual(decoded.localPortForwardings[0].sshArgument, "127.0.0.1:10201:10.0.0.5:22")
     }
 
     func testProfileResolvedInteractiveHostFallsBackToTunnelHost() {

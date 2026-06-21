@@ -5,105 +5,96 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.openWindow) private var openWindow
+    @State private var selection: DashboardSelection? = .overview
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
+        NavigationSplitView {
+            Sidebar(selection: $selection)
+                .environmentObject(appState)
+                .navigationSplitViewColumnWidth(min: 230, ideal: 270, max: 340)
+        } detail: {
+            detail
+                .toolbar {
+                    ToolbarItemGroup {
+                        Button {
+                            copy(appState.pacURL)
+                        } label: {
+                            Label("Copy PAC URL", systemImage: "doc.on.doc")
+                        }
+                        .help("Copy the PAC URL")
 
-                if appState.configuration.profiles.isEmpty {
-                    ContentUnavailableView {
-                        Label("No Profiles", systemImage: "server.rack")
-                    } actions: {
+                        Button {
+                            appState.toggleSystemPAC()
+                        } label: {
+                            SystemPACToggleLabel()
+                        }
+                        .help(appState.systemPACToggleHelp)
+                    }
+
+                    ToolbarItemGroup {
                         Button {
                             openWindow(id: "onboarding")
                             AppActivation.activate()
                         } label: {
                             Label("Setup", systemImage: "sparkles")
                         }
-                    }
-                    .frame(maxWidth: .infinity, minHeight: 280)
-                } else {
-                    LazyVStack(spacing: 12) {
-                        ForEach(appState.configuration.profiles) { profile in
-                            ProfileControlCard(profile: profile)
-                                .environmentObject(appState)
+                        .help("Open setup window")
+
+                        Button {
+                            openWindow(id: "settings")
+                            AppActivation.activate()
+                        } label: {
+                            Label("Settings", systemImage: "gearshape")
                         }
+                        .help("Open settings")
+
+                        Button {
+                            openWindow(id: "diagnostics")
+                            AppActivation.activate()
+                        } label: {
+                            Label("Diagnostics", systemImage: "stethoscope")
+                        }
+                        .help("Open diagnostics")
                     }
                 }
-            }
-            .padding(24)
-            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .toolbar {
-            ToolbarItemGroup {
-                Button {
-                    copy(appState.pacURL)
-                } label: {
-                    Label("Copy PAC URL", systemImage: "doc.on.doc")
-                }
-                .help("Copy the PAC URL")
-                Button {
-                    appState.toggleSystemPAC()
-                } label: {
-                    SystemPACToggleLabel()
-                }
-                .help(appState.systemPACToggleHelp)
-            }
-            ToolbarItemGroup {
-                Button {
-                    openWindow(id: "onboarding")
-                    AppActivation.activate()
-                } label: {
-                    Label("Setup", systemImage: "sparkles")
-                }
-                .help("Open setup window")
-                Button {
-                    openWindow(id: "settings")
-                    AppActivation.activate()
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                }
-                .help("Open settings")
-                Button {
-                    openWindow(id: "diagnostics")
-                    AppActivation.activate()
-                } label: {
-                    Label("Diagnostics", systemImage: "stethoscope")
-                }
-                .help("Open diagnostics")
+    }
+
+    @ViewBuilder
+    private var detail: some View {
+        switch selection ?? .overview {
+        case .overview:
+            OverviewPage()
+                .environmentObject(appState)
+                .navigationTitle("Overview")
+        case .allProfiles:
+            ProfileCollectionPage(title: "All Profiles", profiles: appState.configuration.profiles)
+                .environmentObject(appState)
+                .navigationTitle("All Profiles")
+        case .needsAttention:
+            ProfileCollectionPage(title: "Needs Attention", profiles: attentionProfiles)
+                .environmentObject(appState)
+                .navigationTitle("Needs Attention")
+        case .tag(let tag):
+            ProfileCollectionPage(title: tag, profiles: appState.configuration.profiles.filter { $0.tags.contains(tag) })
+                .environmentObject(appState)
+                .navigationTitle(tag)
+        case .profile(let id):
+            if let profile = appState.configuration.profiles.first(where: { $0.id == id }) {
+                ProfileDetailPage(profile: profile)
+                    .environmentObject(appState)
+                    .navigationTitle(profile.name)
+            } else {
+                ContentUnavailableView("Profile Not Found", systemImage: "questionmark.folder")
             }
         }
     }
 
-    private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(alignment: .firstTextBaseline) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("SSH AutoTunnel")
-                        .font(.title2.weight(.semibold))
-                    SystemPACStatusBadge()
-                    Text(appState.lastProxyMessage)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 4) {
-                    Text("PAC")
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(.secondary)
-                    Text(appState.pacURL)
-                        .font(.caption.monospaced())
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
-                        .textSelection(.enabled)
-                }
-            }
-
-            InteractiveTerminalPreferenceControl(style: .dashboard)
+    private var attentionProfiles: [TunnelProfile] {
+        appState.configuration.profiles.filter { profile in
+            let tunnel = appState.status(for: profile).health
+            let hop = appState.hopStatus(for: profile)?.health
+            return tunnel.needsAttention || hop?.needsAttention == true || appState.networkDecision.disabledProfileIDs.contains(profile.id)
         }
     }
 
@@ -113,163 +104,685 @@ struct DashboardView: View {
     }
 }
 
-private struct ProfileControlCard: View {
-    @EnvironmentObject private var appState: AppState
-    @Environment(\.openWindow) private var openWindow
-    let profile: TunnelProfile
+private enum DashboardSelection: Hashable {
+    case overview
+    case allProfiles
+    case needsAttention
+    case tag(String)
+    case profile(UUID)
+}
 
-    private var tunnelStatus: TunnelRuntimeStatus {
-        appState.status(for: profile)
+private struct Sidebar: View {
+    @EnvironmentObject private var appState: AppState
+    @Binding var selection: DashboardSelection?
+
+    private var tags: [String] {
+        Array(Set(appState.configuration.profiles.flatMap(\.tags))).sorted {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        }
     }
 
-    private var hopStatus: HopRuntimeStatus? {
-        appState.hopStatus(for: profile)
+    private var attentionCount: Int {
+        appState.configuration.profiles.filter { profile in
+            let tunnel = appState.status(for: profile).health
+            let hop = appState.hopStatus(for: profile)?.health
+            return tunnel.needsAttention || hop?.needsAttention == true || appState.networkDecision.disabledProfileIDs.contains(profile.id)
+        }.count
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 12) {
-                Image(systemName: "server.rack")
-                    .font(.title3)
+        List(selection: $selection) {
+            Section {
+                NavigationLink(value: DashboardSelection.overview) {
+                    Label("Overview", systemImage: "rectangle.grid.2x2")
+                }
+                NavigationLink(value: DashboardSelection.allProfiles) {
+                    CountedSidebarLabel(title: "All Profiles", count: appState.configuration.profiles.count, systemImage: "server.rack")
+                }
+                NavigationLink(value: DashboardSelection.needsAttention) {
+                    CountedSidebarLabel(title: "Needs Attention", count: attentionCount, systemImage: "exclamationmark.triangle")
+                }
+            }
+
+            if !tags.isEmpty {
+                Section("Tags") {
+                    ForEach(tags, id: \.self) { tag in
+                        NavigationLink(value: DashboardSelection.tag(tag)) {
+                            CountedSidebarLabel(
+                                title: tag,
+                                count: appState.configuration.profiles.filter { $0.tags.contains(tag) }.count,
+                                systemImage: "tag"
+                            )
+                        }
+                    }
+                }
+            }
+
+            Section("Profiles") {
+                ForEach(appState.configuration.profiles) { profile in
+                    NavigationLink(value: DashboardSelection.profile(profile.id)) {
+                        SidebarProfileRow(profile: profile)
+                            .environmentObject(appState)
+                    }
+                }
+            }
+        }
+        .navigationTitle("SSH AutoTunnel")
+    }
+}
+
+private struct CountedSidebarLabel: View {
+    var title: String
+    var count: Int
+    var systemImage: String
+
+    var body: some View {
+        Label {
+            HStack {
+                Text(title)
+                    .lineLimit(1)
+                Spacer()
+                Text("\(count)")
                     .foregroundStyle(.secondary)
-                    .frame(width: 24)
+                    .monospacedDigit()
+            }
+        } icon: {
+            Image(systemName: systemImage)
+        }
+    }
+}
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(profile.name)
-                        .font(.headline)
-                    Text(endpointSummary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                        .textSelection(.enabled)
+private struct SidebarProfileRow: View {
+    @EnvironmentObject private var appState: AppState
+    let profile: TunnelProfile
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Circle()
+                .fill(statusColor(for: appState.status(for: profile).health))
+                .frame(width: 8, height: 8)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(profile.name)
+                    .lineLimit(1)
+                Text(appState.status(for: profile).message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+        }
+    }
+}
+
+private struct OverviewPage: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.openWindow) private var openWindow
+
+    private var runningTunnels: Int {
+        appState.configuration.profiles.filter { appState.status(for: $0).health.isRunning }.count
+    }
+
+    private var runningHops: Int {
+        appState.configuration.profiles.compactMap { appState.hopStatus(for: $0) }.filter { $0.health.isRunning }.count
+    }
+
+    private var attentionProfiles: [TunnelProfile] {
+        appState.configuration.profiles.filter { profile in
+            let tunnel = appState.status(for: profile).health
+            let hop = appState.hopStatus(for: profile)?.health
+            return tunnel.needsAttention || hop?.needsAttention == true || appState.networkDecision.disabledProfileIDs.contains(profile.id)
+        }
+    }
+
+    private var recentChanges: [ConnectionChange] {
+        var changes: [ConnectionChange] = []
+        for profile in appState.configuration.profiles {
+            let tunnel = appState.status(for: profile)
+            changes.append(ConnectionChange(profile: profile, kind: "Tunnel", health: tunnel.health, message: tunnel.message, changedAt: tunnel.lastChanged))
+            if let hop = appState.hopStatus(for: profile) {
+                changes.append(ConnectionChange(profile: profile, kind: "Hop", health: hop.health, message: hop.message, changedAt: hop.lastChanged))
+            }
+        }
+        return changes.sorted { $0.changedAt > $1.changedAt }.prefix(8).map { $0 }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                overviewHeader
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 12)], spacing: 12) {
+                    MetricTile(title: "Profiles", value: "\(appState.configuration.profiles.count)", detail: "\(runningTunnels) tunnels running")
+                    MetricTile(title: "Hops", value: "\(runningHops)", detail: "App-owned jump connections")
+                    MetricTile(title: "Needs Attention", value: "\(attentionProfiles.count)", detail: attentionProfiles.first?.name ?? "No active issues")
+                    MetricTile(title: "System PAC", value: appState.systemPACStatus.state.rawValue, detail: appState.systemPACStatusTitle)
                 }
 
-                Spacer(minLength: 12)
+                SectionPanel(title: "System PAC", systemImage: "network") {
+                    SystemPACStatusDetailView()
+                        .environmentObject(appState)
+                    KeyValueGrid(rows: [
+                        KeyValueRow("PAC URL", appState.pacURL),
+                        KeyValueRow("Status URL", appState.statusURL),
+                        KeyValueRow("Apply Mode", appState.configuration.proxyApplyMode.rawValue)
+                    ])
+                }
 
-                VStack(alignment: .trailing, spacing: 6) {
-                    if let hopStatus {
-                        StatusBadge(label: "Hop", health: hopStatus.health)
+                SectionPanel(title: "Active Network", systemImage: "wifi") {
+                    KeyValueGrid(rows: networkRows)
+                    if appState.networkDecision.shouldDisableProxy {
+                        InlineNotice(
+                            title: "Proxy disabled",
+                            message: appState.networkDecision.matchedRule?.name ?? "Matched network rule",
+                            systemImage: "slash.circle"
+                        )
                     }
-                    StatusBadge(label: "Tunnel", health: tunnelStatus.health)
                 }
-            }
 
-            Divider()
-
-            VStack(alignment: .leading, spacing: 6) {
-                if let hopStatus {
-                    StatusLine(label: "Hop", health: hopStatus.health, message: hopStatus.message, pid: hopStatus.pid)
+                SectionPanel(title: "Local Servers", systemImage: "point.3.connected.trianglepath.dotted") {
+                    KeyValueGrid(rows: serverRows)
                 }
-                StatusLine(label: "Tunnel", health: tunnelStatus.health, message: tunnelStatus.message, pid: tunnelStatus.pid)
-            }
 
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 8) {
-                    if hopStatus != nil {
-                        Button {
-                            if isActive(hopStatus?.health) {
-                                appState.disconnectHop(profile)
-                            } else {
-                                appState.connectHop(profile)
+                SectionPanel(title: "Recent Connection Changes", systemImage: "clock.arrow.circlepath") {
+                    if recentChanges.isEmpty {
+                        Text("No connection changes yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        VStack(spacing: 0) {
+                            ForEach(recentChanges) { change in
+                                ConnectionChangeRow(change: change)
+                                if change.id != recentChanges.last?.id {
+                                    Divider()
+                                }
                             }
-                        } label: {
-                            Label(isActive(hopStatus?.health) ? "Stop Hop" : "Start Hop", systemImage: "point.3.connected.trianglepath.dotted")
                         }
-                        .help(isActive(hopStatus?.health) ? "Stop the jump host tunnel" : "Start the jump host tunnel")
                     }
-
-                    Button {
-                        if isActive(tunnelStatus.health) {
-                            appState.disconnect(profile)
-                        } else {
-                            appState.connect(profile)
-                        }
-                    } label: {
-                        Label(isActive(tunnelStatus.health) ? "Stop Tunnel" : "Start Tunnel", systemImage: "arrow.left.arrow.right")
-                    }
-                    .help(isActive(tunnelStatus.health) ? "Stop the tunnel for this profile" : "Start the tunnel for this profile")
-
-                    Button {
-                        appState.reconnect(profile)
-                    } label: {
-                        Label("Reconnect", systemImage: "arrow.clockwise")
-                    }
-                    .help("Reconnect this profile immediately")
-
-                    Button {
-                        appState.connectInteractiveSSH(profile)
-                    } label: {
-                        Label("Interactive SSH", systemImage: "terminal")
-                    }
-                    .help("Open an interactive SSH session for this profile")
-
-                    Spacer()
                 }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
 
-                HStack(spacing: 8) {
-                    Button {
-                        openDiagnostics()
-                    } label: {
-                        Label("View Log", systemImage: "doc.text.magnifyingglass")
-                    }
-                    .help("Open the captured SSH transcript for this profile")
+    private var overviewHeader: some View {
+        HStack(alignment: .top, spacing: 16) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("SSH AutoTunnel")
+                    .font(.title2.weight(.semibold))
+                Text(appState.lastProxyMessage)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(2)
+                    .textSelection(.enabled)
+                InteractiveTerminalPreferenceControl(style: .dashboard)
+                    .padding(.top, 2)
+            }
 
-                    if hopStatus != nil {
-                        Button {
-                            appState.connectHopWithVerboseSSHLogging(profileID: profile.id)
-                            openDiagnostics()
-                        } label: {
-                            Label("Verbose Hop", systemImage: "point.3.connected.trianglepath.dotted")
-                        }
-                        .help("Start the app-owned hop with verbose SSH diagnostics")
-                    }
+            Spacer(minLength: 12)
 
-                    Button {
-                        appState.connectWithVerboseSSHLogging(profileID: profile.id)
-                        openDiagnostics()
-                    } label: {
-                        Label("Verbose Tunnel", systemImage: "terminal")
-                    }
-                    .help("Start the tunnel with verbose SSH diagnostics")
-
-                    Spacer()
+            HStack(spacing: 8) {
+                Button {
+                    appState.connectAll()
+                } label: {
+                    Label("Connect All", systemImage: "play.fill")
+                }
+                Button {
+                    appState.disconnectAll()
+                } label: {
+                    Label("Disconnect All", systemImage: "stop.fill")
+                }
+                Button {
+                    openWindow(id: "diagnostics")
+                    AppActivation.activate()
+                } label: {
+                    Label("Diagnostics", systemImage: "stethoscope")
                 }
             }
             .buttonStyle(.bordered)
         }
-        .padding(14)
-        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay {
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .stroke(.separator, lineWidth: 0.5)
+    }
+
+    private var networkRows: [KeyValueRow] {
+        [
+            KeyValueRow("Service", appState.currentNetworkFingerprint.serviceName ?? "Unknown"),
+            KeyValueRow("Interface", appState.currentNetworkFingerprint.interfaceName ?? "Unknown"),
+            KeyValueRow("Wi-Fi", appState.currentNetworkFingerprint.wifiSSID ?? "Unknown"),
+            KeyValueRow("Gateway", appState.currentNetworkFingerprint.gateway ?? "Unknown"),
+            KeyValueRow("Search Domains", appState.currentNetworkFingerprint.searchDomains.joined(separator: ", ").nilIfEmpty ?? "None"),
+            KeyValueRow("VPN Interface", appState.currentNetworkFingerprint.hasVPNInterface ? "Detected" : "Not detected")
+        ]
+    }
+
+    private var serverRows: [KeyValueRow] {
+        let configured = LocalServerPorts(configuration: appState.configuration)
+        let active = appState.activeServerPorts
+        return [
+            KeyValueRow("PAC HTTP", "\(active?.pacHTTPPort ?? configured.pacHTTPPort)"),
+            KeyValueRow("Local API", "\(active?.apiHTTPPort ?? configured.apiHTTPPort)"),
+            KeyValueRow("Blocking Proxy", "\(active?.blockingHTTPProxyPort ?? configured.blockingHTTPProxyPort)")
+        ]
+    }
+}
+
+private struct ProfileCollectionPage: View {
+    @EnvironmentObject private var appState: AppState
+    var title: String
+    var profiles: [TunnelProfile]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text(title)
+                        .font(.title2.weight(.semibold))
+                    Spacer()
+                    Text("\(profiles.count) profiles")
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                }
+
+                if profiles.isEmpty {
+                    ContentUnavailableView("No Profiles", systemImage: "server.rack")
+                        .frame(maxWidth: .infinity, minHeight: 260)
+                } else {
+                    VStack(spacing: 10) {
+                        ForEach(profiles) { profile in
+                            ProfileSummaryPanel(profile: profile)
+                                .environmentObject(appState)
+                        }
+                    }
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+}
+
+private struct ProfileSummaryPanel: View {
+    @EnvironmentObject private var appState: AppState
+    let profile: TunnelProfile
+
+    private var tunnel: TunnelRuntimeStatus {
+        appState.status(for: profile)
+    }
+
+    private var hop: HopRuntimeStatus? {
+        appState.hopStatus(for: profile)
+    }
+
+    var body: some View {
+        SectionPanel(title: profile.name, systemImage: "server.rack") {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text(endpointSummary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                    TagRow(tags: profile.tags)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    if let hop {
+                        StatusBadge(label: "Hop", health: hop.health)
+                    }
+                    StatusBadge(label: "Tunnel", health: tunnel.health)
+                }
+            }
         }
     }
 
     private var endpointSummary: String {
-        let socksPort = tunnelStatus.effectiveLocalSocksPort ?? profile.localSocksPort
-        let socksSummary = socksPort == profile.localSocksPort
-            ? "SOCKS 127.0.0.1:\(profile.localSocksPort)"
-            : "SOCKS 127.0.0.1:\(socksPort) (configured \(profile.localSocksPort))"
-        var parts = ["\(profile.sshDestination):\(profile.sshPort)", socksSummary]
-        if let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines), !jumpHost.isEmpty {
+        let socksPort = tunnel.effectiveLocalSocksPort ?? profile.localSocksPort
+        var parts = ["\(profile.sshDestination):\(profile.sshPort)", "SOCKS 127.0.0.1:\(socksPort)"]
+        if let jumpHost = profile.jumpHost?.trimmedNonEmpty {
+            parts.append("via \(jumpHost)")
+        }
+        return parts.joined(separator: " | ")
+    }
+}
+
+private struct ProfileDetailPage: View {
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.openWindow) private var openWindow
+    let profile: TunnelProfile
+
+    private var tunnel: TunnelRuntimeStatus {
+        appState.status(for: profile)
+    }
+
+    private var hop: HopRuntimeStatus? {
+        appState.hopStatus(for: profile)
+    }
+
+    private var profileLog: String {
+        let log = appState.fullSSHLog(for: profile.id)
+        return String(log.suffix(6_000))
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+
+                SectionPanel(title: "Connection", systemImage: "point.3.connected.trianglepath.dotted") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        StatusLine(label: "Tunnel", health: tunnel.health, message: tunnel.message, pid: tunnel.pid)
+                        if let hop {
+                            StatusLine(label: "Hop", health: hop.health, message: hop.message, pid: hop.pid)
+                        }
+                    }
+                }
+
+                SectionPanel(title: "Forwarding", systemImage: "arrow.left.arrow.right") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        ForwardingRow(
+                            title: "Dynamic SOCKS",
+                            source: "127.0.0.1:\(tunnel.effectiveLocalSocksPort ?? profile.localSocksPort)",
+                            target: "Dynamic targets",
+                            enabled: true
+                        )
+
+                        if profile.localPortForwardings.isEmpty {
+                            Text("No local port forwards configured.")
+                                .foregroundStyle(.secondary)
+                        } else {
+                            ForEach(profile.localPortForwardings) { forwarding in
+                                ForwardingRow(
+                                    title: "Local",
+                                    source: "\(forwarding.bindAddress?.trimmedNonEmpty ?? "127.0.0.1"):\(forwarding.localPort)",
+                                    target: "\(forwarding.targetHost):\(forwarding.targetPort)",
+                                    enabled: forwarding.enabled
+                                )
+                            }
+                        }
+                    }
+                }
+
+                SectionPanel(title: "Authentication and 2FA", systemImage: "key") {
+                    KeyValueGrid(rows: [
+                        KeyValueRow("Auth Mode", profile.authMode.displayName),
+                        KeyValueRow("Host Key Policy", profile.hostKeyPolicy.displayName),
+                        KeyValueRow("Keychain Account", profile.keychain.account),
+                        KeyValueRow("Password Service", profile.keychain.passwordService ?? "Not configured"),
+                        KeyValueRow("TOTP Service", profile.keychain.totpService ?? "Not configured")
+                    ])
+                }
+
+                SectionPanel(title: "PAC and Network Rules", systemImage: "list.bullet.rectangle") {
+                    RuleList(profile: profile)
+                        .environmentObject(appState)
+                }
+
+                SectionPanel(title: "Reconnect and Notifications", systemImage: "bell.badge") {
+                    KeyValueGrid(rows: [
+                        KeyValueRow("Auto Reconnect", profile.autoReconnect ? "Enabled" : "Disabled"),
+                        KeyValueRow("Reconnect Limit", profile.curatedSSHOptions.maxReconnectAttempts.map(String.init) ?? "Unlimited"),
+                        KeyValueRow("Connect on Launch", profile.connectOnLaunch ? "Enabled" : "Disabled"),
+                        KeyValueRow("Notification Policy", profile.notificationPolicy.displayName)
+                    ])
+                }
+
+                SectionPanel(title: "SSH Options", systemImage: "slider.horizontal.3") {
+                    KeyValueGrid(rows: sshOptionRows)
+                }
+
+                SectionPanel(title: "Recent Log", systemImage: "doc.text.magnifyingglass") {
+                    if profileLog.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        Text("No SSH log captured for this profile yet.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ScrollView(.horizontal) {
+                            Text(profileLog)
+                                .font(.system(.caption, design: .monospaced))
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .frame(maxHeight: 220)
+                    }
+                }
+            }
+            .padding(24)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(profile.name)
+                        .font(.title2.weight(.semibold))
+                    Text(endpointSummary)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .textSelection(.enabled)
+                    TagRow(tags: profile.tags)
+                }
+
+                Spacer()
+
+                VStack(alignment: .trailing, spacing: 6) {
+                    if let hop {
+                        StatusBadge(label: "Hop", health: hop.health)
+                    }
+                    StatusBadge(label: "Tunnel", health: tunnel.health)
+                }
+            }
+
+            HStack(spacing: 8) {
+                if hop != nil {
+                    Button {
+                        if hop?.health.isRunning == true {
+                            appState.disconnectHop(profile)
+                        } else {
+                            appState.connectHop(profile)
+                        }
+                    } label: {
+                        Label(hop?.health.isRunning == true ? "Stop Hop" : "Start Hop", systemImage: "point.3.connected.trianglepath.dotted")
+                    }
+                    .help(hop?.health.isRunning == true ? "Stop the app-owned hop" : "Start the app-owned hop")
+                }
+
+                Button {
+                    if tunnel.health.isRunning {
+                        appState.disconnect(profile)
+                    } else {
+                        appState.connect(profile)
+                    }
+                } label: {
+                    Label(tunnel.health.isRunning ? "Stop Tunnel" : "Start Tunnel", systemImage: "arrow.left.arrow.right")
+                }
+                .help(tunnel.health.isRunning ? "Stop the tunnel" : "Start the tunnel")
+
+                Button {
+                    appState.reconnect(profile)
+                } label: {
+                    Label("Reconnect", systemImage: "arrow.clockwise")
+                }
+                .help("Reconnect this profile")
+
+                Button {
+                    appState.connectInteractiveSSH(profile)
+                } label: {
+                    Label("Interactive SSH", systemImage: "terminal")
+                }
+                .help("Open an interactive SSH session")
+
+                Button {
+                    openDiagnostics()
+                } label: {
+                    Label("Diagnostics", systemImage: "stethoscope")
+                }
+                .help("Open diagnostics for this profile")
+
+                Spacer()
+            }
+            .buttonStyle(.bordered)
+        }
+    }
+
+    private var endpointSummary: String {
+        var parts = ["\(profile.sshDestination):\(profile.sshPort)"]
+        if let interactiveHost = profile.interactiveHost?.trimmedNonEmpty {
+            parts.append("interactive \(interactiveHost)")
+        }
+        parts.append("SOCKS 127.0.0.1:\(tunnel.effectiveLocalSocksPort ?? profile.localSocksPort)")
+        if let jumpHost = profile.jumpHost?.trimmedNonEmpty {
             parts.append("via \(jumpHost)")
         }
         return parts.joined(separator: " | ")
     }
 
-    private func isActive(_ health: TunnelHealth?) -> Bool {
-        switch health {
-        case .healthy, .connecting, .degraded, .reconnecting:
-            true
-        case .stopped, .unhealthy, .failed, nil:
-            false
-        }
+    private var sshOptionRows: [KeyValueRow] {
+        [
+            KeyValueRow("Log Level", profile.sshLogLevel.displayName),
+            KeyValueRow("Tunnel Requests Remote Session", profile.tunnelRequestsRemoteSession ? "Yes" : "No (-N)"),
+            KeyValueRow("Bind Address", profile.curatedSSHOptions.bindAddress ?? "Default"),
+            KeyValueRow("Address Family", profile.curatedSSHOptions.addressFamily.displayName),
+            KeyValueRow("Compression", profile.curatedSSHOptions.compression.displayName),
+            KeyValueRow("Forward Agent", profile.curatedSSHOptions.forwardAgent.displayName),
+            KeyValueRow("Identity Files", profile.curatedSSHOptions.identityFiles.joined(separator: ", ").nilIfEmpty ?? "Default"),
+            KeyValueRow("Certificate Files", profile.curatedSSHOptions.certificateFiles.joined(separator: ", ").nilIfEmpty ?? "Default"),
+            KeyValueRow("ProxyJump", profile.jumpHost ?? "Not configured"),
+            KeyValueRow("ProxyCommand", profile.curatedSSHOptions.proxyCommand ?? "Not configured"),
+            KeyValueRow("Extra SSH Options", profile.extraSSHOptions.joined(separator: " ").nilIfEmpty ?? "None")
+        ]
     }
 
     private func openDiagnostics() {
         appState.selectDiagnosticsProfile(profile.id)
         openWindow(id: "diagnostics")
         AppActivation.activate()
+    }
+}
+
+private struct RuleList: View {
+    @EnvironmentObject private var appState: AppState
+    let profile: TunnelProfile
+
+    private var pacRules: [PACRule] {
+        appState.configuration.pacRules.filter { $0.profileID == profile.id }
+    }
+
+    private var networkRules: [NetworkPolicyRule] {
+        appState.configuration.networkRules.filter { $0.profileID == profile.id }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("PAC Rules")
+                    .font(.headline)
+                if pacRules.isEmpty {
+                    Text("No PAC rules reference this profile.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(pacRules) { rule in
+                        KeyValueGrid(rows: [
+                            KeyValueRow(rule.name, "\(rule.domainPattern) | \(rule.failureMode.displayName) | \(rule.enabled ? "Enabled" : "Disabled")")
+                        ])
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Network Rules")
+                    .font(.headline)
+                if networkRules.isEmpty {
+                    Text("No scoped network rules reference this profile.")
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(networkRules) { rule in
+                        KeyValueGrid(rows: [
+                            KeyValueRow(rule.name, "\(rule.action.rawValue) | \(rule.enabled ? "Enabled" : "Disabled")")
+                        ])
+                    }
+                }
+            }
+        }
+    }
+}
+
+private struct SectionPanel<Content: View>: View {
+    var title: String
+    var systemImage: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+            content
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .stroke(.separator, lineWidth: 0.5)
+        }
+    }
+}
+
+private struct MetricTile: View {
+    var title: String
+    var value: String
+    var detail: String
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+            Text(value)
+                .font(.title3.weight(.semibold))
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+            Text(detail)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(2)
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 86, alignment: .leading)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct KeyValueRow: Identifiable {
+    var id = UUID()
+    var key: String
+    var value: String
+
+    init(_ key: String, _ value: String) {
+        self.key = key
+        self.value = value
+    }
+}
+
+private struct KeyValueGrid: View {
+    var rows: [KeyValueRow]
+
+    var body: some View {
+        Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 14, verticalSpacing: 8) {
+            ForEach(rows) { row in
+                GridRow {
+                    Text(row.key)
+                        .font(.caption.weight(.medium))
+                        .foregroundStyle(.secondary)
+                        .frame(width: 160, alignment: .leading)
+                    Text(row.value)
+                        .font(.callout)
+                        .textSelection(.enabled)
+                        .lineLimit(3)
+                        .truncationMode(.middle)
+                }
+            }
+        }
     }
 }
 
@@ -280,7 +793,7 @@ private struct StatusBadge: View {
     var body: some View {
         HStack(spacing: 5) {
             Circle()
-                .fill(color(for: health))
+                .fill(statusColor(for: health))
                 .frame(width: 8, height: 8)
             Text(label)
                 .font(.caption.weight(.medium))
@@ -289,19 +802,6 @@ private struct StatusBadge: View {
                 .foregroundStyle(.secondary)
         }
         .fixedSize(horizontal: true, vertical: false)
-    }
-
-    private func color(for health: TunnelHealth) -> Color {
-        switch health {
-        case .healthy:
-            .green
-        case .degraded, .connecting, .reconnecting:
-            .orange
-        case .unhealthy, .failed:
-            .red
-        case .stopped:
-            .secondary
-        }
     }
 }
 
@@ -316,10 +816,9 @@ private struct StatusLine: View {
             Text(label)
                 .font(.caption.weight(.medium))
                 .foregroundStyle(.secondary)
-                .frame(width: 46, alignment: .leading)
-            Text(health.rawValue.capitalized)
-                .font(.caption)
-                .frame(width: 82, alignment: .leading)
+                .frame(width: 52, alignment: .leading)
+            StatusBadge(label: "", health: health)
+                .frame(width: 112, alignment: .leading)
             Text(message)
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -332,5 +831,169 @@ private struct StatusLine: View {
                     .foregroundStyle(.secondary)
             }
         }
+    }
+}
+
+private struct ForwardingRow: View {
+    var title: String
+    var source: String
+    var target: String
+    var enabled: Bool
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: enabled ? "checkmark.circle.fill" : "circle")
+                .foregroundStyle(enabled ? .green : .secondary)
+                .frame(width: 18)
+            Text(title)
+                .font(.callout.weight(.medium))
+                .frame(width: 120, alignment: .leading)
+            Text(source)
+                .font(.callout.monospaced())
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Image(systemName: "arrow.right")
+                .foregroundStyle(.secondary)
+            Text(target)
+                .font(.callout.monospaced())
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+        }
+    }
+}
+
+private struct TagRow: View {
+    var tags: [String]
+
+    var body: some View {
+        if tags.isEmpty {
+            Text("No tags")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        } else {
+            FlowLayout(spacing: 6) {
+                ForEach(tags, id: \.self) { tag in
+                    Label(tag, systemImage: "tag")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+}
+
+private struct InlineNotice: View {
+    var title: String
+    var message: String
+    var systemImage: String
+
+    var body: some View {
+        Label {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.callout.weight(.medium))
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        } icon: {
+            Image(systemName: systemImage)
+        }
+        .padding(10)
+        .background(.quaternary.opacity(0.35), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+    }
+}
+
+private struct ConnectionChange: Identifiable, Equatable {
+    var id = UUID()
+    var profile: TunnelProfile
+    var kind: String
+    var health: TunnelHealth
+    var message: String
+    var changedAt: Date
+}
+
+private struct ConnectionChangeRow: View {
+    var change: ConnectionChange
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Circle()
+                .fill(statusColor(for: change.health))
+                .frame(width: 8, height: 8)
+            Text(change.profile.name)
+                .font(.callout.weight(.medium))
+                .lineLimit(1)
+            Text(change.kind)
+                .font(.caption.weight(.medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 48, alignment: .leading)
+            Text(change.message)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            Text(change.changedAt, style: .relative)
+                .font(.caption.monospacedDigit())
+                .foregroundStyle(.secondary)
+        }
+        .padding(.vertical, 7)
+    }
+}
+
+private struct FlowLayout<Content: View>: View {
+    var spacing: CGFloat
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            content
+        }
+    }
+}
+
+private func statusColor(for health: TunnelHealth) -> Color {
+    switch health {
+    case .healthy:
+        .green
+    case .degraded, .connecting, .reconnecting:
+        .orange
+    case .unhealthy, .failed:
+        .red
+    case .stopped:
+        .secondary
+    }
+}
+
+private extension TunnelHealth {
+    var isRunning: Bool {
+        switch self {
+        case .healthy, .connecting, .degraded, .reconnecting:
+            true
+        case .stopped, .unhealthy, .failed:
+            false
+        }
+    }
+
+    var needsAttention: Bool {
+        switch self {
+        case .unhealthy, .failed, .reconnecting:
+            true
+        case .stopped, .connecting, .healthy, .degraded:
+            false
+        }
+    }
+}
+
+private extension String {
+    var trimmedNonEmpty: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+
+    var nilIfEmpty: String? {
+        isEmpty ? nil : self
     }
 }

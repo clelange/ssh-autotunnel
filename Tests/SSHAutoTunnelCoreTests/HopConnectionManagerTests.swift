@@ -245,6 +245,34 @@ final class HopConnectionManagerTests: XCTestCase {
         XCTAssertEqual(manager.status(for: profile.id)?.health, .connecting)
     }
 
+    func testReconnectAttemptLimitStopsUnexpectedExitReconnects() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        var profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        profile.curatedSSHOptions.maxReconnectAttempts = 0
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            reconnectDelay: { _ in 0.01 },
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "hop process started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH hop process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        try XCTUnwrap(launcher.sessions.first).exit(status: 255)
+        waitUntil("hop reconnect limit is reported") {
+            manager.status(for: profile.id)?.message.contains("Hop reconnect attempt limit reached") == true
+        }
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .failed)
+    }
+
     func testStopAllWaitingForceKillsStubbornHopBeforeReturning() throws {
         let launcher = FakeHopSSHProcessLauncher()
         let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)

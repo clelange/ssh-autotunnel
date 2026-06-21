@@ -194,7 +194,86 @@ final class SSHCommandBuilderTests: XCTestCase {
         let verbose = SSHCommandBuilder.tunnelCommand(for: profile, options: SSHLaunchOptions(verbose: true))
 
         XCTAssertFalse(standard.arguments.contains("-vvv"))
-        XCTAssertTrue(verbose.arguments.containsSubsequence(["-vvv", "ssh.example.org"]))
+        XCTAssertTrue(verbose.arguments.contains("-vvv"))
+        XCTAssertTrue(verbose.arguments.containsSubsequence(["-o", "LogLevel=DEBUG3"]))
+        XCTAssertEqual(verbose.arguments.last, "ssh.example.org")
+    }
+
+    func testTunnelCanRequestRemoteSessionWhenConfigured() {
+        let profile = TunnelProfile(
+            name: "Session",
+            host: "ssh.example.org",
+            localSocksPort: 1099,
+            tunnelRequestsRemoteSession: true
+        )
+
+        let command = SSHCommandBuilder.tunnelCommand(for: profile)
+
+        XCTAssertFalse(command.arguments.contains("-N"))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-D", "127.0.0.1:1099"]))
+        XCTAssertEqual(command.arguments.last, "ssh.example.org")
+    }
+
+    func testTunnelCommandEmitsEnabledLocalPortForwardings() {
+        let profile = TunnelProfile(
+            name: "Local",
+            host: "ssh.example.org",
+            localSocksPort: 1100,
+            localPortForwardings: [
+                LocalPortForward(bindAddress: "127.0.0.1", localPort: 10201, targetHost: "10.0.0.5", targetPort: 22),
+                LocalPortForward(enabled: false, bindAddress: "127.0.0.1", localPort: 10202, targetHost: "10.0.0.6", targetPort: 5432)
+            ]
+        )
+
+        let command = SSHCommandBuilder.tunnelCommand(for: profile)
+
+        XCTAssertTrue(command.arguments.containsSubsequence(["-L", "127.0.0.1:10201:10.0.0.5:22"]))
+        XCTAssertFalse(command.arguments.contains("127.0.0.1:10202:10.0.0.6:5432"))
+    }
+
+    func testCuratedSSHOptionsAreMappedToOpenSSHArguments() {
+        let profile = TunnelProfile(
+            name: "Curated",
+            host: "ssh.example.org",
+            localSocksPort: 1101,
+            jumpHost: "jump.example.org",
+            curatedSSHOptions: CuratedSSHOptions(
+                bindAddress: "192.0.2.10",
+                addressFamily: .ipv4,
+                compression: .enabled,
+                identityFiles: ["~/.ssh/id_ed25519"],
+                certificateFiles: ["~/.ssh/id_ed25519-cert.pub"],
+                forwardAgent: .disabled,
+                proxyCommand: "ssh bastion -W %h:%p"
+            )
+        )
+
+        let command = SSHCommandBuilder.tunnelCommand(for: profile)
+
+        XCTAssertTrue(command.arguments.containsSubsequence(["-b", "192.0.2.10"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "AddressFamily=inet"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "Compression=yes"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-i", "~/.ssh/id_ed25519"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "CertificateFile=~/.ssh/id_ed25519-cert.pub"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ForwardAgent=no"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ProxyCommand=ssh bastion -W %h:%p"]))
+        XCTAssertFalse(command.arguments.contains("-J"))
+    }
+
+    func testConfiguredLogLevelAppliesToNormalLaunches() {
+        let profile = TunnelProfile(
+            name: "Debug",
+            host: "ssh.example.org",
+            localSocksPort: 1102,
+            sshLogLevel: .debug2
+        )
+
+        let standard = SSHCommandBuilder.tunnelCommand(for: profile)
+        let verbose = SSHCommandBuilder.tunnelCommand(for: profile, options: SSHLaunchOptions(verbose: true))
+
+        XCTAssertTrue(standard.arguments.containsSubsequence(["-o", "LogLevel=DEBUG2"]))
+        XCTAssertFalse(standard.arguments.contains("-vvv"))
+        XCTAssertTrue(verbose.arguments.containsSubsequence(["-o", "LogLevel=DEBUG3"]))
     }
 }
 

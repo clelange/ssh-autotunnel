@@ -95,6 +95,182 @@ public struct SSHLaunchOptions: Equatable, Sendable {
     }
 }
 
+public enum ProfileNotificationPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
+    case disabled
+    case failuresAndRecoveries
+    case allStatusChanges
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .disabled: "Disabled"
+        case .failuresAndRecoveries: "Failures and recoveries"
+        case .allStatusChanges: "All status changes"
+        }
+    }
+}
+
+public enum SSHLogLevel: String, Codable, CaseIterable, Identifiable, Sendable {
+    case info
+    case debug1
+    case debug2
+    case debug3
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .info: "INFO"
+        case .debug1: "DEBUG1"
+        case .debug2: "DEBUG2"
+        case .debug3: "DEBUG3"
+        }
+    }
+
+    public var sshValue: String {
+        switch self {
+        case .info: "INFO"
+        case .debug1: "DEBUG1"
+        case .debug2: "DEBUG2"
+        case .debug3: "DEBUG3"
+        }
+    }
+}
+
+public enum SSHAddressFamily: String, Codable, CaseIterable, Identifiable, Sendable {
+    case any
+    case ipv4
+    case ipv6
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .any: "Any"
+        case .ipv4: "IPv4"
+        case .ipv6: "IPv6"
+        }
+    }
+
+    public var sshValue: String {
+        switch self {
+        case .any: "any"
+        case .ipv4: "inet"
+        case .ipv6: "inet6"
+        }
+    }
+}
+
+public enum SSHOptionToggle: String, Codable, CaseIterable, Identifiable, Sendable {
+    case systemDefault
+    case enabled
+    case disabled
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .systemDefault: "Default"
+        case .enabled: "Yes"
+        case .disabled: "No"
+        }
+    }
+
+    public var sshYesNoValue: String? {
+        switch self {
+        case .systemDefault: nil
+        case .enabled: "yes"
+        case .disabled: "no"
+        }
+    }
+}
+
+public struct LocalPortForward: Identifiable, Codable, Equatable, Sendable {
+    public var id: UUID
+    public var enabled: Bool
+    public var bindAddress: String?
+    public var localPort: Int
+    public var targetHost: String
+    public var targetPort: Int
+
+    public init(
+        id: UUID = UUID(),
+        enabled: Bool = true,
+        bindAddress: String? = "127.0.0.1",
+        localPort: Int,
+        targetHost: String,
+        targetPort: Int
+    ) {
+        self.id = id
+        self.enabled = enabled
+        self.bindAddress = bindAddress
+        self.localPort = localPort
+        self.targetHost = targetHost
+        self.targetPort = targetPort
+    }
+
+    public var sshArgument: String {
+        let bind = bindAddress?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let source = bind.isEmpty ? "\(localPort)" : "\(bind):\(localPort)"
+        return "\(source):\(targetHost):\(targetPort)"
+    }
+}
+
+public struct CuratedSSHOptions: Codable, Equatable, Sendable {
+    public var bindAddress: String?
+    public var addressFamily: SSHAddressFamily
+    public var compression: SSHOptionToggle
+    public var identityFiles: [String]
+    public var certificateFiles: [String]
+    public var forwardAgent: SSHOptionToggle
+    public var proxyCommand: String?
+    public var maxReconnectAttempts: Int?
+
+    private enum CodingKeys: String, CodingKey {
+        case bindAddress
+        case addressFamily
+        case compression
+        case identityFiles
+        case certificateFiles
+        case forwardAgent
+        case proxyCommand
+        case maxReconnectAttempts
+    }
+
+    public init(
+        bindAddress: String? = nil,
+        addressFamily: SSHAddressFamily = .any,
+        compression: SSHOptionToggle = .systemDefault,
+        identityFiles: [String] = [],
+        certificateFiles: [String] = [],
+        forwardAgent: SSHOptionToggle = .systemDefault,
+        proxyCommand: String? = nil,
+        maxReconnectAttempts: Int? = nil
+    ) {
+        self.bindAddress = bindAddress
+        self.addressFamily = addressFamily
+        self.compression = compression
+        self.identityFiles = identityFiles
+        self.certificateFiles = certificateFiles
+        self.forwardAgent = forwardAgent
+        self.proxyCommand = proxyCommand
+        self.maxReconnectAttempts = maxReconnectAttempts
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        bindAddress = try container.decodeIfPresent(String.self, forKey: .bindAddress)
+        addressFamily = try container.decodeIfPresent(SSHAddressFamily.self, forKey: .addressFamily) ?? .any
+        compression = try container.decodeIfPresent(SSHOptionToggle.self, forKey: .compression) ?? .systemDefault
+        identityFiles = try container.decodeIfPresent([String].self, forKey: .identityFiles) ?? []
+        certificateFiles = try container.decodeIfPresent([String].self, forKey: .certificateFiles) ?? []
+        forwardAgent = try container.decodeIfPresent(SSHOptionToggle.self, forKey: .forwardAgent) ?? .systemDefault
+        proxyCommand = try container.decodeIfPresent(String.self, forKey: .proxyCommand)
+        maxReconnectAttempts = try container.decodeIfPresent(Int.self, forKey: .maxReconnectAttempts)
+    }
+}
+
 public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
@@ -109,6 +285,13 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
     public var keychain: KeychainReference
     public var autoReconnect: Bool
     public var healthProbe: HealthProbe?
+    public var tags: [String]
+    public var connectOnLaunch: Bool
+    public var notificationPolicy: ProfileNotificationPolicy
+    public var sshLogLevel: SSHLogLevel
+    public var tunnelRequestsRemoteSession: Bool
+    public var localPortForwardings: [LocalPortForward]
+    public var curatedSSHOptions: CuratedSSHOptions
     public var extraSSHOptions: [String]
 
     private enum CodingKeys: String, CodingKey {
@@ -125,6 +308,13 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         case keychain
         case autoReconnect
         case healthProbe
+        case tags
+        case connectOnLaunch
+        case notificationPolicy
+        case sshLogLevel
+        case tunnelRequestsRemoteSession
+        case localPortForwardings
+        case curatedSSHOptions
         case extraSSHOptions
     }
 
@@ -142,6 +332,13 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         keychain: KeychainReference = KeychainReference(),
         autoReconnect: Bool = true,
         healthProbe: HealthProbe? = nil,
+        tags: [String] = [],
+        connectOnLaunch: Bool = false,
+        notificationPolicy: ProfileNotificationPolicy = .failuresAndRecoveries,
+        sshLogLevel: SSHLogLevel = .info,
+        tunnelRequestsRemoteSession: Bool = false,
+        localPortForwardings: [LocalPortForward] = [],
+        curatedSSHOptions: CuratedSSHOptions = CuratedSSHOptions(),
         extraSSHOptions: [String] = []
     ) {
         self.id = id
@@ -157,6 +354,13 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         self.keychain = keychain
         self.autoReconnect = autoReconnect
         self.healthProbe = healthProbe
+        self.tags = tags
+        self.connectOnLaunch = connectOnLaunch
+        self.notificationPolicy = notificationPolicy
+        self.sshLogLevel = sshLogLevel
+        self.tunnelRequestsRemoteSession = tunnelRequestsRemoteSession
+        self.localPortForwardings = localPortForwardings
+        self.curatedSSHOptions = curatedSSHOptions
         self.extraSSHOptions = extraSSHOptions
     }
 
@@ -175,6 +379,13 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         keychain = try container.decodeIfPresent(KeychainReference.self, forKey: .keychain) ?? KeychainReference()
         autoReconnect = try container.decodeIfPresent(Bool.self, forKey: .autoReconnect) ?? true
         healthProbe = try container.decodeIfPresent(HealthProbe.self, forKey: .healthProbe)
+        tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        connectOnLaunch = try container.decodeIfPresent(Bool.self, forKey: .connectOnLaunch) ?? false
+        notificationPolicy = try container.decodeIfPresent(ProfileNotificationPolicy.self, forKey: .notificationPolicy) ?? .failuresAndRecoveries
+        sshLogLevel = try container.decodeIfPresent(SSHLogLevel.self, forKey: .sshLogLevel) ?? .info
+        tunnelRequestsRemoteSession = try container.decodeIfPresent(Bool.self, forKey: .tunnelRequestsRemoteSession) ?? false
+        localPortForwardings = try container.decodeIfPresent([LocalPortForward].self, forKey: .localPortForwardings) ?? []
+        curatedSSHOptions = try container.decodeIfPresent(CuratedSSHOptions.self, forKey: .curatedSSHOptions) ?? CuratedSSHOptions()
         extraSSHOptions = try container.decodeIfPresent([String].self, forKey: .extraSSHOptions) ?? []
     }
 
@@ -193,6 +404,13 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         try container.encode(keychain, forKey: .keychain)
         try container.encode(autoReconnect, forKey: .autoReconnect)
         try container.encodeIfPresent(healthProbe, forKey: .healthProbe)
+        try container.encode(tags, forKey: .tags)
+        try container.encode(connectOnLaunch, forKey: .connectOnLaunch)
+        try container.encode(notificationPolicy, forKey: .notificationPolicy)
+        try container.encode(sshLogLevel, forKey: .sshLogLevel)
+        try container.encode(tunnelRequestsRemoteSession, forKey: .tunnelRequestsRemoteSession)
+        try container.encode(localPortForwardings, forKey: .localPortForwardings)
+        try container.encode(curatedSSHOptions, forKey: .curatedSSHOptions)
         try container.encode(extraSSHOptions, forKey: .extraSSHOptions)
     }
 

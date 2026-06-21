@@ -47,6 +47,26 @@ final class PortConfigurationValidatorTests: XCTestCase {
         XCTAssertTrue(messages.contains("Port 18484 is used by API HTTP port, Blocking proxy port"))
     }
 
+    func testRejectsInvalidAndDuplicateEnabledLocalForwardingPorts() {
+        let profile = TunnelProfile(
+            name: "Forward",
+            host: "example.org",
+            localSocksPort: 1080,
+            localPortForwardings: [
+                LocalPortForward(localPort: 18483, targetHost: "10.0.0.5", targetPort: 22),
+                LocalPortForward(localPort: 0, targetHost: "10.0.0.6", targetPort: 70000),
+                LocalPortForward(enabled: false, localPort: 18483, targetHost: "10.0.0.7", targetPort: 0)
+            ]
+        )
+        let config = AppConfiguration(profiles: [profile], pacHTTPPort: 18483)
+
+        let messages = PortConfigurationValidator.validationMessages(for: config)
+
+        XCTAssertTrue(messages.contains("Forward local forward source port must be between 1 and 65535"))
+        XCTAssertTrue(messages.contains("Forward local forward target port must be between 1 and 65535"))
+        XCTAssertTrue(messages.contains("Port 18483 is used by PAC HTTP port, Forward local forward source port"))
+    }
+
     func testThrowsStructuredError() {
         var config = AppConfiguration.defaultConfiguration()
         config.apiHTTPPort = config.pacHTTPPort

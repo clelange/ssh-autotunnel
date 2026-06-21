@@ -9,12 +9,26 @@ struct MenuBarView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Button {
-                openWindow(id: "settings")
+                openWindow(id: "main")
                 AppActivation.activate()
             } label: {
                 Label(appState.systemPACMenuTitle, systemImage: appState.systemPACStatusSymbol)
             }
             .help(appState.systemPACStatusDetail)
+
+            Divider()
+
+            Button {
+                appState.connectAll()
+            } label: {
+                Label("Connect All", systemImage: "play.fill")
+            }
+
+            Button {
+                appState.disconnectAll()
+            } label: {
+                Label("Disconnect All", systemImage: "stop.fill")
+            }
 
             Divider()
 
@@ -27,18 +41,24 @@ struct MenuBarView: View {
 
             Divider()
 
-            ForEach(appState.configuration.profiles) { profile in
-                let status = appState.status(for: profile)
-                Button {
-                    if status.health == .healthy || status.health == .connecting || status.health == .degraded {
-                        appState.disconnect(profile)
-                    } else {
-                        appState.connect(profile)
+            if !appState.configuration.profiles.isEmpty {
+                Menu {
+                    Menu {
+                        profileButtons(for: appState.configuration.profiles)
+                    } label: {
+                        Label("All Profiles", systemImage: "server.rack")
+                    }
+
+                    ForEach(tagGroups, id: \.tag) { group in
+                        Menu {
+                            profileButtons(for: group.profiles)
+                        } label: {
+                            Label(group.tag.menuTruncated, systemImage: "tag")
+                        }
                     }
                 } label: {
-                    Label(profile.name, systemImage: symbol(for: status.health))
+                    Label("Profiles", systemImage: "server.rack")
                 }
-                .help(status.message)
             }
 
             if appState.configuration.profiles.contains(where: { appState.hasJumpHost($0) }) {
@@ -46,13 +66,13 @@ struct MenuBarView: View {
                     ForEach(appState.configuration.profiles.filter { appState.hasJumpHost($0) }) { profile in
                         let hopStatus = appState.hopStatus(for: profile)
                         Button {
-                            if hopStatus?.health == .healthy || hopStatus?.health == .connecting || hopStatus?.health == .reconnecting {
+                            if isRunning(hopStatus?.health ?? .stopped) {
                                 appState.disconnectHop(profile)
                             } else {
                                 appState.connectHop(profile)
                             }
                         } label: {
-                            Label(profile.name, systemImage: symbol(for: hopStatus?.health ?? .stopped))
+                            Label(profile.name.menuTruncated, systemImage: symbol(for: hopStatus?.health ?? .stopped))
                         }
                         .help(hopStatus?.message ?? "Stopped")
                     }
@@ -64,8 +84,10 @@ struct MenuBarView: View {
             if !appState.configuration.profiles.isEmpty {
                 Menu {
                     ForEach(appState.configuration.profiles) { profile in
-                        Button(profile.name) {
+                        Button {
                             appState.connectInteractiveSSH(profile)
+                        } label: {
+                            Label(profile.name.menuTruncated, systemImage: "terminal")
                         }
                     }
                 } label: {
@@ -82,16 +104,11 @@ struct MenuBarView: View {
             }
 
             Button {
-                appState.enableSystemPACManagement()
+                appState.toggleSystemPAC()
             } label: {
-                Label("Enable System PAC", systemImage: "network")
+                SystemPACToggleLabel()
             }
-
-            Button {
-                appState.disableSystemPACManagement()
-            } label: {
-                Label("Restore System Proxy", systemImage: "arrow.uturn.backward")
-            }
+            .help(appState.systemPACToggleHelp)
 
             Divider()
 
@@ -130,6 +147,41 @@ struct MenuBarView: View {
         }
     }
 
+    private var tagGroups: [(tag: String, profiles: [TunnelProfile])] {
+        let tags = Array(Set(appState.configuration.profiles.flatMap(\.tags))).sorted {
+            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
+        }
+        return tags.map { tag in
+            (tag, appState.configuration.profiles.filter { $0.tags.contains(tag) })
+        }
+    }
+
+    @ViewBuilder
+    private func profileButtons(for profiles: [TunnelProfile]) -> some View {
+        ForEach(profiles) { profile in
+            let status = appState.status(for: profile)
+            Button {
+                if isRunning(status.health) {
+                    appState.disconnect(profile)
+                } else {
+                    appState.connect(profile)
+                }
+            } label: {
+                Label(profile.name.menuTruncated, systemImage: symbol(for: status.health))
+            }
+            .help(status.message)
+        }
+    }
+
+    private func isRunning(_ health: TunnelHealth) -> Bool {
+        switch health {
+        case .healthy, .connecting, .degraded, .reconnecting:
+            true
+        case .stopped, .unhealthy, .failed:
+            false
+        }
+    }
+
     private func symbol(for health: TunnelHealth) -> String {
         switch health {
         case .healthy: "checkmark.circle.fill"
@@ -143,5 +195,12 @@ struct MenuBarView: View {
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+private extension String {
+    var menuTruncated: String {
+        guard count > 40 else { return self }
+        return String(prefix(37)) + "..."
     }
 }

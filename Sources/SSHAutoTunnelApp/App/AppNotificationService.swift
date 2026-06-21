@@ -65,6 +65,25 @@ final class AppNotificationService: NSObject, UNUserNotificationCenterDelegate {
         UNUserNotificationCenter.current().add(request)
     }
 
+    func deliverStatusChange(kind: ConnectionKind, profileID: UUID, profileName: String, health: TunnelHealth, message: String) {
+        let content = UNMutableNotificationContent()
+        let subject = kind == .hop ? "Hop connection" : "Tunnel"
+        content.title = "\(subject) \(health.rawValue)"
+        content.body = "\(profileName): \(message)"
+        content.sound = .default
+        content.userInfo = [
+            "profileID": profileID.uuidString,
+            "kind": kind.rawValue
+        ]
+
+        let request = UNNotificationRequest(
+            identifier: "ssh-autotunnel-\(profileID.uuidString)-\(kind.rawValue)-\(health.rawValue)-\(Date().timeIntervalSince1970)",
+            content: content,
+            trigger: nil
+        )
+        UNUserNotificationCenter.current().add(request)
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse,

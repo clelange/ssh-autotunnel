@@ -95,6 +95,33 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertEqual(manager.status(for: profile.id).health, .connecting)
     }
 
+    func testReconnectAttemptLimitStopsUnexpectedExitReconnects() throws {
+        let launcher = FakeSSHProcessLauncher()
+        var profile = testProfile(autoReconnect: true)
+        profile.curatedSSHOptions.maxReconnectAttempts = 0
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            reconnectDelay: { _ in 0.01 },
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        try XCTUnwrap(launcher.sessions.first).exit(status: 255)
+        waitUntil("reconnect limit is reported") {
+            manager.status(for: profile.id).message.contains("Reconnect attempt limit reached")
+        }
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertEqual(manager.status(for: profile.id).health, .failed)
+    }
+
     func testStartUsesAllocatedRuntimeSocksPortWithoutChangingProfile() throws {
         let launcher = FakeSSHProcessLauncher()
         let profile = testProfile(autoReconnect: true)

@@ -22,6 +22,23 @@ public enum ProfileTemplate {
             ),
             autoReconnect: true,
             healthProbe: HealthProbe(host: "ssh.example.org", port: 22),
+            tags: ["example"],
+            connectOnLaunch: false,
+            notificationPolicy: .failuresAndRecoveries,
+            sshLogLevel: .info,
+            tunnelRequestsRemoteSession: false,
+            localPortForwardings: [
+                LocalPortForward(
+                    localPort: 15432,
+                    targetHost: "database.internal.example.org",
+                    targetPort: 5432
+                )
+            ],
+            curatedSSHOptions: CuratedSSHOptions(
+                identityFiles: ["~/.ssh/id_example"],
+                forwardAgent: .disabled,
+                maxReconnectAttempts: nil
+            ),
             extraSSHOptions: ["-o", "IdentitiesOnly=yes"]
         )
     }

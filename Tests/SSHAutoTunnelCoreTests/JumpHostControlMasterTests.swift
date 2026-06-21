@@ -52,7 +52,9 @@ final class JumpHostControlMasterTests: XCTestCase {
         let verbose = try JumpHostControlMasterFactory.make(for: profile, options: SSHLaunchOptions(verbose: true))
 
         XCTAssertFalse(standard.command.arguments.contains("-vvv"))
-        XCTAssertTrue(verbose.command.arguments.containsSubsequence(["-vvv", "alice@hopx.psi.ch"]))
+        XCTAssertTrue(verbose.command.arguments.contains("-vvv"))
+        XCTAssertTrue(verbose.command.arguments.containsSubsequence(["-o", "LogLevel=DEBUG3"]))
+        XCTAssertEqual(verbose.command.arguments.last, "alice@hopx.psi.ch")
         XCTAssertFalse(verbose.command.arguments.containsSubsequence(["-o", "LogLevel=DEBUG"]))
     }
 

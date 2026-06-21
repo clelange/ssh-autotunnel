@@ -80,6 +80,7 @@ final class AppState: ObservableObject {
         refreshPACAppendSource(force: true)
         writePACCopy()
         refreshSystemPACStatus()
+        connectLaunchProfiles()
     }
 
     var pacURL: String {
@@ -88,6 +89,10 @@ final class AppState: ObservableObject {
 
     var statusURL: String {
         "http://127.0.0.1:\(localServers.activePorts?.pacHTTPPort ?? configuration.pacHTTPPort)/status"
+    }
+
+    var activeServerPorts: LocalServerPorts? {
+        localServers.activePorts
     }
 
     private var pacVersion: Int {
@@ -155,6 +160,23 @@ final class AppState: ObservableObject {
             lastProxyMessage = "\(profile.name): Reconnect requested"
             tunnelManager.reconnect(profile: profile, options: .standard, reservedSocksPorts: reservedSocksPorts(excluding: profile.id))
         }
+    }
+
+    func connectAll() {
+        for profile in configuration.profiles where !isActive(status(for: profile).health) {
+            connect(profile)
+        }
+    }
+
+    func disconnectAll() {
+        pendingTunnelStartTokens.removeAll()
+        for profile in configuration.profiles {
+            tunnelManager.stop(profileID: profile.id)
+            if hasJumpHost(profile) {
+                hopManager.stop(profileID: profile.id)
+            }
+        }
+        lastProxyMessage = "Disconnect all requested"
     }
 
     func connectHop(_ profile: TunnelProfile) {
@@ -225,6 +247,12 @@ final class AppState: ObservableObject {
             return !path.isEmpty && FileManager.default.fileExists(atPath: path)
         case .terminal, .iTerm2, .ghostty:
             return interactiveTerminalInstallations.contains { $0.app == preference.app }
+        }
+    }
+
+    private func connectLaunchProfiles() {
+        for profile in configuration.profiles where profile.connectOnLaunch {
+            connect(profile)
         }
     }
 
@@ -997,9 +1025,13 @@ final class AppState: ObservableObject {
             self.hopStatuses[status.profileID] = status
             if let profile = self.configuration.profiles.first(where: { $0.id == status.profileID }) {
                 self.lastProxyMessage = "\(profile.name) hop: \(status.message)"
-                if let event = TunnelNotificationPolicy.event(previous: previous?.health, current: status.health, kind: .hop) {
-                    self.notifications.deliver(event: event, profileID: profile.id, profileName: profile.name, message: status.message)
-                }
+                self.deliverConnectionNotification(
+                    profile: profile,
+                    previous: previous?.health,
+                    current: status.health,
+                    kind: .hop,
+                    message: status.message
+                )
             }
         }
         hopManager.onLog = { [weak self] profileID, text in
@@ -1021,9 +1053,13 @@ final class AppState: ObservableObject {
             self.statuses[status.profileID] = status
             if let profile = self.configuration.profiles.first(where: { $0.id == status.profileID }) {
                 self.lastProxyMessage = "\(profile.name): \(status.message)"
-                if let event = TunnelNotificationPolicy.event(previous: previous?.health, current: status.health) {
-                    self.notifications.deliver(event: event, profileID: profile.id, profileName: profile.name, message: status.message)
-                }
+                self.deliverConnectionNotification(
+                    profile: profile,
+                    previous: previous?.health,
+                    current: status.health,
+                    kind: .tunnel,
+                    message: status.message
+                )
             }
             self.writePACCopy()
             if self.configuration.proxyApplyMode == .activeNetworkServicePAC {
@@ -1035,6 +1071,36 @@ final class AppState: ObservableObject {
         tunnelManager.onLog = { [weak self] profileID, text in
             DispatchQueue.main.async {
                 self?.appendSSHLog(text, profileID: profileID)
+            }
+        }
+    }
+
+    private func deliverConnectionNotification(
+        profile: TunnelProfile,
+        previous: TunnelHealth?,
+        current: TunnelHealth,
+        kind: ConnectionKind,
+        message: String
+    ) {
+        switch profile.notificationPolicy {
+        case .disabled:
+            return
+        case .failuresAndRecoveries:
+            if let event = TunnelNotificationPolicy.event(previous: previous, current: current, kind: kind) {
+                notifications.deliver(event: event, profileID: profile.id, profileName: profile.name, message: message)
+            }
+        case .allStatusChanges:
+            guard previous != current else { return }
+            if let event = TunnelNotificationPolicy.event(previous: previous, current: current, kind: kind) {
+                notifications.deliver(event: event, profileID: profile.id, profileName: profile.name, message: message)
+            } else {
+                notifications.deliverStatusChange(
+                    kind: kind,
+                    profileID: profile.id,
+                    profileName: profile.name,
+                    health: current,
+                    message: message
+                )
             }
         }
     }
@@ -1212,6 +1278,15 @@ final class AppState: ObservableObject {
     private func normalizedJumpHost(for profile: TunnelProfile) -> String? {
         let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return jumpHost.isEmpty ? nil : jumpHost
+    }
+
+    private func isActive(_ health: TunnelHealth) -> Bool {
+        switch health {
+        case .healthy, .connecting, .degraded, .reconnecting:
+            true
+        case .stopped, .unhealthy, .failed:
+            false
+        }
     }
 
     func refreshNetworkDecision() {

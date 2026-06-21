@@ -49,6 +49,35 @@ final class ConfigurationContentValidatorTests: XCTestCase {
         }
     }
 
+    func testProfileEditorRejectsConflictingProxyJumpAndProxyCommand() {
+        let profile = TunnelProfile(
+            name: "Conflict",
+            host: "ssh.example.org",
+            localSocksPort: 1200,
+            jumpHost: "jump.example.org",
+            curatedSSHOptions: CuratedSSHOptions(proxyCommand: "ssh jump -W %h:%p")
+        )
+
+        XCTAssertThrowsError(try ProfileConfigurationEditor.create(profile: profile, in: AppConfiguration())) { error in
+            let validationError = error as? ConfigurationContentValidationError
+            XCTAssertTrue(validationError?.messages.contains("Profile 'Conflict' cannot define both ProxyJump and ProxyCommand") == true)
+        }
+    }
+
+    func testProfileEditorRejectsNegativeReconnectAttemptLimit() {
+        let profile = TunnelProfile(
+            name: "Reconnect",
+            host: "ssh.example.org",
+            localSocksPort: 1200,
+            curatedSSHOptions: CuratedSSHOptions(maxReconnectAttempts: -1)
+        )
+
+        XCTAssertThrowsError(try ProfileConfigurationEditor.create(profile: profile, in: AppConfiguration())) { error in
+            let validationError = error as? ConfigurationContentValidationError
+            XCTAssertTrue(validationError?.messages.contains("Profile 'Reconnect' reconnect attempt limit must be zero or greater") == true)
+        }
+    }
+
     func testConfigurationImportRejectsInvalidProfileContent() {
         let profile = TunnelProfile(name: "Bad", host: "ssh.example.org\nProxyCommand echo bad", localSocksPort: 1200)
         let export = ConfigurationExport(

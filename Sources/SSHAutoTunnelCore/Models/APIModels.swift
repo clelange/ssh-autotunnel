@@ -78,8 +78,21 @@ public struct ControlRequest: Codable, Sendable {
 public struct ProfileStatusSnapshot: Codable, Equatable, Sendable {
     public var id: UUID
     public var name: String
+    public var host: String
+    public var interactiveHost: String?
+    public var jumpHost: String?
+    public var user: String?
+    public var sshPort: Int
+    public var tags: [String]
     public var localSocksPort: Int
     public var effectiveLocalSocksPort: Int?
+    public var localPortForwardings: [LocalPortForward]
+    public var tunnelRequestsRemoteSession: Bool
+    public var curatedSSHOptions: CuratedSSHOptions
+    public var connectOnLaunch: Bool
+    public var autoReconnect: Bool
+    public var notificationPolicy: ProfileNotificationPolicy
+    public var sshLogLevel: SSHLogLevel
     public var hop: HopStatusSnapshot?
     public var health: TunnelHealth
     public var message: String
@@ -88,8 +101,21 @@ public struct ProfileStatusSnapshot: Codable, Equatable, Sendable {
     public init(profile: TunnelProfile, status: TunnelRuntimeStatus, hopStatus: HopRuntimeStatus? = nil) {
         id = profile.id
         name = profile.name
+        host = profile.host
+        interactiveHost = profile.interactiveHost
+        jumpHost = profile.jumpHost
+        user = profile.user
+        sshPort = profile.sshPort
+        tags = profile.tags
         localSocksPort = profile.localSocksPort
         effectiveLocalSocksPort = status.effectiveLocalSocksPort
+        localPortForwardings = profile.localPortForwardings
+        tunnelRequestsRemoteSession = profile.tunnelRequestsRemoteSession
+        curatedSSHOptions = profile.curatedSSHOptions
+        connectOnLaunch = profile.connectOnLaunch
+        autoReconnect = profile.autoReconnect
+        notificationPolicy = profile.notificationPolicy
+        sshLogLevel = profile.sshLogLevel
         hop = hopStatus.map(HopStatusSnapshot.init(status:))
         health = status.health
         message = status.message

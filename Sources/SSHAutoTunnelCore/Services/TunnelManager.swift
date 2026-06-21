@@ -588,6 +588,13 @@ public final class TunnelManager {
         reservedSocksPorts: Set<Int>
     ) {
         let attempt = (reconnectAttempts[profile.id] ?? 0) + 1
+        if let limit = profile.curatedSSHOptions.maxReconnectAttempts, attempt > limit {
+            reconnectTokens[profile.id] = nil
+            reconnectAttempts[profile.id] = nil
+            updateStatusLocked(profile.id, .failed, "Reconnect attempt limit reached after \(limit) attempts", pid: nil)
+            logEventLocked("reconnect attempt limit \(limit) reached; stopping auto-reconnect", profileID: profile.id)
+            return
+        }
         reconnectAttempts[profile.id] = attempt
         let delay = explicitDelay ?? reconnectDelay(attempt)
         let token = UUID()

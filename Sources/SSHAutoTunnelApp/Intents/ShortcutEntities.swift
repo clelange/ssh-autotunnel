@@ -44,6 +44,110 @@ enum ShortcutNetworkPolicyAction: String, AppEnum {
     }
 }
 
+enum ShortcutProfileNotificationPolicy: String, AppEnum {
+    case disabled
+    case failuresAndRecoveries
+    case allStatusChanges
+
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Profile Notification Policy")
+
+    static var caseDisplayRepresentations: [ShortcutProfileNotificationPolicy: DisplayRepresentation] = [
+        .disabled: "Disabled",
+        .failuresAndRecoveries: "Failures and Recoveries",
+        .allStatusChanges: "All Status Changes"
+    ]
+
+    var coreValue: ProfileNotificationPolicy {
+        switch self {
+        case .disabled:
+            .disabled
+        case .failuresAndRecoveries:
+            .failuresAndRecoveries
+        case .allStatusChanges:
+            .allStatusChanges
+        }
+    }
+}
+
+enum ShortcutSSHLogLevel: String, AppEnum {
+    case info
+    case debug1
+    case debug2
+    case debug3
+
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "SSH Log Level")
+
+    static var caseDisplayRepresentations: [ShortcutSSHLogLevel: DisplayRepresentation] = [
+        .info: "INFO",
+        .debug1: "DEBUG1",
+        .debug2: "DEBUG2",
+        .debug3: "DEBUG3"
+    ]
+
+    var coreValue: SSHLogLevel {
+        switch self {
+        case .info:
+            .info
+        case .debug1:
+            .debug1
+        case .debug2:
+            .debug2
+        case .debug3:
+            .debug3
+        }
+    }
+}
+
+enum ShortcutSSHAddressFamily: String, AppEnum {
+    case any
+    case ipv4
+    case ipv6
+
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "SSH Address Family")
+
+    static var caseDisplayRepresentations: [ShortcutSSHAddressFamily: DisplayRepresentation] = [
+        .any: "Any",
+        .ipv4: "IPv4",
+        .ipv6: "IPv6"
+    ]
+
+    var coreValue: SSHAddressFamily {
+        switch self {
+        case .any:
+            .any
+        case .ipv4:
+            .ipv4
+        case .ipv6:
+            .ipv6
+        }
+    }
+}
+
+enum ShortcutSSHOptionToggle: String, AppEnum {
+    case systemDefault
+    case enabled
+    case disabled
+
+    static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "SSH Option Toggle")
+
+    static var caseDisplayRepresentations: [ShortcutSSHOptionToggle: DisplayRepresentation] = [
+        .systemDefault: "Default",
+        .enabled: "Yes",
+        .disabled: "No"
+    ]
+
+    var coreValue: SSHOptionToggle {
+        switch self {
+        case .systemDefault:
+            .systemDefault
+        case .enabled:
+            .enabled
+        case .disabled:
+            .disabled
+        }
+    }
+}
+
 struct ShortcutTunnelProfileEntity: AppEntity {
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "SSH AutoTunnel Profile")
     static var defaultQuery = ShortcutTunnelProfileQuery()
@@ -71,6 +175,15 @@ struct ShortcutTunnelProfileEntity: AppEntity {
     @Property(title: "Jump Host")
     var jumpHost: String
 
+    @Property(title: "Tags")
+    var tags: String
+
+    @Property(title: "SSH Log Level")
+    var sshLogLevel: String
+
+    @Property(title: "Connect on Launch")
+    var connectOnLaunch: Bool
+
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(
             title: "\(name)",
@@ -86,7 +199,10 @@ struct ShortcutTunnelProfileEntity: AppEntity {
         localSocksPort: Int,
         sshPort: Int,
         user: String,
-        jumpHost: String
+        jumpHost: String,
+        tags: String,
+        sshLogLevel: String,
+        connectOnLaunch: Bool
     ) {
         self.id = id
         self.name = name
@@ -96,6 +212,9 @@ struct ShortcutTunnelProfileEntity: AppEntity {
         self.sshPort = sshPort
         self.user = user
         self.jumpHost = jumpHost
+        self.tags = tags
+        self.sshLogLevel = sshLogLevel
+        self.connectOnLaunch = connectOnLaunch
     }
 
     init(profile: TunnelProfile) {
@@ -107,7 +226,10 @@ struct ShortcutTunnelProfileEntity: AppEntity {
             localSocksPort: profile.localSocksPort,
             sshPort: profile.sshPort,
             user: profile.user ?? "",
-            jumpHost: profile.jumpHost ?? ""
+            jumpHost: profile.jumpHost ?? "",
+            tags: profile.tags.joined(separator: ", "),
+            sshLogLevel: profile.sshLogLevel.displayName,
+            connectOnLaunch: profile.connectOnLaunch
         )
     }
 
@@ -120,7 +242,10 @@ struct ShortcutTunnelProfileEntity: AppEntity {
             localSocksPort: 0,
             sshPort: 22,
             user: "",
-            jumpHost: ""
+            jumpHost: "",
+            tags: "",
+            sshLogLevel: SSHLogLevel.info.displayName,
+            connectOnLaunch: false
         )
     }
 }

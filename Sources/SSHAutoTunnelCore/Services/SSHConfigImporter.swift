@@ -48,13 +48,23 @@ public enum SSHConfigImporter {
         let host = entry.hostName.map { expandHostTokens($0, alias: alias, user: entry.user) } ?? alias
         let sshPort = entry.port ?? 22
         let extraOptions = entry.extraSSHOptions
+        let curatedOptions = entry.curatedSSHOptions
+        let jumpHost = curatedOptions.proxyCommand?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? nil : entry.proxyJump
 
         if let index = configuration.profiles.firstIndex(where: { $0.name == alias }) {
             configuration.profiles[index].host = host
             configuration.profiles[index].user = entry.user
             configuration.profiles[index].sshPort = sshPort
-            configuration.profiles[index].jumpHost = entry.proxyJump
+            configuration.profiles[index].jumpHost = jumpHost
+            configuration.profiles[index].curatedSSHOptions = curatedOptions
+            configuration.profiles[index].localPortForwardings = entry.localPortForwardings
             configuration.profiles[index].extraSSHOptions = extraOptions
+            if let sshLogLevel = entry.sshLogLevel {
+                configuration.profiles[index].sshLogLevel = sshLogLevel
+            }
+            if let dynamicForwardPort = entry.dynamicForwardPort {
+                configuration.profiles[index].localSocksPort = dynamicForwardPort
+            }
             if configuration.profiles[index].healthProbe == nil {
                 configuration.profiles[index].healthProbe = HealthProbe(host: host, port: sshPort)
             }
@@ -67,10 +77,13 @@ public enum SSHConfigImporter {
             host: host,
             user: entry.user,
             sshPort: sshPort,
-            localSocksPort: nextFreePort(startingAt: startingPort, profiles: configuration.profiles),
-            jumpHost: entry.proxyJump,
+            localSocksPort: entry.dynamicForwardPort ?? nextFreePort(startingAt: startingPort, profiles: configuration.profiles),
+            jumpHost: jumpHost,
             authMode: .none,
             healthProbe: HealthProbe(host: host, port: sshPort),
+            sshLogLevel: entry.sshLogLevel ?? .info,
+            localPortForwardings: entry.localPortForwardings,
+            curatedSSHOptions: curatedOptions,
             extraSSHOptions: extraOptions
         )
         configuration.profiles.append(profile)
@@ -106,6 +119,10 @@ public struct SSHConfigEntry: Equatable, Sendable {
     public var user: String?
     public var port: Int?
     public var proxyJump: String?
+    public var dynamicForwardPort: Int?
+    public var localPortForwardings: [LocalPortForward]
+    public var curatedSSHOptions: CuratedSSHOptions
+    public var sshLogLevel: SSHLogLevel?
     public var extraSSHOptions: [String]
 
     public init(
@@ -114,6 +131,10 @@ public struct SSHConfigEntry: Equatable, Sendable {
         user: String? = nil,
         port: Int? = nil,
         proxyJump: String? = nil,
+        dynamicForwardPort: Int? = nil,
+        localPortForwardings: [LocalPortForward] = [],
+        curatedSSHOptions: CuratedSSHOptions = CuratedSSHOptions(),
+        sshLogLevel: SSHLogLevel? = nil,
         extraSSHOptions: [String] = []
     ) {
         self.hostPatterns = hostPatterns
@@ -121,6 +142,10 @@ public struct SSHConfigEntry: Equatable, Sendable {
         self.user = user
         self.port = port
         self.proxyJump = proxyJump
+        self.dynamicForwardPort = dynamicForwardPort
+        self.localPortForwardings = localPortForwardings
+        self.curatedSSHOptions = curatedSSHOptions
+        self.sshLogLevel = sshLogLevel
         self.extraSSHOptions = extraSSHOptions
     }
 }
@@ -164,15 +189,104 @@ public enum SSHConfigParser {
             entry.port = Int(firstValue)
         case "proxyjump":
             entry.proxyJump = firstValue == "none" ? nil : firstValue
+        case "dynamicforward":
+            entry.dynamicForwardPort = parseForwardPort(firstValue)
+        case "localforward":
+            if let forwarding = parseLocalForward(directive.values) {
+                entry.localPortForwardings.append(forwarding)
+            }
+        case "bindaddress":
+            entry.curatedSSHOptions.bindAddress = firstValue
+        case "addressfamily":
+            entry.curatedSSHOptions.addressFamily = parseAddressFamily(firstValue)
+        case "compression":
+            entry.curatedSSHOptions.compression = parseToggle(firstValue)
         case "identityfile":
-            entry.extraSSHOptions += ["-i", firstValue]
-        case "certificatefile", "identitiesonly", "forwardagent", "gssapiauthentication", "gssapidelegatecredentials", "kbdinteractiveauthentication", "preferredauthentications":
+            entry.curatedSSHOptions.identityFiles.append(firstValue)
+        case "certificatefile":
+            entry.curatedSSHOptions.certificateFiles.append(firstValue)
+        case "forwardagent":
+            entry.curatedSSHOptions.forwardAgent = parseToggle(firstValue)
+        case "loglevel":
+            entry.sshLogLevel = parseLogLevel(firstValue)
+        case "identitiesonly", "gssapiauthentication", "gssapidelegatecredentials", "kbdinteractiveauthentication", "preferredauthentications":
             entry.extraSSHOptions += ["-o", "\(directive.originalKeyword)=\(directive.values.joined(separator: " "))"]
         case "proxycommand":
-            entry.extraSSHOptions += ["-o", "\(directive.originalKeyword)=\(directive.values.joined(separator: " "))"]
+            entry.curatedSSHOptions.proxyCommand = directive.values.joined(separator: " ")
         default:
             break
         }
+    }
+
+    private static func parseAddressFamily(_ value: String) -> SSHAddressFamily {
+        switch value.lowercased() {
+        case "inet": .ipv4
+        case "inet6": .ipv6
+        default: .any
+        }
+    }
+
+    private static func parseToggle(_ value: String) -> SSHOptionToggle {
+        switch value.lowercased() {
+        case "yes", "true", "on": .enabled
+        case "no", "false", "off": .disabled
+        default: .systemDefault
+        }
+    }
+
+    private static func parseLogLevel(_ value: String) -> SSHLogLevel {
+        switch value.lowercased() {
+        case "debug", "debug1": .debug1
+        case "debug2": .debug2
+        case "debug3": .debug3
+        default: .info
+        }
+    }
+
+    private static func parseForwardPort(_ value: String) -> Int? {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        return parts.last.flatMap { Int($0) }
+    }
+
+    private static func parseLocalForward(_ values: [String]) -> LocalPortForward? {
+        if values.count >= 2,
+           let source = parseLocalForwardSource(values[0]),
+           let target = parseForwardTarget(values[1]) {
+            return LocalPortForward(
+                bindAddress: source.bindAddress,
+                localPort: source.port,
+                targetHost: target.host,
+                targetPort: target.port
+            )
+        }
+
+        guard values.count == 1 else { return nil }
+        let parts = values[0].split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count >= 3,
+              let localPort = Int(parts[parts.count - 3]),
+              let targetPort = Int(parts[parts.count - 1]) else {
+            return nil
+        }
+        let bindAddress = parts.count > 3 ? String(parts.dropLast(3).joined(separator: ":")) : nil
+        let targetHost = String(parts[parts.count - 2])
+        return LocalPortForward(bindAddress: bindAddress, localPort: localPort, targetHost: targetHost, targetPort: targetPort)
+    }
+
+    private static func parseLocalForwardSource(_ value: String) -> (bindAddress: String?, port: Int)? {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard let portText = parts.last, let port = Int(portText) else { return nil }
+        let bindAddress = parts.count > 1 ? String(parts.dropLast().joined(separator: ":")) : nil
+        return (bindAddress, port)
+    }
+
+    private static func parseForwardTarget(_ value: String) -> (host: String, port: Int)? {
+        let parts = value.split(separator: ":", omittingEmptySubsequences: false)
+        guard parts.count >= 2,
+              let portText = parts.last,
+              let port = Int(portText) else {
+            return nil
+        }
+        return (String(parts.dropLast().joined(separator: ":")), port)
     }
 
     private static func parseDirective(_ line: String) -> SSHConfigDirective? {
@@ -286,6 +400,10 @@ private struct MutableSSHConfigEntry {
     var user: String?
     var port: Int?
     var proxyJump: String?
+    var dynamicForwardPort: Int?
+    var localPortForwardings: [LocalPortForward] = []
+    var curatedSSHOptions = CuratedSSHOptions()
+    var sshLogLevel: SSHLogLevel?
     var extraSSHOptions: [String] = []
 
     var entry: SSHConfigEntry {
@@ -295,6 +413,10 @@ private struct MutableSSHConfigEntry {
             user: user,
             port: port,
             proxyJump: proxyJump,
+            dynamicForwardPort: dynamicForwardPort,
+            localPortForwardings: localPortForwardings,
+            curatedSSHOptions: curatedSSHOptions,
+            sshLogLevel: sshLogLevel,
             extraSSHOptions: extraSSHOptions
         )
     }

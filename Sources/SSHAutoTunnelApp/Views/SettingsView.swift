@@ -258,7 +258,97 @@ struct ProfileEditorView: View {
                             Text(mode.displayName).tag(mode)
                         }
                     }
+                    TextField("Tags", text: tagsBinding(index), prompt: Text("infrastructure, production"))
                     Toggle("Automatically reconnect", isOn: binding(index, \.autoReconnect))
+                    Toggle("Connect on launch", isOn: binding(index, \.connectOnLaunch))
+                    Picker("Notifications", selection: binding(index, \.notificationPolicy)) {
+                        ForEach(ProfileNotificationPolicy.allCases) { policy in
+                            Text(policy.displayName).tag(policy)
+                        }
+                    }
+                    Picker("SSH log level", selection: binding(index, \.sshLogLevel)) {
+                        ForEach(SSHLogLevel.allCases) { level in
+                            Text(level.displayName).tag(level)
+                        }
+                    }
+                    Toggle("Request remote session for tunnel", isOn: binding(index, \.tunnelRequestsRemoteSession))
+                    Text("When disabled, tunnel SSH launches use -N.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Section("Local Port Forwarding") {
+                    if appState.configuration.profiles[index].localPortForwardings.isEmpty {
+                        Text("No local port forwards configured.")
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(appState.configuration.profiles[index].localPortForwardings.indices, id: \.self) { forwardingIndex in
+                            HStack(spacing: 8) {
+                                Toggle("", isOn: $appState.configuration.profiles[index].localPortForwardings[forwardingIndex].enabled)
+                                    .labelsHidden()
+                                    .frame(width: 24)
+                                TextField(
+                                    "Bind",
+                                    text: optionalForwardingBinding(index, forwardingIndex, \.bindAddress),
+                                    prompt: Text("127.0.0.1")
+                                )
+                                .frame(minWidth: 110)
+                                TextField(
+                                    "Local port",
+                                    value: $appState.configuration.profiles[index].localPortForwardings[forwardingIndex].localPort,
+                                    format: .number
+                                )
+                                .frame(width: 90)
+                                Image(systemName: "arrow.right")
+                                    .foregroundStyle(.secondary)
+                                TextField("Target host", text: $appState.configuration.profiles[index].localPortForwardings[forwardingIndex].targetHost)
+                                    .frame(minWidth: 140)
+                                TextField(
+                                    "Target port",
+                                    value: $appState.configuration.profiles[index].localPortForwardings[forwardingIndex].targetPort,
+                                    format: .number
+                                )
+                                .frame(width: 90)
+                                Button(role: .destructive) {
+                                    removeLocalForwarding(profileIndex: index, forwardingIndex: forwardingIndex)
+                                } label: {
+                                    Label("Remove Forwarding", systemImage: "trash")
+                                }
+                                .labelStyle(.iconOnly)
+                                .buttonStyle(.borderless)
+                                .help("Remove this local port forwarding row")
+                            }
+                        }
+                    }
+                    Button {
+                        addLocalForwarding(profileIndex: index)
+                    } label: {
+                        Label("Add Local Forward", systemImage: "plus")
+                    }
+                }
+
+                Section("SSH Options") {
+                    TextField("Bind address", text: curatedOptionalBinding(index, \.bindAddress))
+                    Picker("Address family", selection: curatedBinding(index, \.addressFamily)) {
+                        ForEach(SSHAddressFamily.allCases) { family in
+                            Text(family.displayName).tag(family)
+                        }
+                    }
+                    Picker("Compression", selection: curatedBinding(index, \.compression)) {
+                        ForEach(SSHOptionToggle.allCases) { toggle in
+                            Text(toggle.displayName).tag(toggle)
+                        }
+                    }
+                    Picker("Forward agent", selection: curatedBinding(index, \.forwardAgent)) {
+                        ForEach(SSHOptionToggle.allCases) { toggle in
+                            Text(toggle.displayName).tag(toggle)
+                        }
+                    }
+                    TextField("Identity files", text: stringListBinding(index, \.identityFiles), prompt: Text("~/.ssh/id_ed25519, ~/.ssh/id_rsa"))
+                    TextField("Certificate files", text: stringListBinding(index, \.certificateFiles))
+                    TextField("ProxyCommand", text: curatedOptionalBinding(index, \.proxyCommand))
+                    TextField("Reconnect attempt limit", text: optionalIntTextBinding(index, \.maxReconnectAttempts), prompt: Text("Unlimited"))
+                    TextField("Extra SSH options", text: stringListBinding(index, \.extraSSHOptions))
                 }
 
                 Section("Keychain") {
@@ -386,6 +476,89 @@ struct ProfileEditorView: View {
         }
     }
 
+    private func tagsBinding(_ index: Int) -> Binding<String> {
+        Binding {
+            appState.configuration.profiles[index].tags.joined(separator: ", ")
+        } set: { value in
+            appState.configuration.profiles[index].tags = splitList(value)
+        }
+    }
+
+    private func curatedBinding<T>(_ index: Int, _ keyPath: WritableKeyPath<CuratedSSHOptions, T>) -> Binding<T> {
+        Binding {
+            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath]
+        } set: { value in
+            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = value
+        }
+    }
+
+    private func curatedOptionalBinding(_ index: Int, _ keyPath: WritableKeyPath<CuratedSSHOptions, String?>) -> Binding<String> {
+        Binding {
+            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] ?? ""
+        } set: { value in
+            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = value.trimmedForSettings
+        }
+    }
+
+    private func stringListBinding(_ index: Int, _ keyPath: WritableKeyPath<TunnelProfile, [String]>) -> Binding<String> {
+        Binding {
+            appState.configuration.profiles[index][keyPath: keyPath].joined(separator: ", ")
+        } set: { value in
+            appState.configuration.profiles[index][keyPath: keyPath] = splitList(value)
+        }
+    }
+
+    private func stringListBinding(_ index: Int, _ keyPath: WritableKeyPath<CuratedSSHOptions, [String]>) -> Binding<String> {
+        Binding {
+            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].joined(separator: ", ")
+        } set: { value in
+            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = splitList(value)
+        }
+    }
+
+    private func optionalIntTextBinding(_ index: Int, _ keyPath: WritableKeyPath<CuratedSSHOptions, Int?>) -> Binding<String> {
+        Binding {
+            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].map(String.init) ?? ""
+        } set: { value in
+            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+    }
+
+    private func optionalForwardingBinding(
+        _ profileIndex: Int,
+        _ forwardingIndex: Int,
+        _ keyPath: WritableKeyPath<LocalPortForward, String?>
+    ) -> Binding<String> {
+        Binding {
+            appState.configuration.profiles[profileIndex].localPortForwardings[forwardingIndex][keyPath: keyPath] ?? ""
+        } set: { value in
+            appState.configuration.profiles[profileIndex].localPortForwardings[forwardingIndex][keyPath: keyPath] = value.trimmedForSettings
+        }
+    }
+
+    private func addLocalForwarding(profileIndex: Int) {
+        let profile = appState.configuration.profiles[profileIndex]
+        let nextPort = max(1024, profile.localSocksPort + 10_000 + profile.localPortForwardings.count)
+        appState.configuration.profiles[profileIndex].localPortForwardings.append(
+            LocalPortForward(localPort: nextPort, targetHost: profile.host, targetPort: profile.sshPort)
+        )
+    }
+
+    private func removeLocalForwarding(profileIndex: Int, forwardingIndex: Int) {
+        guard appState.configuration.profiles.indices.contains(profileIndex),
+              appState.configuration.profiles[profileIndex].localPortForwardings.indices.contains(forwardingIndex) else {
+            return
+        }
+        appState.configuration.profiles[profileIndex].localPortForwardings.remove(at: forwardingIndex)
+    }
+
+    private func splitList(_ value: String) -> [String] {
+        value
+            .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+    }
+
     private func keychainBinding<T>(_ index: Int, _ keyPath: WritableKeyPath<KeychainReference, T>) -> Binding<T> {
         Binding {
             appState.configuration.profiles[index].keychain[keyPath: keyPath]
@@ -449,6 +622,13 @@ private struct PlaceholderView: View {
                 .font(.headline)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+private extension String {
+    var trimmedForSettings: String? {
+        let trimmed = trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
     }
 }
 

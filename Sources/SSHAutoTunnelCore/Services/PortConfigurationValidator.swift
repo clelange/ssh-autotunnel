@@ -42,6 +42,10 @@ public enum PortConfigurationValidator {
             if let healthProbe = profile.healthProbe {
                 validatePort(healthProbe.port, label: "\(profile.name) health probe port")
             }
+            for forwarding in profile.localPortForwardings where forwarding.enabled {
+                validatePort(forwarding.localPort, label: "\(profile.name) local forward source port", mustBeUnique: true)
+                validatePort(forwarding.targetPort, label: "\(profile.name) local forward target port")
+            }
         }
 
         for (port, labels) in reservedPorts where labels.count > 1 {

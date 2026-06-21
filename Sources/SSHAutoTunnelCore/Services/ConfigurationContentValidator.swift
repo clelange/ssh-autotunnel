@@ -72,8 +72,31 @@ public enum ConfigurationContentValidator {
             ("Profile '\(profile.name)' Keychain account", profile.keychain.account),
             ("Profile '\(profile.name)' password Keychain service", profile.keychain.passwordService),
             ("Profile '\(profile.name)' TOTP Keychain service", profile.keychain.totpService),
-            ("Profile '\(profile.name)' health probe host", profile.healthProbe?.host)
+            ("Profile '\(profile.name)' health probe host", profile.healthProbe?.host),
+            ("Profile '\(profile.name)' SSH bind address", profile.curatedSSHOptions.bindAddress),
+            ("Profile '\(profile.name)' SSH proxy command", profile.curatedSSHOptions.proxyCommand)
         ])
+        for (index, tag) in profile.tags.enumerated() {
+            messages += invalidTextMessages([("Profile '\(profile.name)' tag \(index + 1)", tag)])
+        }
+        for (index, path) in profile.curatedSSHOptions.identityFiles.enumerated() {
+            messages += invalidTextMessages([("Profile '\(profile.name)' identity file \(index + 1)", path)])
+        }
+        for (index, path) in profile.curatedSSHOptions.certificateFiles.enumerated() {
+            messages += invalidTextMessages([("Profile '\(profile.name)' certificate file \(index + 1)", path)])
+        }
+        for (index, forwarding) in profile.localPortForwardings.enumerated() {
+            messages += invalidTextMessages([
+                ("Profile '\(profile.name)' local forward \(index + 1) bind address", forwarding.bindAddress),
+                ("Profile '\(profile.name)' local forward \(index + 1) target host", forwarding.targetHost)
+            ])
+        }
+        if hasProxyJump(profile), hasProxyCommand(profile) {
+            messages.append("Profile '\(profile.name)' cannot define both ProxyJump and ProxyCommand")
+        }
+        if let maxReconnectAttempts = profile.curatedSSHOptions.maxReconnectAttempts, maxReconnectAttempts < 0 {
+            messages.append("Profile '\(profile.name)' reconnect attempt limit must be zero or greater")
+        }
         for (index, option) in profile.extraSSHOptions.enumerated() {
             messages += invalidTextMessages([("Profile '\(profile.name)' extra SSH option \(index + 1)", option)])
         }
@@ -123,6 +146,16 @@ public enum ConfigurationContentValidator {
 
     private static func validationMessages(for preference: InteractiveTerminalPreference) -> [String] {
         invalidTextMessages([("Custom terminal application path", preference.customApplicationPath)])
+    }
+
+    private static func hasProxyJump(_ profile: TunnelProfile) -> Bool {
+        let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !jumpHost.isEmpty
+    }
+
+    private static func hasProxyCommand(_ profile: TunnelProfile) -> Bool {
+        let proxyCommand = profile.curatedSSHOptions.proxyCommand?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return !proxyCommand.isEmpty
     }
 
     private static func invalidTextMessages(_ fields: [(String, String?)]) -> [String] {

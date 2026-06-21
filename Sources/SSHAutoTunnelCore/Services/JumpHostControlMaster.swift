@@ -62,7 +62,7 @@ public enum JumpHostControlMasterFactory {
             ]
         }
 
-        SSHCommandBuilder.appendLaunchOptions(options, to: &masterArguments)
+        SSHCommandBuilder.appendLaunchOptions(options, profile: profile, to: &masterArguments)
         masterArguments.append(jumpHost)
 
         return JumpHostControlMaster(

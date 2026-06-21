@@ -245,6 +245,48 @@ struct CreateProfileIntent: AppIntent {
     @Parameter(title: "Jump Host")
     var jumpHost: String
 
+    @Parameter(title: "Tags")
+    var tags: String
+
+    @Parameter(title: "Connect on Launch")
+    var connectOnLaunch: Bool
+
+    @Parameter(title: "Notification Policy")
+    var notificationPolicy: ShortcutProfileNotificationPolicy
+
+    @Parameter(title: "SSH Log Level")
+    var sshLogLevel: ShortcutSSHLogLevel
+
+    @Parameter(title: "Request Remote Session for Tunnel")
+    var tunnelRequestsRemoteSession: Bool
+
+    @Parameter(title: "Local Port Forwarding Rows")
+    var localPortForwardings: String
+
+    @Parameter(title: "Bind Address")
+    var bindAddress: String
+
+    @Parameter(title: "Address Family")
+    var addressFamily: ShortcutSSHAddressFamily
+
+    @Parameter(title: "Compression")
+    var compression: ShortcutSSHOptionToggle
+
+    @Parameter(title: "Identity Files")
+    var identityFiles: String
+
+    @Parameter(title: "Certificate Files")
+    var certificateFiles: String
+
+    @Parameter(title: "Forward Agent")
+    var forwardAgent: ShortcutSSHOptionToggle
+
+    @Parameter(title: "Proxy Command")
+    var proxyCommand: String
+
+    @Parameter(title: "Reconnect Attempt Limit")
+    var maxReconnectAttempts: Int
+
     init() {
         name = "New tunnel"
         host = "example.org"
@@ -253,9 +295,45 @@ struct CreateProfileIntent: AppIntent {
         sshPort = 22
         user = ""
         jumpHost = ""
+        tags = ""
+        connectOnLaunch = false
+        notificationPolicy = .failuresAndRecoveries
+        sshLogLevel = .info
+        tunnelRequestsRemoteSession = false
+        localPortForwardings = ""
+        bindAddress = ""
+        addressFamily = .any
+        compression = .systemDefault
+        identityFiles = ""
+        certificateFiles = ""
+        forwardAgent = .systemDefault
+        proxyCommand = ""
+        maxReconnectAttempts = -1
     }
 
-    init(name: String, host: String, interactiveHost: String = "", localSocksPort: Int, sshPort: Int = 22, user: String = "", jumpHost: String = "") {
+    init(
+        name: String,
+        host: String,
+        interactiveHost: String = "",
+        localSocksPort: Int,
+        sshPort: Int = 22,
+        user: String = "",
+        jumpHost: String = "",
+        tags: String = "",
+        connectOnLaunch: Bool = false,
+        notificationPolicy: ShortcutProfileNotificationPolicy = .failuresAndRecoveries,
+        sshLogLevel: ShortcutSSHLogLevel = .info,
+        tunnelRequestsRemoteSession: Bool = false,
+        localPortForwardings: String = "",
+        bindAddress: String = "",
+        addressFamily: ShortcutSSHAddressFamily = .any,
+        compression: ShortcutSSHOptionToggle = .systemDefault,
+        identityFiles: String = "",
+        certificateFiles: String = "",
+        forwardAgent: ShortcutSSHOptionToggle = .systemDefault,
+        proxyCommand: String = "",
+        maxReconnectAttempts: Int = -1
+    ) {
         self.name = name
         self.host = host
         self.interactiveHost = interactiveHost
@@ -263,6 +341,20 @@ struct CreateProfileIntent: AppIntent {
         self.sshPort = sshPort
         self.user = user
         self.jumpHost = jumpHost
+        self.tags = tags
+        self.connectOnLaunch = connectOnLaunch
+        self.notificationPolicy = notificationPolicy
+        self.sshLogLevel = sshLogLevel
+        self.tunnelRequestsRemoteSession = tunnelRequestsRemoteSession
+        self.localPortForwardings = localPortForwardings
+        self.bindAddress = bindAddress
+        self.addressFamily = addressFamily
+        self.compression = compression
+        self.identityFiles = identityFiles
+        self.certificateFiles = certificateFiles
+        self.forwardAgent = forwardAgent
+        self.proxyCommand = proxyCommand
+        self.maxReconnectAttempts = maxReconnectAttempts
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -273,7 +365,23 @@ struct CreateProfileIntent: AppIntent {
             sshPort: sshPort,
             localSocksPort: localSocksPort,
             interactiveHost: optionalString(interactiveHost),
-            jumpHost: optionalString(jumpHost)
+            jumpHost: optionalString(jumpHost),
+            tags: separatedList(tags),
+            connectOnLaunch: connectOnLaunch,
+            notificationPolicy: notificationPolicy.coreValue,
+            sshLogLevel: sshLogLevel.coreValue,
+            tunnelRequestsRemoteSession: tunnelRequestsRemoteSession,
+            localPortForwardings: try parseLocalPortForwardings(localPortForwardings),
+            curatedSSHOptions: CuratedSSHOptions(
+                bindAddress: optionalString(bindAddress),
+                addressFamily: addressFamily.coreValue,
+                compression: compression.coreValue,
+                identityFiles: separatedList(identityFiles),
+                certificateFiles: separatedList(certificateFiles),
+                forwardAgent: forwardAgent.coreValue,
+                proxyCommand: optionalString(proxyCommand),
+                maxReconnectAttempts: reconnectAttemptLimit(maxReconnectAttempts)
+            )
         )
         let response = try await api().send(ControlRequest(action: .createProfile, profile: profile))
         return .result(dialog: IntentDialog(stringLiteral: response.message))
@@ -305,6 +413,48 @@ struct UpdateProfileIntent: AppIntent {
     @Parameter(title: "Jump Host")
     var jumpHost: String
 
+    @Parameter(title: "Tags")
+    var tags: String
+
+    @Parameter(title: "Connect on Launch")
+    var connectOnLaunch: Bool
+
+    @Parameter(title: "Notification Policy")
+    var notificationPolicy: ShortcutProfileNotificationPolicy
+
+    @Parameter(title: "SSH Log Level")
+    var sshLogLevel: ShortcutSSHLogLevel
+
+    @Parameter(title: "Request Remote Session for Tunnel")
+    var tunnelRequestsRemoteSession: Bool
+
+    @Parameter(title: "Local Port Forwarding Rows")
+    var localPortForwardings: String
+
+    @Parameter(title: "Bind Address")
+    var bindAddress: String
+
+    @Parameter(title: "Address Family")
+    var addressFamily: ShortcutSSHAddressFamily
+
+    @Parameter(title: "Compression")
+    var compression: ShortcutSSHOptionToggle
+
+    @Parameter(title: "Identity Files")
+    var identityFiles: String
+
+    @Parameter(title: "Certificate Files")
+    var certificateFiles: String
+
+    @Parameter(title: "Forward Agent")
+    var forwardAgent: ShortcutSSHOptionToggle
+
+    @Parameter(title: "Proxy Command")
+    var proxyCommand: String
+
+    @Parameter(title: "Reconnect Attempt Limit")
+    var maxReconnectAttempts: Int
+
     init() {
         profileName = "CERN LxPlus"
         host = "lxplus.cern.ch"
@@ -313,9 +463,45 @@ struct UpdateProfileIntent: AppIntent {
         sshPort = 22
         user = ""
         jumpHost = ""
+        tags = ""
+        connectOnLaunch = false
+        notificationPolicy = .failuresAndRecoveries
+        sshLogLevel = .info
+        tunnelRequestsRemoteSession = false
+        localPortForwardings = ""
+        bindAddress = ""
+        addressFamily = .any
+        compression = .systemDefault
+        identityFiles = ""
+        certificateFiles = ""
+        forwardAgent = .systemDefault
+        proxyCommand = ""
+        maxReconnectAttempts = -1
     }
 
-    init(profileName: String, host: String, interactiveHost: String = "", localSocksPort: Int, sshPort: Int = 22, user: String = "", jumpHost: String = "") {
+    init(
+        profileName: String,
+        host: String,
+        interactiveHost: String = "",
+        localSocksPort: Int,
+        sshPort: Int = 22,
+        user: String = "",
+        jumpHost: String = "",
+        tags: String = "",
+        connectOnLaunch: Bool = false,
+        notificationPolicy: ShortcutProfileNotificationPolicy = .failuresAndRecoveries,
+        sshLogLevel: ShortcutSSHLogLevel = .info,
+        tunnelRequestsRemoteSession: Bool = false,
+        localPortForwardings: String = "",
+        bindAddress: String = "",
+        addressFamily: ShortcutSSHAddressFamily = .any,
+        compression: ShortcutSSHOptionToggle = .systemDefault,
+        identityFiles: String = "",
+        certificateFiles: String = "",
+        forwardAgent: ShortcutSSHOptionToggle = .systemDefault,
+        proxyCommand: String = "",
+        maxReconnectAttempts: Int = -1
+    ) {
         self.profileName = profileName
         self.host = host
         self.interactiveHost = interactiveHost
@@ -323,6 +509,20 @@ struct UpdateProfileIntent: AppIntent {
         self.sshPort = sshPort
         self.user = user
         self.jumpHost = jumpHost
+        self.tags = tags
+        self.connectOnLaunch = connectOnLaunch
+        self.notificationPolicy = notificationPolicy
+        self.sshLogLevel = sshLogLevel
+        self.tunnelRequestsRemoteSession = tunnelRequestsRemoteSession
+        self.localPortForwardings = localPortForwardings
+        self.bindAddress = bindAddress
+        self.addressFamily = addressFamily
+        self.compression = compression
+        self.identityFiles = identityFiles
+        self.certificateFiles = certificateFiles
+        self.forwardAgent = forwardAgent
+        self.proxyCommand = proxyCommand
+        self.maxReconnectAttempts = maxReconnectAttempts
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -333,7 +533,23 @@ struct UpdateProfileIntent: AppIntent {
             sshPort: sshPort,
             localSocksPort: localSocksPort,
             interactiveHost: optionalString(interactiveHost),
-            jumpHost: optionalString(jumpHost)
+            jumpHost: optionalString(jumpHost),
+            tags: separatedList(tags),
+            connectOnLaunch: connectOnLaunch,
+            notificationPolicy: notificationPolicy.coreValue,
+            sshLogLevel: sshLogLevel.coreValue,
+            tunnelRequestsRemoteSession: tunnelRequestsRemoteSession,
+            localPortForwardings: try parseLocalPortForwardings(localPortForwardings),
+            curatedSSHOptions: CuratedSSHOptions(
+                bindAddress: optionalString(bindAddress),
+                addressFamily: addressFamily.coreValue,
+                compression: compression.coreValue,
+                identityFiles: separatedList(identityFiles),
+                certificateFiles: separatedList(certificateFiles),
+                forwardAgent: forwardAgent.coreValue,
+                proxyCommand: optionalString(proxyCommand),
+                maxReconnectAttempts: reconnectAttemptLimit(maxReconnectAttempts)
+            )
         )
         let response = try await api().send(ControlRequest(action: .updateProfile, profileName: profileName, profile: profile))
         return .result(dialog: IntentDialog(stringLiteral: response.message))
@@ -999,6 +1215,64 @@ private func api(configuration: AppConfiguration? = nil) throws -> ControlAPICli
 private func optionalString(_ value: String) -> String? {
     let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
     return trimmed.isEmpty ? nil : trimmed
+}
+
+private func separatedList(_ value: String) -> [String] {
+    value
+        .components(separatedBy: CharacterSet(charactersIn: ",\n"))
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+}
+
+private func reconnectAttemptLimit(_ value: Int) -> Int? {
+    value < 0 ? nil : value
+}
+
+private func parseLocalPortForwardings(_ value: String) throws -> [LocalPortForward] {
+    try value
+        .components(separatedBy: .newlines)
+        .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        .filter { !$0.isEmpty }
+        .map(parseLocalPortForwarding)
+}
+
+private func parseLocalPortForwarding(_ value: String) throws -> LocalPortForward {
+    let parts = value
+        .split(separator: ":", omittingEmptySubsequences: false)
+        .map { String($0).trimmingCharacters(in: .whitespacesAndNewlines) }
+    let bindAddress: String?
+    let localPortText: String
+    let targetHost: String
+    let targetPortText: String
+
+    switch parts.count {
+    case 3:
+        bindAddress = "127.0.0.1"
+        localPortText = parts[0]
+        targetHost = parts[1]
+        targetPortText = parts[2]
+    case 4:
+        bindAddress = optionalString(parts[0])
+        localPortText = parts[1]
+        targetHost = parts[2]
+        targetPortText = parts[3]
+    default:
+        throw intentError("Local forwarding row must be localPort:targetHost:targetPort or bindAddress:localPort:targetHost:targetPort.")
+    }
+
+    guard let localPort = Int(localPortText), let targetPort = Int(targetPortText) else {
+        throw intentError("Local forwarding row has invalid port values: \(value)")
+    }
+    guard !targetHost.isEmpty else {
+        throw intentError("Local forwarding row requires a target host: \(value)")
+    }
+
+    return LocalPortForward(
+        bindAddress: bindAddress,
+        localPort: localPort,
+        targetHost: targetHost,
+        targetPort: targetPort
+    )
 }
 
 private func profileID(named name: String, in configuration: AppConfiguration) throws -> UUID {
