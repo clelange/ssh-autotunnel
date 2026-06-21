@@ -123,9 +123,9 @@ struct DashboardView: View {
                 .navigationTitle(tag)
         case .profile(let id):
             if let profile = appState.configuration.profiles.first(where: { $0.id == id }) {
-                ProfileDetailPage(profile: profile) { deletedProfileID, originalIndex in
+                ProfileDetailPage(profile: profile) { deletedProfileID, _ in
                     if selection == .profile(deletedProfileID) {
-                        selectNearestProfile(afterDeletingFromOriginalIndex: originalIndex)
+                        selectNearestProfile(beforeDeleting: [deletedProfileID])
                     }
                 }
                     .environmentObject(appState)
@@ -244,46 +244,48 @@ struct DashboardView: View {
 
     private func confirmDelete(deleteKeychainItems: Bool) {
         let deletingIDs = deleteCandidates.map(\.id)
-        let nextSelection = nearestSelectionAfterDeleting(ids: deletingIDs)
+        let nextSelection = selectionAfterDeleting(ids: deletingIDs)
         let deletingIDSet = Set(deletingIDs)
         let offsets = IndexSet(appState.configuration.profiles.indices.filter { deletingIDSet.contains(appState.configuration.profiles[$0].id) })
         deleteCandidates = []
         guard !offsets.isEmpty else { return }
 
+        selection = nextSelection
         appState.deleteProfiles(at: offsets, deleteKeychainItems: deleteKeychainItems)
-        selection = nextSelection.map(DashboardSelection.profile) ?? .overview
     }
 
-    private func nearestSelectionAfterDeleting(ids deletingIDs: [UUID]) -> UUID? {
-        let deletingIDSet = Set(deletingIDs)
-        let profiles = appState.configuration.profiles
-        if case .profile(let selectedID) = selection,
-           !deletingIDSet.contains(selectedID),
-           profiles.contains(where: { $0.id == selectedID }) {
-            return selectedID
+    private func selectionAfterDeleting(ids deletingIDs: [UUID]) -> DashboardSelection {
+        guard case .profile(let selectedID) = selection else {
+            return selection ?? .overview
         }
 
-        let targetIndex = deletingIDs.compactMap { id in profiles.firstIndex { $0.id == id } }.min()
-        let remainingProfiles = profiles.enumerated().filter { !deletingIDSet.contains($0.element.id) }
-        guard !remainingProfiles.isEmpty else { return nil }
-        guard let targetIndex else { return remainingProfiles.first?.element.id }
+        guard Set(deletingIDs).contains(selectedID) else {
+            return .profile(selectedID)
+        }
 
-        return remainingProfiles.first { $0.offset > targetIndex }?.element.id
-            ?? remainingProfiles.last?.element.id
+        return nearestProfileIDAfterDeleting(ids: deletingIDs).map(DashboardSelection.profile) ?? .overview
     }
 
-    private func selectNearestProfile(afterDeletingFromOriginalIndex originalIndex: Int?) {
-        guard !appState.configuration.profiles.isEmpty else {
+    private func nearestProfileIDAfterDeleting(ids deletingIDs: [UUID]) -> UUID? {
+        let selectedProfileID: UUID?
+        if case .profile(let selectedID) = selection {
+            selectedProfileID = selectedID
+        } else {
+            selectedProfileID = nil
+        }
+        return ProfileDeletionSelectionPolicy.nearestRemainingProfileID(
+            afterDeleting: deletingIDs,
+            selectedProfileID: selectedProfileID,
+            profiles: appState.configuration.profiles
+        )
+    }
+
+    private func selectNearestProfile(beforeDeleting deletingIDs: [UUID]) {
+        if let replacementID = nearestProfileIDAfterDeleting(ids: deletingIDs) {
+            selection = .profile(replacementID)
+        } else {
             selection = .overview
-            return
         }
-        guard let originalIndex else {
-            selection = .profile(appState.configuration.profiles[0].id)
-            return
-        }
-
-        let replacementIndex = min(originalIndex, appState.configuration.profiles.count - 1)
-        selection = .profile(appState.configuration.profiles[replacementIndex].id)
     }
 
     private func copy(_ value: String) {

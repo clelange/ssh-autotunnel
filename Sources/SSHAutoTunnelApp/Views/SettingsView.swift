@@ -32,6 +32,10 @@ struct ProfileEditorView: View {
         appState.configuration.profiles.firstIndex { $0.id == profileID }
     }
 
+    private var currentProfileIndex: Int? {
+        appState.configuration.profiles.firstIndex { $0.id == profileID }
+    }
+
     var body: some View {
         if let index {
             let profile = appState.configuration.profiles[index]
@@ -283,70 +287,94 @@ struct ProfileEditorView: View {
         guard let candidate = deleteCandidate else { return }
         let originalIndex = appState.configuration.profiles.firstIndex { $0.id == candidate.id }
         deleteCandidate = nil
-        appState.deleteProfile(id: candidate.id, deleteKeychainItems: deleteKeychainItems)
         onDelete(candidate.id, originalIndex)
+        appState.deleteProfile(id: candidate.id, deleteKeychainItems: deleteKeychainItems)
     }
 
     private func binding<T>(_ index: Int, _ keyPath: WritableKeyPath<TunnelProfile, T>) -> Binding<T> {
-        Binding {
-            appState.configuration.profiles[index][keyPath: keyPath]
+        let fallback = appState.configuration.profiles[index][keyPath: keyPath]
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index][keyPath: keyPath]
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index][keyPath: keyPath] = value
         }
     }
 
     private func optionalBinding(_ index: Int, _ keyPath: WritableKeyPath<TunnelProfile, String?>) -> Binding<String> {
-        Binding {
-            appState.configuration.profiles[index][keyPath: keyPath] ?? ""
+        let fallback = appState.configuration.profiles[index][keyPath: keyPath] ?? ""
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index][keyPath: keyPath] ?? ""
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index][keyPath: keyPath] = value.isEmpty ? nil : value
         }
     }
 
     private func tagsBinding(_ index: Int) -> Binding<String> {
-        Binding {
-            appState.configuration.profiles[index].tags.joined(separator: ", ")
+        let fallback = appState.configuration.profiles[index].tags.joined(separator: ", ")
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index].tags.joined(separator: ", ")
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index].tags = splitList(value)
         }
     }
 
     private func curatedBinding<T>(_ index: Int, _ keyPath: WritableKeyPath<CuratedSSHOptions, T>) -> Binding<T> {
-        Binding {
-            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath]
+        let fallback = appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath]
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath]
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = value
         }
     }
 
     private func curatedOptionalBinding(_ index: Int, _ keyPath: WritableKeyPath<CuratedSSHOptions, String?>) -> Binding<String> {
-        Binding {
-            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] ?? ""
+        let fallback = appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] ?? ""
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] ?? ""
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = value.trimmedForSettings
         }
     }
 
     private func stringListBinding(_ index: Int, _ keyPath: WritableKeyPath<TunnelProfile, [String]>) -> Binding<String> {
-        Binding {
-            appState.configuration.profiles[index][keyPath: keyPath].joined(separator: ", ")
+        let fallback = appState.configuration.profiles[index][keyPath: keyPath].joined(separator: ", ")
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index][keyPath: keyPath].joined(separator: ", ")
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index][keyPath: keyPath] = splitList(value)
         }
     }
 
     private func stringListBinding(_ index: Int, _ keyPath: WritableKeyPath<CuratedSSHOptions, [String]>) -> Binding<String> {
-        Binding {
-            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].joined(separator: ", ")
+        let fallback = appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].joined(separator: ", ")
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].joined(separator: ", ")
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = splitList(value)
         }
     }
 
     private func optionalIntTextBinding(_ index: Int, _ keyPath: WritableKeyPath<CuratedSSHOptions, Int?>) -> Binding<String> {
-        Binding {
-            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].map(String.init) ?? ""
+        let fallback = appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].map(String.init) ?? ""
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].map(String.init) ?? ""
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
         }
     }
@@ -356,14 +384,24 @@ struct ProfileEditorView: View {
         _ forwardingIndex: Int,
         _ keyPath: WritableKeyPath<LocalPortForward, String?>
     ) -> Binding<String> {
-        Binding {
-            appState.configuration.profiles[profileIndex].localPortForwardings[forwardingIndex][keyPath: keyPath] ?? ""
+        let fallback = appState.configuration.profiles[profileIndex].localPortForwardings[forwardingIndex][keyPath: keyPath] ?? ""
+        return Binding {
+            guard let profileIndex = currentProfileIndex,
+                  appState.configuration.profiles[profileIndex].localPortForwardings.indices.contains(forwardingIndex) else {
+                return fallback
+            }
+            return appState.configuration.profiles[profileIndex].localPortForwardings[forwardingIndex][keyPath: keyPath] ?? ""
         } set: { value in
+            guard let profileIndex = currentProfileIndex,
+                  appState.configuration.profiles[profileIndex].localPortForwardings.indices.contains(forwardingIndex) else {
+                return
+            }
             appState.configuration.profiles[profileIndex].localPortForwardings[forwardingIndex][keyPath: keyPath] = value.trimmedForSettings
         }
     }
 
-    private func addLocalForwarding(profileIndex: Int) {
+    private func addLocalForwarding(profileIndex _: Int) {
+        guard let profileIndex = currentProfileIndex else { return }
         let profile = appState.configuration.profiles[profileIndex]
         let nextPort = max(1024, profile.localSocksPort + 10_000 + profile.localPortForwardings.count)
         appState.configuration.profiles[profileIndex].localPortForwardings.append(
@@ -371,8 +409,9 @@ struct ProfileEditorView: View {
         )
     }
 
-    private func removeLocalForwarding(profileIndex: Int, forwardingIndex: Int) {
-        guard appState.configuration.profiles.indices.contains(profileIndex),
+    private func removeLocalForwarding(profileIndex _: Int, forwardingIndex: Int) {
+        guard let profileIndex = currentProfileIndex,
+              appState.configuration.profiles.indices.contains(profileIndex),
               appState.configuration.profiles[profileIndex].localPortForwardings.indices.contains(forwardingIndex) else {
             return
         }
@@ -387,17 +426,23 @@ struct ProfileEditorView: View {
     }
 
     private func keychainBinding<T>(_ index: Int, _ keyPath: WritableKeyPath<KeychainReference, T>) -> Binding<T> {
-        Binding {
-            appState.configuration.profiles[index].keychain[keyPath: keyPath]
+        let fallback = appState.configuration.profiles[index].keychain[keyPath: keyPath]
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index].keychain[keyPath: keyPath]
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index].keychain[keyPath: keyPath] = value
         }
     }
 
     private func optionalKeychainBinding(_ index: Int, _ keyPath: WritableKeyPath<KeychainReference, String?>) -> Binding<String> {
-        Binding {
-            appState.configuration.profiles[index].keychain[keyPath: keyPath] ?? ""
+        let fallback = appState.configuration.profiles[index].keychain[keyPath: keyPath] ?? ""
+        return Binding {
+            guard let index = currentProfileIndex else { return fallback }
+            return appState.configuration.profiles[index].keychain[keyPath: keyPath] ?? ""
         } set: { value in
+            guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index].keychain[keyPath: keyPath] = value.isEmpty ? nil : value
         }
     }
