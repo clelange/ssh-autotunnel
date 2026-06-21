@@ -35,5 +35,8 @@ final class RedesignTrackerTests: XCTestCase {
         XCTAssertTrue(contents.contains("Profile detail editing now uses segmented sections"))
         XCTAssertTrue(contents.contains("Settings no longer uses a single-tab wrapper"))
         XCTAssertTrue(contents.contains("Interactive SSH terminal app selection lives on the Overview page instead of"))
+        XCTAssertTrue(contents.contains("Profile detail polish hides tags from app UI while retaining stored tag data"))
+        XCTAssertTrue(contents.contains("shows profile-specific Keychain credential"))
+        XCTAssertTrue(contents.contains("adds SSH identity/certificate file pickers"))
     }
 }

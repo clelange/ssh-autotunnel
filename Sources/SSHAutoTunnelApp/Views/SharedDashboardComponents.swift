@@ -130,26 +130,6 @@ struct StatusLine: View {
     }
 }
 
-struct TagRow: View {
-    var tags: [String]
-
-    var body: some View {
-        if tags.isEmpty {
-            Text("No tags")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        } else {
-            FlowLayout(spacing: 6) {
-                ForEach(tags, id: \.self) { tag in
-                    Label(tag, systemImage: "tag")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-        }
-    }
-}
-
 struct InlineNotice: View {
     var title: String
     var message: String
@@ -185,17 +165,6 @@ struct PlaceholderView: View {
                 .font(.headline)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-    }
-}
-
-struct FlowLayout<Content: View>: View {
-    var spacing: CGFloat
-    @ViewBuilder var content: Content
-
-    var body: some View {
-        HStack(spacing: spacing) {
-            content
-        }
     }
 }
 

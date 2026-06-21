@@ -48,14 +48,6 @@ struct MenuBarView: View {
                     } label: {
                         Label("All Profiles", systemImage: "server.rack")
                     }
-
-                    ForEach(tagGroups, id: \.tag) { group in
-                        Menu {
-                            profileButtons(for: group.profiles)
-                        } label: {
-                            Label(group.tag.menuTruncated, systemImage: "tag")
-                        }
-                    }
                 } label: {
                     Label("Profiles", systemImage: "server.rack")
                 }
@@ -144,15 +136,6 @@ struct MenuBarView: View {
                 NSApp.terminate(nil)
             }
             .keyboardShortcut("q")
-        }
-    }
-
-    private var tagGroups: [(tag: String, profiles: [TunnelProfile])] {
-        let tags = Array(Set(appState.configuration.profiles.flatMap(\.tags))).sorted {
-            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-        }
-        return tags.map { tag in
-            (tag, appState.configuration.profiles.filter { $0.tags.contains(tag) })
         }
     }
 

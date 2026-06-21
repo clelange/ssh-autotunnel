@@ -207,7 +207,6 @@ private struct ProfileSummaryPanel: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(2)
                         .textSelection(.enabled)
-                    TagRow(tags: profile.tags)
                 }
 
                 Spacer()

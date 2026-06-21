@@ -32,7 +32,7 @@ struct DiagnosticsView: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("Generated PAC")
                     .font(.headline)
-                ScrollView {
+                ScrollView([.vertical, .horizontal]) {
                     Text(currentPACPreview())
                         .font(.system(.caption, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -77,7 +77,7 @@ struct DiagnosticsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .textSelection(.enabled)
-                ScrollView {
+                ScrollView([.vertical, .horizontal]) {
                     Text(logPreview())
                         .font(.system(.caption, design: .monospaced))
                         .frame(maxWidth: .infinity, alignment: .leading)

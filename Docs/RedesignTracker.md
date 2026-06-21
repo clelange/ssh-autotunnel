@@ -33,7 +33,7 @@ Shortcuts identity, package names, or persisted paths.
 - Optional per-profile reconnect attempt limits are enforced for tunnel and
   hop reconnect loops.
 - Main window redesign uses a native split layout with Overview, All Profiles,
-  Needs Attention, tag filters, and per-profile detail pages.
+  Needs Attention, PAC/network rules, and per-profile detail pages.
 - Overview shows System PAC state, active network state, unhealthy/reconnecting
   profiles, running tunnels/hops, PAC/status URLs, local server ports, recent
   connection changes, terminal preference, and quick actions.
@@ -47,9 +47,9 @@ Shortcuts identity, package names, or persisted paths.
   profile-scoped rule editing also available from each profile detail.
 - Settings is app-level only: System PAC/server ports, API token, OpenSSH
   config, import/export/support bundle, launch-at-login, and PAC append source.
-- Menu bar provides Connect All, Disconnect All, grouped profile submenus,
-  hop controls, interactive SSH, System PAC toggle, settings, diagnostics,
-  setup, and quit.
+- Menu bar provides Connect All, Disconnect All, profile submenus, hop
+  controls, interactive SSH, System PAC toggle, settings, diagnostics, setup,
+  and quit.
 - Pre-merge UI cleanup split the main window, overview, profile detail,
   profile editor, rule pages, settings, and shared UI helpers into focused view
   files.
@@ -60,6 +60,11 @@ Shortcuts identity, package names, or persisted paths.
   preferences form without profile, PAC rule, or network rule editors.
 - Interactive SSH terminal app selection lives on the Overview page instead of
   Settings.
+- Profile detail polish hides tags from app UI while retaining stored tag data
+  and automation compatibility, shows profile-specific Keychain credential
+  status, adds SSH identity/certificate file pickers, makes reconnect limits
+  editable, groups SOCKS settings with forwarding, and fixes long-log
+  scrolling.
 - Shortcuts create/update profile actions expose tags, connect-on-launch,
   notification policy, SSH log level, session request mode, local forwarding,
   bind/address-family/compression/identity/certificate/agent/proxy command, and
@@ -173,6 +178,12 @@ Shortcuts identity, package names, or persisted paths.
   - `./script/package_local.sh --verify` passed and verified
     `dist/package/SSH-AutoTunnel-local.zip`.
 - 2026-06-21 overview-only interactive terminal selector cleanup:
+  - `swift build` passed.
+  - `swift test` passed with 341 tests.
+  - `./script/build_and_run.sh --verify` passed.
+  - `./script/package_local.sh --verify` passed and verified
+    `dist/package/SSH-AutoTunnel-local.zip`.
+- 2026-06-21 profile detail polish cleanup:
   - `swift build` passed.
   - `swift test` passed with 341 tests.
   - `./script/build_and_run.sh --verify` passed.

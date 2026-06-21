@@ -11,6 +11,13 @@ struct ProfileDeletionResult {
     var keychainCleanupError: Error?
 }
 
+enum ProfileCredentialAvailability: Equatable {
+    case notConfigured
+    case found
+    case missing
+    case unreadable(String)
+}
+
 @MainActor
 final class AppState: ObservableObject {
     @Published var configuration: AppConfiguration
@@ -513,6 +520,22 @@ final class AppState: ObservableObject {
     func writeSecret(_ value: String, service: String, account: String) throws {
         try restoringWindowFocus {
             try keychain.writeGenericPassword(value, service: service, account: account)
+        }
+    }
+
+    func credentialAvailability(service: String?, account: String) -> ProfileCredentialAvailability {
+        let service = service?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        let account = account.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !service.isEmpty, !account.isEmpty else {
+            return .notConfigured
+        }
+
+        return restoringWindowFocus {
+            do {
+                return try keychain.genericPasswordExists(service: service, account: account) ? .found : .missing
+            } catch {
+                return .unreadable(error.localizedDescription)
+            }
         }
     }
 

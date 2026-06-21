@@ -117,10 +117,6 @@ struct DashboardView: View {
             NetworkRulesView()
                 .environmentObject(appState)
                 .navigationTitle("Network Rules")
-        case .tag(let tag):
-            ProfileCollectionPage(title: tag, profiles: appState.configuration.profiles.filter { $0.tags.contains(tag) })
-                .environmentObject(appState)
-                .navigationTitle(tag)
         case .profile(let id):
             if let profile = appState.configuration.profiles.first(where: { $0.id == id }) {
                 ProfileDetailPage(profile: profile) { deletedProfileID, _ in
@@ -300,7 +296,6 @@ private enum DashboardSelection: Hashable {
     case needsAttention
     case pacRules
     case networkRules
-    case tag(String)
     case profile(UUID)
 }
 
@@ -309,12 +304,6 @@ private struct DashboardSidebar: View {
     @Binding var selection: DashboardSelection?
     var onDeleteProfile: (TunnelProfile) -> Void
     var onMoveProfile: (TunnelProfile, Int) -> Void
-
-    private var tags: [String] {
-        Array(Set(appState.configuration.profiles.flatMap(\.tags))).sorted {
-            $0.localizedCaseInsensitiveCompare($1) == .orderedAscending
-        }
-    }
 
     private var attentionCount: Int {
         appState.configuration.profiles.filter { profile in
@@ -341,20 +330,6 @@ private struct DashboardSidebar: View {
                 }
                 NavigationLink(value: DashboardSelection.networkRules) {
                     CountedSidebarLabel(title: "Network Rules", count: appState.configuration.networkRules.count, systemImage: "wifi.router")
-                }
-            }
-
-            if !tags.isEmpty {
-                Section("Tags") {
-                    ForEach(tags, id: \.self) { tag in
-                        NavigationLink(value: DashboardSelection.tag(tag)) {
-                            CountedSidebarLabel(
-                                title: tag,
-                                count: appState.configuration.profiles.filter { $0.tags.contains(tag) }.count,
-                                systemImage: "tag"
-                            )
-                        }
-                    }
                 }
             }
 

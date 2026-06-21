@@ -1,3 +1,4 @@
+import AppKit
 import SSHAutoTunnelCore
 import SwiftUI
 
@@ -71,7 +72,6 @@ struct ProfileDetailPage: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .textSelection(.enabled)
-                TagRow(tags: profile.tags)
                 VStack(alignment: .leading, spacing: 4) {
                     StatusLine(label: "Tunnel", health: tunnel.health, message: tunnel.message, pid: tunnel.pid)
                     if let hop {
@@ -190,6 +190,8 @@ struct ProfileEditorView: View {
     @State private var passwordSecret = ""
     @State private var totpSecret = ""
     @State private var secretMessage = ""
+    @State private var passwordAvailability: ProfileCredentialAvailability = .notConfigured
+    @State private var totpAvailability: ProfileCredentialAvailability = .notConfigured
 
     private var currentProfileIndex: Int? {
         appState.configuration.profiles.firstIndex { $0.id == profileID }
@@ -219,6 +221,12 @@ struct ProfileEditorView: View {
                 }
             }
             .formStyle(.grouped)
+            .onAppear {
+                refreshCredentialAvailabilityIfNeeded()
+            }
+            .onChange(of: section) {
+                refreshCredentialAvailabilityIfNeeded()
+            }
             .onChange(of: appState.configuration) {
                 appState.scheduleConfigurationSave()
             }
@@ -235,9 +243,7 @@ struct ProfileEditorView: View {
             TextField("Interactive host", text: optionalBinding(\.interactiveHost, fallback: profile.interactiveHost ?? ""), prompt: Text("Use Host"))
             TextField("User", text: optionalBinding(\.user, fallback: profile.user ?? ""))
             TextField("SSH port", value: binding(\.sshPort, fallback: profile.sshPort), format: .number)
-            TextField("Local SOCKS port", value: binding(\.localSocksPort, fallback: profile.localSocksPort), format: .number)
             TextField("Jump host", text: optionalBinding(\.jumpHost, fallback: profile.jumpHost ?? ""))
-            TextField("Tags", text: tagsBinding(fallback: profile.tags.joined(separator: ", ")), prompt: Text("infrastructure, production"))
             Picker("Host key policy", selection: binding(\.hostKeyPolicy, fallback: profile.hostKeyPolicy)) {
                 ForEach(SSHHostKeyPolicy.allCases) { policy in
                     Text(policy.displayName).tag(policy)
@@ -268,7 +274,10 @@ struct ProfileEditorView: View {
     @ViewBuilder
     private func forwardingSection(_ profile: TunnelProfile) -> some View {
         Section("Dynamic SOCKS Forwarding") {
+            TextField("Local SOCKS port", value: binding(\.localSocksPort, fallback: profile.localSocksPort), format: .number)
             Text("SOCKS proxy on 127.0.0.1:\(profile.localSocksPort)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
                 .textSelection(.enabled)
         }
 
@@ -277,8 +286,13 @@ struct ProfileEditorView: View {
                 Text("No local port forwards configured.")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(profile.localPortForwardings) { forwarding in
-                    localForwardingRow(forwarding)
+                ScrollView(.horizontal) {
+                    VStack(alignment: .leading, spacing: 8) {
+                        ForEach(profile.localPortForwardings) { forwarding in
+                            localForwardingRow(forwarding)
+                        }
+                    }
+                    .frame(minWidth: 720, alignment: .leading)
                 }
             }
             Button {
@@ -291,6 +305,22 @@ struct ProfileEditorView: View {
 
     @ViewBuilder
     private func authSection(_ profile: TunnelProfile) -> some View {
+        Section("Credential Status") {
+            HStack(spacing: 12) {
+                ProfileCredentialStatusLabel(title: "Password", availability: passwordAvailability)
+                ProfileCredentialStatusLabel(title: "TOTP", availability: totpAvailability)
+                Spacer()
+                Button {
+                    refreshCredentialAvailability()
+                } label: {
+                    Label("Refresh Keychain Status", systemImage: "arrow.clockwise")
+                }
+            }
+            Text("Status checks whether the configured Keychain service and account contain a saved secret.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+
         Section("Authentication") {
             Picker("Authentication", selection: binding(\.authMode, fallback: profile.authMode)) {
                 ForEach(TunnelAuthMode.allCases) { mode in
@@ -301,16 +331,19 @@ struct ProfileEditorView: View {
             TextField("Password service", text: optionalKeychainBinding(\.passwordService, fallback: profile.keychain.passwordService ?? ""))
             SecureField("Store password", text: $passwordSecret)
             Button("Save Password to Keychain") {
-                saveSecret(passwordSecret, service: currentProfile?.keychain.passwordService)
+                saveSecret(passwordSecret, service: currentProfile?.keychain.passwordService, clear: { passwordSecret = "" })
             }
+            .disabled(!canSaveSecret(passwordSecret, service: profile.keychain.passwordService, account: profile.keychain.account))
             TextField("TOTP service", text: optionalKeychainBinding(\.totpService, fallback: profile.keychain.totpService ?? ""))
             SecureField("Store TOTP seed", text: $totpSecret)
             HStack {
                 Button("Save TOTP Seed") {
-                    saveSecret(totpSecret, service: currentProfile?.keychain.totpService)
+                    saveSecret(totpSecret, service: currentProfile?.keychain.totpService, clear: { totpSecret = "" })
                 }
+                .disabled(!canSaveSecret(totpSecret, service: profile.keychain.totpService, account: profile.keychain.account))
                 Button("Import Existing Services") {
                     appState.importExistingKeychainServices(for: profileID)
+                    refreshCredentialAvailability()
                 }
             }
             if !secretMessage.isEmpty {
@@ -340,10 +373,37 @@ struct ProfileEditorView: View {
                     Text(toggle.displayName).tag(toggle)
                 }
             }
-            TextField("Identity files", text: stringListBinding(\.identityFiles, fallback: profile.curatedSSHOptions.identityFiles.joined(separator: ", ")), prompt: Text("~/.ssh/id_ed25519, ~/.ssh/id_rsa"))
-            TextField("Certificate files", text: stringListBinding(\.certificateFiles, fallback: profile.curatedSSHOptions.certificateFiles.joined(separator: ", ")))
             TextField("ProxyCommand", text: curatedOptionalBinding(\.proxyCommand, fallback: profile.curatedSSHOptions.proxyCommand ?? ""))
-            TextField("Reconnect attempt limit", text: optionalIntTextBinding(\.maxReconnectAttempts, fallback: profile.curatedSSHOptions.maxReconnectAttempts.map(String.init) ?? ""), prompt: Text("Unlimited"))
+            Toggle("Unlimited reconnect attempts", isOn: reconnectLimitUnlimitedBinding())
+            if profile.curatedSSHOptions.maxReconnectAttempts != nil {
+                HStack {
+                    TextField("Reconnect attempt limit", value: reconnectLimitValueBinding(), format: .number)
+                        .frame(width: 90)
+                    Stepper("attempts", value: reconnectLimitValueBinding(), in: 0...999)
+                }
+                Text("Set 0 to stop after the first failed attempt.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+
+        Section("SSH Files") {
+            Text("Identity and certificate files can come from ~/.ssh/config imports or manual selection. They are emitted as IdentityFile and CertificateFile SSH options.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            sshFileList(
+                title: "Identity files",
+                emptyMessage: "No identity files configured.",
+                keyPath: \.identityFiles,
+                addButtonTitle: "Add Identity File..."
+            )
+            Divider()
+            sshFileList(
+                title: "Certificate files",
+                emptyMessage: "No certificate files configured.",
+                keyPath: \.certificateFiles,
+                addButtonTitle: "Add Certificate File..."
+            )
         }
 
         Section("Escape Hatch") {
@@ -377,6 +437,45 @@ struct ProfileEditorView: View {
         }
     }
 
+    @ViewBuilder
+    private func sshFileList(
+        title: String,
+        emptyMessage: String,
+        keyPath: WritableKeyPath<CuratedSSHOptions, [String]>,
+        addButtonTitle: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.callout.weight(.medium))
+            let files = currentProfile?.curatedSSHOptions[keyPath: keyPath] ?? []
+            if files.isEmpty {
+                Text(emptyMessage)
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(files.indices, id: \.self) { index in
+                    HStack(spacing: 8) {
+                        TextField("Path", text: sshFilePathBinding(keyPath, index: index, fallback: files[index]))
+                            .textFieldStyle(.roundedBorder)
+                            .frame(minWidth: 360)
+                        Button(role: .destructive) {
+                            removeSSHFile(at: index, keyPath: keyPath)
+                        } label: {
+                            Label("Remove", systemImage: "trash")
+                        }
+                        .labelStyle(.iconOnly)
+                        .buttonStyle(.borderless)
+                        .help("Remove this file")
+                    }
+                }
+            }
+            Button {
+                addSSHFiles(to: keyPath)
+            } label: {
+                Label(addButtonTitle, systemImage: "plus")
+            }
+        }
+    }
+
     private func binding<T>(_ keyPath: WritableKeyPath<TunnelProfile, T>, fallback: T) -> Binding<T> {
         Binding {
             guard let index = currentProfileIndex else { return fallback }
@@ -394,16 +493,6 @@ struct ProfileEditorView: View {
         } set: { value in
             guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index][keyPath: keyPath] = value.isEmpty ? nil : value
-        }
-    }
-
-    private func tagsBinding(fallback: String) -> Binding<String> {
-        Binding {
-            guard let index = currentProfileIndex else { return fallback }
-            return appState.configuration.profiles[index].tags.joined(separator: ", ")
-        } set: { value in
-            guard let index = currentProfileIndex else { return }
-            appState.configuration.profiles[index].tags = splitList(value)
         }
     }
 
@@ -427,6 +516,46 @@ struct ProfileEditorView: View {
         }
     }
 
+    private func reconnectLimitUnlimitedBinding() -> Binding<Bool> {
+        Binding {
+            guard let index = currentProfileIndex else { return true }
+            return appState.configuration.profiles[index].curatedSSHOptions.maxReconnectAttempts == nil
+        } set: { isUnlimited in
+            guard let index = currentProfileIndex else { return }
+            appState.configuration.profiles[index].curatedSSHOptions.maxReconnectAttempts = isUnlimited ? nil : 3
+        }
+    }
+
+    private func reconnectLimitValueBinding() -> Binding<Int> {
+        Binding {
+            guard let index = currentProfileIndex else { return 3 }
+            return appState.configuration.profiles[index].curatedSSHOptions.maxReconnectAttempts ?? 3
+        } set: { value in
+            guard let index = currentProfileIndex else { return }
+            appState.configuration.profiles[index].curatedSSHOptions.maxReconnectAttempts = max(0, value)
+        }
+    }
+
+    private func sshFilePathBinding(
+        _ keyPath: WritableKeyPath<CuratedSSHOptions, [String]>,
+        index fileIndex: Int,
+        fallback: String
+    ) -> Binding<String> {
+        Binding {
+            guard let profileIndex = currentProfileIndex,
+                  appState.configuration.profiles[profileIndex].curatedSSHOptions[keyPath: keyPath].indices.contains(fileIndex) else {
+                return fallback
+            }
+            return appState.configuration.profiles[profileIndex].curatedSSHOptions[keyPath: keyPath][fileIndex]
+        } set: { value in
+            guard let profileIndex = currentProfileIndex,
+                  appState.configuration.profiles[profileIndex].curatedSSHOptions[keyPath: keyPath].indices.contains(fileIndex) else {
+                return
+            }
+            appState.configuration.profiles[profileIndex].curatedSSHOptions[keyPath: keyPath][fileIndex] = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+    }
+
     private func stringListBinding(_ keyPath: WritableKeyPath<TunnelProfile, [String]>, fallback: String) -> Binding<String> {
         Binding {
             guard let index = currentProfileIndex else { return fallback }
@@ -434,26 +563,6 @@ struct ProfileEditorView: View {
         } set: { value in
             guard let index = currentProfileIndex else { return }
             appState.configuration.profiles[index][keyPath: keyPath] = splitList(value)
-        }
-    }
-
-    private func stringListBinding(_ keyPath: WritableKeyPath<CuratedSSHOptions, [String]>, fallback: String) -> Binding<String> {
-        Binding {
-            guard let index = currentProfileIndex else { return fallback }
-            return appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].joined(separator: ", ")
-        } set: { value in
-            guard let index = currentProfileIndex else { return }
-            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = splitList(value)
-        }
-    }
-
-    private func optionalIntTextBinding(_ keyPath: WritableKeyPath<CuratedSSHOptions, Int?>, fallback: String) -> Binding<String> {
-        Binding {
-            guard let index = currentProfileIndex else { return fallback }
-            return appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath].map(String.init) ?? ""
-        } set: { value in
-            guard let index = currentProfileIndex else { return }
-            appState.configuration.profiles[index].curatedSSHOptions[keyPath: keyPath] = Int(value.trimmingCharacters(in: .whitespacesAndNewlines))
         }
     }
 
@@ -530,7 +639,79 @@ struct ProfileEditorView: View {
         appState.saveConfiguration()
     }
 
-    private func saveSecret(_ value: String, service: String?) {
+    private func addSSHFiles(to keyPath: WritableKeyPath<CuratedSSHOptions, [String]>) {
+        let panel = NSOpenPanel()
+        panel.allowsMultipleSelection = true
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.directoryURL = defaultSSHDirectoryURL()
+        guard panel.runModal() == .OK, let profileIndex = currentProfileIndex else { return }
+
+        var files = appState.configuration.profiles[profileIndex].curatedSSHOptions[keyPath: keyPath]
+        for url in panel.urls {
+            let path = normalizedSSHFilePath(url)
+            if !files.contains(path) {
+                files.append(path)
+            }
+        }
+        appState.configuration.profiles[profileIndex].curatedSSHOptions[keyPath: keyPath] = files
+        appState.saveConfiguration()
+    }
+
+    private func removeSSHFile(at fileIndex: Int, keyPath: WritableKeyPath<CuratedSSHOptions, [String]>) {
+        guard let profileIndex = currentProfileIndex,
+              appState.configuration.profiles[profileIndex].curatedSSHOptions[keyPath: keyPath].indices.contains(fileIndex) else {
+            return
+        }
+        appState.configuration.profiles[profileIndex].curatedSSHOptions[keyPath: keyPath].remove(at: fileIndex)
+        appState.saveConfiguration()
+    }
+
+    private func defaultSSHDirectoryURL() -> URL? {
+        let sshDirectory = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh", isDirectory: true)
+        return FileManager.default.fileExists(atPath: sshDirectory.path) ? sshDirectory : FileManager.default.homeDirectoryForCurrentUser
+    }
+
+    private func normalizedSSHFilePath(_ url: URL) -> String {
+        let homePath = FileManager.default.homeDirectoryForCurrentUser.path
+        let path = url.path
+        if path == homePath {
+            return "~"
+        }
+        if path.hasPrefix(homePath + "/") {
+            return "~/" + String(path.dropFirst(homePath.count + 1))
+        }
+        return path
+    }
+
+    private func refreshCredentialAvailabilityIfNeeded() {
+        guard section == .auth else { return }
+        refreshCredentialAvailability()
+    }
+
+    private func refreshCredentialAvailability() {
+        guard let profile = currentProfile else {
+            passwordAvailability = .notConfigured
+            totpAvailability = .notConfigured
+            return
+        }
+        passwordAvailability = appState.credentialAvailability(
+            service: profile.keychain.passwordService,
+            account: profile.keychain.account
+        )
+        totpAvailability = appState.credentialAvailability(
+            service: profile.keychain.totpService,
+            account: profile.keychain.account
+        )
+    }
+
+    private func canSaveSecret(_ value: String, service: String?, account: String) -> Bool {
+        !value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && !(service?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "").isEmpty
+            && !account.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func saveSecret(_ value: String, service: String?, clear: () -> Void) {
         guard let service, !service.isEmpty else {
             secretMessage = "Configure a service name first"
             return
@@ -539,6 +720,8 @@ struct ProfileEditorView: View {
         do {
             try appState.writeSecret(value, service: service, account: profile.keychain.account)
             secretMessage = "Saved to Keychain service \(service)"
+            clear()
+            refreshCredentialAvailability()
         } catch {
             secretMessage = error.localizedDescription
         }
@@ -549,6 +732,51 @@ struct ProfileEditorView: View {
             .components(separatedBy: CharacterSet(charactersIn: ",\n"))
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
+    }
+}
+
+private struct ProfileCredentialStatusLabel: View {
+    var title: String
+    var availability: ProfileCredentialAvailability
+
+    var body: some View {
+        Label("\(title): \(label)", systemImage: systemImage)
+            .font(.caption)
+            .foregroundStyle(color)
+            .help(helpText)
+    }
+
+    private var label: String {
+        switch availability {
+        case .notConfigured: "Not configured"
+        case .found: "Found"
+        case .missing: "Missing"
+        case .unreadable: "Unreadable"
+        }
+    }
+
+    private var systemImage: String {
+        switch availability {
+        case .notConfigured: "minus.circle"
+        case .found: "checkmark.circle.fill"
+        case .missing: "questionmark.circle"
+        case .unreadable: "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var color: Color {
+        switch availability {
+        case .notConfigured, .missing: .secondary
+        case .found: .green
+        case .unreadable: .orange
+        }
+    }
+
+    private var helpText: String {
+        switch availability {
+        case .unreadable(let message): message
+        default: label
+        }
     }
 }
 
@@ -566,13 +794,13 @@ private struct ProfileRecentLogSection: View {
                 Text("No SSH log captured for this profile yet.")
                     .foregroundStyle(.secondary)
             } else {
-                ScrollView(.horizontal) {
+                ScrollView([.vertical, .horizontal]) {
                     Text(profileLog)
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxHeight: 320)
+                .frame(minHeight: 180, maxHeight: 320)
             }
         }
     }
