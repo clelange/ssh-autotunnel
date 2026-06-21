@@ -66,10 +66,6 @@ struct SettingsView: View {
                 .help("Create a new local API token")
             }
 
-            Section("Interactive SSH") {
-                InteractiveTerminalPreferenceControl(style: .settings)
-            }
-
             Section("OpenSSH Config") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {

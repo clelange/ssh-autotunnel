@@ -34,5 +34,6 @@ final class RedesignTrackerTests: XCTestCase {
         XCTAssertTrue(contents.contains("Pre-merge UI cleanup split the main window"))
         XCTAssertTrue(contents.contains("Profile detail editing now uses segmented sections"))
         XCTAssertTrue(contents.contains("Settings no longer uses a single-tab wrapper"))
+        XCTAssertTrue(contents.contains("Interactive SSH terminal app selection lives on the Overview page instead of"))
     }
 }

@@ -45,9 +45,8 @@ Shortcuts identity, package names, or persisted paths.
   controls.
 - PAC and network rule management moved into main-window pages, with
   profile-scoped rule editing also available from each profile detail.
-- Settings is app-level only: System PAC/server ports, API token, terminal
-  preference, OpenSSH config, import/export/support bundle, launch-at-login,
-  and PAC append source.
+- Settings is app-level only: System PAC/server ports, API token, OpenSSH
+  config, import/export/support bundle, launch-at-login, and PAC append source.
 - Menu bar provides Connect All, Disconnect All, grouped profile submenus,
   hop controls, interactive SSH, System PAC toggle, settings, diagnostics,
   setup, and quit.
@@ -59,6 +58,8 @@ Shortcuts identity, package names, or persisted paths.
   the profile header.
 - Settings no longer uses a single-tab wrapper and remains a direct app-level
   preferences form without profile, PAC rule, or network rule editors.
+- Interactive SSH terminal app selection lives on the Overview page instead of
+  Settings.
 - Shortcuts create/update profile actions expose tags, connect-on-launch,
   notification policy, SSH log level, session request mode, local forwarding,
   bind/address-family/compression/identity/certificate/agent/proxy command, and
@@ -166,6 +167,12 @@ Shortcuts identity, package names, or persisted paths.
   - `./script/package_local.sh --verify` passed and verified
     `dist/package/SSH-AutoTunnel-local.zip`.
 - 2026-06-21 pre-merge UI cleanup batch:
+  - `swift build` passed.
+  - `swift test` passed with 341 tests.
+  - `./script/build_and_run.sh --verify` passed.
+  - `./script/package_local.sh --verify` passed and verified
+    `dist/package/SSH-AutoTunnel-local.zip`.
+- 2026-06-21 overview-only interactive terminal selector cleanup:
   - `swift build` passed.
   - `swift test` passed with 341 tests.
   - `./script/build_and_run.sh --verify` passed.

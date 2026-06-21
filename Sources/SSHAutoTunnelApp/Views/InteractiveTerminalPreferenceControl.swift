@@ -4,23 +4,10 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct InteractiveTerminalPreferenceControl: View {
-    enum Style {
-        case dashboard
-        case settings
-    }
-
     @EnvironmentObject private var appState: AppState
-    var style: Style
 
     var body: some View {
-        Group {
-            switch style {
-            case .dashboard:
-                dashboardControl
-            case .settings:
-                settingsControl
-            }
-        }
+        dashboardControl
         .onAppear {
             appState.refreshInteractiveTerminalDiscovery()
         }
@@ -63,30 +50,6 @@ struct InteractiveTerminalPreferenceControl: View {
     }
 
     @ViewBuilder
-    private var settingsControl: some View {
-        Picker("Terminal app", selection: terminalAppBinding) {
-            pickerOptions
-        }
-
-        if appState.configuration.interactiveTerminal.app == .custom {
-            HStack {
-                TextField("Application", text: customApplicationPathBinding)
-                Button("Choose...") {
-                    chooseTerminalApplication()
-                }
-                .help("Choose a custom terminal app for interactive SSH")
-            }
-            Text("Custom terminal apps must accept command launches with `-e /bin/zsh -lc ...`.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-
-        Text(appState.interactiveTerminalAvailabilityMessage())
-            .font(.caption)
-            .foregroundStyle(availabilityColor)
-    }
-
-    @ViewBuilder
     private var pickerOptions: some View {
         ForEach(appState.interactiveTerminalOptions()) { option in
             terminalOptionRow(option)
@@ -115,16 +78,6 @@ struct InteractiveTerminalPreferenceControl: View {
             set: { app in
                 guard appState.configuration.interactiveTerminal.app != app else { return }
                 appState.configuration.interactiveTerminal.app = app
-                appState.scheduleConfigurationSave()
-            }
-        )
-    }
-
-    private var customApplicationPathBinding: Binding<String> {
-        Binding(
-            get: { appState.configuration.interactiveTerminal.customApplicationPath },
-            set: { path in
-                appState.configuration.interactiveTerminal.customApplicationPath = path
                 appState.scheduleConfigurationSave()
             }
         )

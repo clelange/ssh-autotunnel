@@ -101,7 +101,7 @@ struct OverviewPage: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(2)
                     .textSelection(.enabled)
-                InteractiveTerminalPreferenceControl(style: .dashboard)
+                InteractiveTerminalPreferenceControl()
                     .padding(.top, 2)
             }
 
