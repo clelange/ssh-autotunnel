@@ -51,6 +51,8 @@ struct PACRulesView: View {
                 appState.scheduleConfigurationSave()
             }
         }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     private func addRule() {
