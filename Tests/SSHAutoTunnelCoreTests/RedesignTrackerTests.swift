@@ -25,4 +25,14 @@ final class RedesignTrackerTests: XCTestCase {
         XCTAssertTrue(contents.contains("PAC and network rule management moved into main-window pages"))
         XCTAssertTrue(contents.contains("Settings is app-level only"))
     }
+
+    func testRedesignTrackerDocumentsPreMergeUICleanup() throws {
+        let url = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
+            .appendingPathComponent("Docs/RedesignTracker.md")
+        let contents = try String(contentsOf: url, encoding: .utf8)
+
+        XCTAssertTrue(contents.contains("Pre-merge UI cleanup split the main window"))
+        XCTAssertTrue(contents.contains("Profile detail editing now uses segmented sections"))
+        XCTAssertTrue(contents.contains("Settings no longer uses a single-tab wrapper"))
+    }
 }

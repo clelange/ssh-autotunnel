@@ -51,6 +51,14 @@ Shortcuts identity, package names, or persisted paths.
 - Menu bar provides Connect All, Disconnect All, grouped profile submenus,
   hop controls, interactive SSH, System PAC toggle, settings, diagnostics,
   setup, and quit.
+- Pre-merge UI cleanup split the main window, overview, profile detail,
+  profile editor, rule pages, settings, and shared UI helpers into focused view
+  files.
+- Profile detail editing now uses segmented sections for General, Forwarding,
+  Auth, SSH Options, Rules, and Logs, with operational profile actions kept in
+  the profile header.
+- Settings no longer uses a single-tab wrapper and remains a direct app-level
+  preferences form without profile, PAC rule, or network rule editors.
 - Shortcuts create/update profile actions expose tags, connect-on-launch,
   notification policy, SSH log level, session request mode, local forwarding,
   bind/address-family/compression/identity/certificate/agent/proxy command, and
@@ -148,6 +156,18 @@ Shortcuts identity, package names, or persisted paths.
 - 2026-06-21 direct main-window editing batch:
   - `swift build` passed.
   - `swift test` passed with 336 tests.
+  - `./script/build_and_run.sh --verify` passed.
+  - `./script/package_local.sh --verify` passed and verified
+    `dist/package/SSH-AutoTunnel-local.zip`.
+- 2026-06-21 profile deletion crash fix:
+  - `swift build` passed.
+  - `swift test` passed with 340 tests.
+  - `./script/build_and_run.sh --verify` passed.
+  - `./script/package_local.sh --verify` passed and verified
+    `dist/package/SSH-AutoTunnel-local.zip`.
+- 2026-06-21 pre-merge UI cleanup batch:
+  - `swift build` passed.
+  - `swift test` passed with 341 tests.
   - `./script/build_and_run.sh --verify` passed.
   - `./script/package_local.sh --verify` passed and verified
     `dist/package/SSH-AutoTunnel-local.zip`.

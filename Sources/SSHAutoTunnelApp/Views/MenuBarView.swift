@@ -66,13 +66,13 @@ struct MenuBarView: View {
                     ForEach(appState.configuration.profiles.filter { appState.hasJumpHost($0) }) { profile in
                         let hopStatus = appState.hopStatus(for: profile)
                         Button {
-                            if isRunning(hopStatus?.health ?? .stopped) {
+                            if hopStatus?.health.isRunning == true {
                                 appState.disconnectHop(profile)
                             } else {
                                 appState.connectHop(profile)
                             }
                         } label: {
-                            Label(profile.name.menuTruncated, systemImage: symbol(for: hopStatus?.health ?? .stopped))
+                            Label(profile.name.menuTruncated, systemImage: (hopStatus?.health ?? .stopped).systemImage)
                         }
                         .help(hopStatus?.message ?? "Stopped")
                     }
@@ -161,46 +161,20 @@ struct MenuBarView: View {
         ForEach(profiles) { profile in
             let status = appState.status(for: profile)
             Button {
-                if isRunning(status.health) {
+                if status.health.isRunning {
                     appState.disconnect(profile)
                 } else {
                     appState.connect(profile)
                 }
             } label: {
-                Label(profile.name.menuTruncated, systemImage: symbol(for: status.health))
+                Label(profile.name.menuTruncated, systemImage: status.health.systemImage)
             }
             .help(status.message)
-        }
-    }
-
-    private func isRunning(_ health: TunnelHealth) -> Bool {
-        switch health {
-        case .healthy, .connecting, .degraded, .reconnecting:
-            true
-        case .stopped, .unhealthy, .failed:
-            false
-        }
-    }
-
-    private func symbol(for health: TunnelHealth) -> String {
-        switch health {
-        case .healthy: "checkmark.circle.fill"
-        case .degraded: "exclamationmark.triangle.fill"
-        case .connecting, .reconnecting: "arrow.triangle.2.circlepath"
-        case .unhealthy, .failed: "xmark.octagon.fill"
-        case .stopped: "circle"
         }
     }
 
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
-    }
-}
-
-private extension String {
-    var menuTruncated: String {
-        guard count > 40 else { return self }
-        return String(prefix(37)) + "..."
     }
 }
