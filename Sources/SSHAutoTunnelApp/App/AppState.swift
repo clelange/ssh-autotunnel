@@ -539,8 +539,14 @@ final class AppState: ObservableObject {
         }
     }
 
-    func defaultAccountSetupInputs() -> [AccountSetupInput] {
-        AccountSetupService.defaultInputs(in: configuration)
+    func defaultConnectionTemplateSetupInput(for templateID: AccountPresetID) -> AccountSetupInput {
+        AccountSetupService.defaultInput(for: templateID, in: configuration)
+            ?? AccountSetupInput(
+                id: templateID,
+                username: NSUserName(),
+                useForTunnelling: AccountSetupService.template(for: templateID)?.defaultTunnelEnabled ?? true,
+                tunnelHost: AccountSetupService.template(for: templateID)?.defaultTunnelHost ?? ""
+            )
     }
 
     func accountSetupCredentialStatus(for input: AccountSetupInput) -> AccountSetupCredentialStatus {
@@ -550,45 +556,45 @@ final class AppState: ObservableObject {
     }
 
     @discardableResult
-    func applyAccountSetup(
-        inputs: [AccountSetupInput],
-        passwords: [AccountPresetID: String],
-        totpSeeds: [AccountPresetID: String]
+    func applyConnectionTemplateSetup(
+        input: AccountSetupInput,
+        password: String,
+        totpSeed: String
     ) throws -> AccountSetupResult {
-        let resolvedInputs = try restoringWindowFocus {
-            try inputs.map { input in
-                guard input.isSelected, let preset = AccountSetupService.preset(for: input.id) else {
-                    return input
-                }
-
-                var resolved = input
-                let account = input.username.trimmingCharacters(in: .whitespacesAndNewlines)
-                let password = passwords[input.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                let totpSeed = totpSeeds[input.id]?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-
-                guard !account.isEmpty else { return resolved }
-
-                if !password.isEmpty {
-                    try keychain.writeGenericPassword(password, service: preset.passwordService, account: account)
-                    resolved.passwordAvailable = true
-                } else {
-                    resolved.passwordAvailable = try keychain.genericPasswordExists(service: preset.passwordService, account: account)
-                }
-
-                if !totpSeed.isEmpty {
-                    try keychain.writeGenericPassword(totpSeed, service: preset.totpService, account: account)
-                    resolved.totpSeedAvailable = true
-                } else {
-                    resolved.totpSeedAvailable = try keychain.genericPasswordExists(service: preset.totpService, account: account)
-                }
-
-                return resolved
-            }
+        guard let template = AccountSetupService.template(for: input.id) else {
+            throw AccountSetupError.unknownPreset(input.id)
         }
-        let (updated, result) = try AccountSetupService.apply(inputs: resolvedInputs, to: configuration)
+
+        let resolvedInput = try restoringWindowFocus {
+            var resolved = input
+            resolved.isSelected = true
+            let account = input.username.trimmingCharacters(in: .whitespacesAndNewlines)
+            let password = password.trimmingCharacters(in: .whitespacesAndNewlines)
+            let totpSeed = totpSeed.trimmingCharacters(in: .whitespacesAndNewlines)
+
+            guard !account.isEmpty else { return resolved }
+
+            if !password.isEmpty {
+                try keychain.writeGenericPassword(password, service: template.passwordService, account: account)
+                resolved.passwordAvailable = true
+            } else {
+                resolved.passwordAvailable = try keychain.genericPasswordExists(service: template.passwordService, account: account)
+            }
+
+            if !totpSeed.isEmpty {
+                try keychain.writeGenericPassword(totpSeed, service: template.totpService, account: account)
+                resolved.totpSeedAvailable = true
+            } else {
+                resolved.totpSeedAvailable = try keychain.genericPasswordExists(service: template.totpService, account: account)
+            }
+
+            return resolved
+        }
+
+        let (updated, result) = try AccountSetupService.apply(inputs: [resolvedInput], to: configuration)
         configuration = updated
         saveConfiguration()
-        lastProxyMessage = "Setup saved: \(result.configuredAccounts) accounts, \(configuration.profiles.count) tunnel profiles"
+        lastProxyMessage = "Connection saved from \(template.displayName)"
         return result
     }
 

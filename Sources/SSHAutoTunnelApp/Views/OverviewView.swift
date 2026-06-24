@@ -4,6 +4,7 @@ import SwiftUI
 struct OverviewPage: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.openWindow) private var openWindow
+    var onCreateManualProfile: () -> Void = {}
 
     private var runningTunnels: Int {
         appState.configuration.profiles.filter { appState.status(for: $0).health.isRunning }.count
@@ -37,6 +38,20 @@ struct OverviewPage: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 overviewHeader
+
+                if appState.configuration.profiles.isEmpty {
+                    FirstConnectionPanel(
+                        createFromTemplate: {
+                            openWindow(id: "connection-template-setup")
+                            AppActivation.activate()
+                        },
+                        createManually: onCreateManualProfile,
+                        openSettings: {
+                            openWindow(id: "settings")
+                            AppActivation.activate()
+                        }
+                    )
+                }
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 230), spacing: 12)], spacing: 12) {
                     MetricTile(title: "Profiles", value: "\(appState.configuration.profiles.count)", detail: "\(runningTunnels) tunnels running")
@@ -148,6 +163,50 @@ struct OverviewPage: View {
             KeyValueRow("Local API", "\(active?.apiHTTPPort ?? configured.apiHTTPPort)"),
             KeyValueRow("Blocking Proxy", "\(active?.blockingHTTPProxyPort ?? configured.blockingHTTPProxyPort)")
         ]
+    }
+}
+
+private struct FirstConnectionPanel: View {
+    var createFromTemplate: () -> Void
+    var createManually: () -> Void
+    var openSettings: () -> Void
+
+    var body: some View {
+        SectionPanel(title: "No Profiles", systemImage: "server.rack") {
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Create the first SSH connection.")
+                        .font(.callout.weight(.medium))
+                    Text("Use a built-in template, start from a blank profile, or open settings for imports.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 8) {
+                    Button {
+                        createFromTemplate()
+                    } label: {
+                        Label("Create from Template", systemImage: "list.bullet.rectangle")
+                    }
+                    .keyboardShortcut("n", modifiers: [.command])
+
+                    Button {
+                        createManually()
+                    } label: {
+                        Label("Create Manually", systemImage: "plus")
+                    }
+
+                    Button {
+                        openSettings()
+                    } label: {
+                        Label("Settings", systemImage: "gearshape")
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+        }
     }
 }
 

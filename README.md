@@ -9,7 +9,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 ## Features
 
 - Main window controls for connecting profile hops, tunnels, and interactive SSH sessions, plus a menu-bar quick menu.
-- First-launch account setup for CERN LxPlus, PSI CMS Tier-3, and PSI General credentials with optional tunnel target creation.
+- Built-in connection templates for CERN LxPlus, PSI CMS Tier-3, and PSI General credentials with optional tunnel target creation.
 - Native Keychain-backed password and TOTP support.
 - Configurable SSH host-key policy per profile, defaulting to accepting new keys while rejecting changed keys.
 - `ssh-auto2fa` Keychain service checks before importing legacy preset profiles.
@@ -133,9 +133,9 @@ When `export-config` or `support-bundle` writes to a file path, the CLI applies 
 
 The Settings window exposes the same configuration export, validation, import, and support-bundle workflows with native macOS open/save panels. Settings imports also validate first and create a private pre-import backup before replacing the current configuration.
 
-First launch starts with an account setup wizard. CERN LxPlus credentials can create a tunnel profile targeting `lxtunnel.cern.ch`, PSI General credentials can create a `login.psi.ch` tunnel through `hopx.psi.ch`, and PSI CMS Tier-3 credentials can be stored without a tunnel until a final worker/UI host is known.
+New installs open the main dashboard. Use **New Connection** to create a profile from a built-in template, or start from a blank profile. CERN LxPlus credentials can create a tunnel profile targeting `lxtunnel.cern.ch`, PSI General credentials can create a `login.psi.ch` tunnel through `hopx.psi.ch`, and PSI CMS Tier-3 credentials can be stored without a tunnel until a final worker/UI host is known.
 
-Setup-created credentials use these Keychain service names:
+Template-created credentials use these Keychain service names:
 
 - `cern-lxplus-password`
 - `cern-lxplus-otp-secret`

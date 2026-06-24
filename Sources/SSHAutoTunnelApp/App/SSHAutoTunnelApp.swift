@@ -28,14 +28,11 @@ struct SSHAutoTunnelApp: App {
         } label: {
             MenuBarExtraStatusLabel()
                 .environmentObject(appState)
-                .overlay {
-                    OnboardingPresenter()
-                }
         }
         .menuBarExtraStyle(.menu)
 
-        Window("SSH AutoTunnel Setup", id: "onboarding") {
-            OnboardingView()
+        Window("New Connection", id: "connection-template-setup") {
+            ConnectionTemplateSetupView()
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState

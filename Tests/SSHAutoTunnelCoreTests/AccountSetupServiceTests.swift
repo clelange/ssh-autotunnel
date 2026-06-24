@@ -2,24 +2,52 @@ import XCTest
 @testable import SSHAutoTunnelCore
 
 final class AccountSetupServiceTests: XCTestCase {
-    func testPresetsUseAccountSpecificTunnelDefaults() throws {
-        let cern = try XCTUnwrap(AccountSetupService.preset(for: .cernLxPlus))
-        let tier3 = try XCTUnwrap(AccountSetupService.preset(for: .psiTier3))
-        let psi = try XCTUnwrap(AccountSetupService.preset(for: .psiGeneral))
+    func testBuiltInTemplatesUseAccountSpecificTunnelDefaults() throws {
+        let cern = try XCTUnwrap(AccountSetupService.template(for: .cernLxPlus))
+        let tier3 = try XCTUnwrap(AccountSetupService.template(for: .psiTier3))
+        let psi = try XCTUnwrap(AccountSetupService.template(for: .psiGeneral))
 
+        XCTAssertEqual(AccountSetupService.templates.map(\.id), [.cernLxPlus, .psiTier3, .psiGeneral])
         XCTAssertEqual(cern.credentialHost, "lxplus.cern.ch")
         XCTAssertEqual(cern.interactiveHost, "lxplus.cern.ch")
+        XCTAssertEqual(cern.profileName, "CERN LxPlus")
+        XCTAssertEqual(cern.pacRuleName, "CERN")
         XCTAssertEqual(cern.defaultTunnelHost, "lxtunnel.cern.ch")
         XCTAssertTrue(cern.defaultTunnelEnabled)
+        XCTAssertNil(cern.jumpHost(username: "clange"))
+        XCTAssertEqual(cern.pacDomainPattern(tunnelHost: "lxtunnel.cern.ch"), "*.cern.ch")
 
         XCTAssertEqual(tier3.credentialHost, "t3hop01.psi.ch")
+        XCTAssertEqual(tier3.profileName, "PSI CMS Tier-3")
+        XCTAssertEqual(tier3.pacRuleName, "PSI Tier-3")
         XCTAssertEqual(tier3.defaultTunnelHost, "")
         XCTAssertEqual(tier3.suggestedTunnelHosts, ["t3ui06.psi.ch", "t3ui07.psi.ch"])
         XCTAssertFalse(tier3.defaultTunnelEnabled)
+        XCTAssertEqual(tier3.jumpHost(username: "tieruser"), "tieruser@t3hop01.psi.ch")
+        XCTAssertEqual(tier3.pacDomainPattern(tunnelHost: " worker01.psi.ch "), "worker01.psi.ch")
+        XCTAssertNil(tier3.pacDomainPattern(tunnelHost: " "))
 
         XCTAssertEqual(psi.credentialHost, "hopx.psi.ch")
+        XCTAssertEqual(psi.profileName, "PSI General")
+        XCTAssertEqual(psi.pacRuleName, "PSI")
         XCTAssertEqual(psi.defaultTunnelHost, "login.psi.ch")
         XCTAssertTrue(psi.defaultTunnelEnabled)
+        XCTAssertEqual(psi.jumpHost(username: "psiuser"), "psiuser@hopx.psi.ch")
+        XCTAssertEqual(psi.pacDomainPattern(tunnelHost: "login.psi.ch"), "*.psi.ch")
+    }
+
+    func testDefaultInputCanBeLoadedForSingleTemplate() throws {
+        let input = try XCTUnwrap(AccountSetupService.defaultInput(
+            for: .psiGeneral,
+            in: AppConfiguration(),
+            defaultUsername: "psiuser"
+        ))
+
+        XCTAssertEqual(input.id, .psiGeneral)
+        XCTAssertTrue(input.isSelected)
+        XCTAssertEqual(input.username, "psiuser")
+        XCTAssertTrue(input.useForTunnelling)
+        XCTAssertEqual(input.tunnelHost, "login.psi.ch")
     }
 
     func testCredentialStatusChecksPasswordAndTOTPWithoutReadingSecrets() {

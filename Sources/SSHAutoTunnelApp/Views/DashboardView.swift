@@ -45,12 +45,12 @@ struct DashboardView: View {
 
                     ToolbarItemGroup {
                         Button {
-                            openWindow(id: "onboarding")
+                            openWindow(id: "connection-template-setup")
                             AppActivation.activate()
                         } label: {
-                            Label("Setup", systemImage: "sparkles")
+                            Label("New Connection", systemImage: "plus.circle")
                         }
-                        .help("Open setup window")
+                        .help("Create a connection from a template")
 
                         Button {
                             openWindow(id: "settings")
@@ -98,7 +98,10 @@ struct DashboardView: View {
     private var detail: some View {
         switch selection ?? .overview {
         case .overview:
-            OverviewPage()
+            OverviewPage {
+                let profileID = appState.addGenericProfile()
+                selection = .profile(profileID)
+            }
                 .environmentObject(appState)
                 .navigationTitle("Overview")
         case .allProfiles:

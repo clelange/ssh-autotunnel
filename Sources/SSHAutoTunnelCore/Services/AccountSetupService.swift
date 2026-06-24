@@ -1,8 +1,25 @@
 import Foundation
 
-public struct AccountSetupPreset: Identifiable, Equatable, Sendable {
+public enum ConnectionTemplatePACDomain: Equatable, Sendable {
+    case fixed(String)
+    case tunnelHost
+
+    public func pattern(tunnelHost: String) -> String? {
+        switch self {
+        case .fixed(let pattern):
+            return pattern
+        case .tunnelHost:
+            let trimmed = AccountSetupService.trimmed(tunnelHost)
+            return trimmed.isEmpty ? nil : trimmed
+        }
+    }
+}
+
+public struct ConnectionTemplate: Identifiable, Equatable, Sendable {
     public var id: AccountPresetID
     public var displayName: String
+    public var profileName: String
+    public var pacRuleName: String
     public var credentialHost: String
     public var interactiveHost: String?
     public var defaultTunnelHost: String
@@ -10,6 +27,8 @@ public struct AccountSetupPreset: Identifiable, Equatable, Sendable {
     public var defaultTunnelEnabled: Bool
     public var tunnelHostRequired: Bool
     public var defaultLocalSocksPort: Int
+    public var jumpHostFormat: String?
+    public var pacDomain: ConnectionTemplatePACDomain?
     public var passwordService: String
     public var totpService: String
     public var helpURLs: [String]
@@ -17,6 +36,8 @@ public struct AccountSetupPreset: Identifiable, Equatable, Sendable {
     public init(
         id: AccountPresetID,
         displayName: String,
+        profileName: String,
+        pacRuleName: String,
         credentialHost: String,
         interactiveHost: String? = nil,
         defaultTunnelHost: String,
@@ -24,12 +45,16 @@ public struct AccountSetupPreset: Identifiable, Equatable, Sendable {
         defaultTunnelEnabled: Bool,
         tunnelHostRequired: Bool,
         defaultLocalSocksPort: Int,
+        jumpHostFormat: String? = nil,
+        pacDomain: ConnectionTemplatePACDomain? = nil,
         passwordService: String,
         totpService: String,
         helpURLs: [String]
     ) {
         self.id = id
         self.displayName = displayName
+        self.profileName = profileName
+        self.pacRuleName = pacRuleName
         self.credentialHost = credentialHost
         self.interactiveHost = interactiveHost
         self.defaultTunnelHost = defaultTunnelHost
@@ -37,49 +62,23 @@ public struct AccountSetupPreset: Identifiable, Equatable, Sendable {
         self.defaultTunnelEnabled = defaultTunnelEnabled
         self.tunnelHostRequired = tunnelHostRequired
         self.defaultLocalSocksPort = defaultLocalSocksPort
+        self.jumpHostFormat = jumpHostFormat
+        self.pacDomain = pacDomain
         self.passwordService = passwordService
         self.totpService = totpService
         self.helpURLs = helpURLs
     }
 
-    public var profileName: String {
-        switch id {
-        case .cernLxPlus: "CERN LxPlus"
-        case .psiTier3: "PSI CMS Tier-3"
-        case .psiGeneral: "PSI General"
-        }
-    }
-
-    public var pacRuleName: String {
-        switch id {
-        case .cernLxPlus: "CERN"
-        case .psiTier3: "PSI Tier-3"
-        case .psiGeneral: "PSI"
-        }
-    }
-
     public func jumpHost(username: String) -> String? {
-        switch id {
-        case .cernLxPlus:
-            nil
-        case .psiTier3:
-            "\(username)@t3hop01.psi.ch"
-        case .psiGeneral:
-            "\(username)@hopx.psi.ch"
-        }
+        jumpHostFormat?.replacingOccurrences(of: "{username}", with: username)
     }
 
     public func pacDomainPattern(tunnelHost: String) -> String? {
-        switch id {
-        case .cernLxPlus:
-            "*.cern.ch"
-        case .psiTier3:
-            AccountSetupService.trimmed(tunnelHost)
-        case .psiGeneral:
-            "*.psi.ch"
-        }
+        pacDomain?.pattern(tunnelHost: tunnelHost)
     }
 }
+
+public typealias AccountSetupPreset = ConnectionTemplate
 
 public struct AccountSetupInput: Identifiable, Equatable, Sendable {
     public var id: AccountPresetID
@@ -171,16 +170,19 @@ public enum AccountSetupError: LocalizedError, Equatable, Sendable {
 }
 
 public enum AccountSetupService {
-    public static let presets: [AccountSetupPreset] = [
-        AccountSetupPreset(
+    public static let templates: [ConnectionTemplate] = [
+        ConnectionTemplate(
             id: .cernLxPlus,
             displayName: "CERN LxPlus",
+            profileName: "CERN LxPlus",
+            pacRuleName: "CERN",
             credentialHost: "lxplus.cern.ch",
             interactiveHost: "lxplus.cern.ch",
             defaultTunnelHost: "lxtunnel.cern.ch",
             defaultTunnelEnabled: true,
             tunnelHostRequired: true,
             defaultLocalSocksPort: 1081,
+            pacDomain: .fixed("*.cern.ch"),
             passwordService: SSHAuto2FAPresets.cernLxplusPasswordService,
             totpService: SSHAuto2FAPresets.cernLxplusTOTPService,
             helpURLs: [
@@ -188,15 +190,19 @@ public enum AccountSetupService {
                 "https://cern.service-now.com/service-portal?id=outage&n=OTG0156449"
             ]
         ),
-        AccountSetupPreset(
+        ConnectionTemplate(
             id: .psiTier3,
             displayName: "PSI CMS Tier-3",
+            profileName: "PSI CMS Tier-3",
+            pacRuleName: "PSI Tier-3",
             credentialHost: "t3hop01.psi.ch",
             defaultTunnelHost: "",
             suggestedTunnelHosts: ["t3ui06.psi.ch", "t3ui07.psi.ch"],
             defaultTunnelEnabled: false,
             tunnelHostRequired: true,
             defaultLocalSocksPort: 1082,
+            jumpHostFormat: "{username}@t3hop01.psi.ch",
+            pacDomain: .tunnelHost,
             passwordService: SSHAuto2FAPresets.psiTier3PasswordService,
             totpService: SSHAuto2FAPresets.psiTier3TOTPService,
             helpURLs: [
@@ -204,14 +210,18 @@ public enum AccountSetupService {
                 "https://tier3.pages.psi.ch/tier3-access/HowToSetupYourAccount/"
             ]
         ),
-        AccountSetupPreset(
+        ConnectionTemplate(
             id: .psiGeneral,
             displayName: "PSI General",
+            profileName: "PSI General",
+            pacRuleName: "PSI",
             credentialHost: "hopx.psi.ch",
             defaultTunnelHost: "login.psi.ch",
             defaultTunnelEnabled: true,
             tunnelHostRequired: true,
             defaultLocalSocksPort: 1083,
+            jumpHostFormat: "{username}@hopx.psi.ch",
+            pacDomain: .fixed("*.psi.ch"),
             passwordService: SSHAuto2FAPresets.psiGeneralPasswordService,
             totpService: SSHAuto2FAPresets.psiGeneralTOTPService,
             helpURLs: [
@@ -221,25 +231,41 @@ public enum AccountSetupService {
         )
     ]
 
-    public static func preset(for id: AccountPresetID) -> AccountSetupPreset? {
-        presets.first { $0.id == id }
+    public static var presets: [ConnectionTemplate] {
+        templates
+    }
+
+    public static func template(for id: AccountPresetID) -> ConnectionTemplate? {
+        templates.first { $0.id == id }
+    }
+
+    public static func preset(for id: AccountPresetID) -> ConnectionTemplate? {
+        template(for: id)
+    }
+
+    public static func defaultInput(
+        for templateID: AccountPresetID,
+        in configuration: AppConfiguration,
+        defaultUsername: String = NSUserName()
+    ) -> AccountSetupInput? {
+        defaultInputs(in: configuration, defaultUsername: defaultUsername).first { $0.id == templateID }
     }
 
     public static func defaultInputs(
         in configuration: AppConfiguration,
         defaultUsername: String = NSUserName()
     ) -> [AccountSetupInput] {
-        presets.map { preset in
-            let account = configuration.accounts.first { $0.id == preset.id }
-            let profile = configuration.profiles.first { $0.name == preset.profileName }
+        templates.map { template in
+            let account = configuration.accounts.first { $0.id == template.id }
+            let profile = configuration.profiles.first { $0.name == template.profileName }
             return AccountSetupInput(
-                id: preset.id,
+                id: template.id,
                 isSelected: account != nil || profile != nil || configuration.accounts.isEmpty,
                 username: account?.username ?? profile?.user ?? defaultUsername,
                 passwordAvailable: false,
                 totpSeedAvailable: false,
-                useForTunnelling: account?.tunnelEnabled ?? (profile != nil || preset.defaultTunnelEnabled),
-                tunnelHost: account?.tunnelHost ?? profile?.host ?? preset.defaultTunnelHost
+                useForTunnelling: account?.tunnelEnabled ?? (profile != nil || template.defaultTunnelEnabled),
+                tunnelHost: account?.tunnelHost ?? profile?.host ?? template.defaultTunnelHost
             )
         }
     }

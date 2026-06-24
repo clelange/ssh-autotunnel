@@ -119,10 +119,10 @@ struct MenuBarView: View {
             }
 
             Button {
-                openWindow(id: "onboarding")
+                openWindow(id: "connection-template-setup")
                 AppActivation.activate()
             } label: {
-                Label("Setup", systemImage: "sparkles")
+                Label("New Connection", systemImage: "plus.circle")
             }
 
             Divider()
