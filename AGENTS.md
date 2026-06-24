@@ -122,7 +122,7 @@ swift test
 ./script/package_local.sh --verify
 ```
 
-All passed on macOS 26.4.1 with Xcode 26.5 / Swift 6.3.2 before the runtime SOCKS port fallback update.
+All passed on macOS 26.5.1 with Xcode 26.5 / Swift 6.3.2 after merging the template-based connection setup and dashboard redesign to `main`.
 
 Latest feature validation:
 
@@ -132,6 +132,17 @@ swift test
 ```
 
 Both passed after the connection-template setup and template-account configuration refactors. The core test suite has 342 XCTest cases.
+
+Latest non-live validation:
+
+```sh
+swift build
+swift test
+./script/build_and_run.sh --verify
+./script/package_local.sh --verify
+```
+
+All passed on `main` after the default-branch merge. `swift test` executed 342 XCTest cases, `build_and_run.sh --verify` built, signed, launched, and detected the app, and `package_local.sh --verify` produced and verified `dist/package/SSH-AutoTunnel-local.zip`.
 
 ## Known Gaps
 
