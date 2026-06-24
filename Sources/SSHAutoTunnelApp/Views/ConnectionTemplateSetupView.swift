@@ -32,19 +32,19 @@ struct ConnectionTemplateSetupView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.openWindow) private var openWindow
     @State private var step: ConnectionTemplateSetupStep = .template
-    @State private var selectedTemplateID: AccountPresetID = AccountSetupService.templates[0].id
-    @State private var input = AccountSetupInput(
-        id: AccountSetupService.templates[0].id,
-        useForTunnelling: AccountSetupService.templates[0].defaultTunnelEnabled,
-        tunnelHost: AccountSetupService.templates[0].defaultTunnelHost
+    @State private var selectedTemplateID: ConnectionTemplateID = ConnectionTemplateSetupService.templates[0].id
+    @State private var input = ConnectionTemplateSetupInput(
+        id: ConnectionTemplateSetupService.templates[0].id,
+        useForTunnelling: ConnectionTemplateSetupService.templates[0].defaultTunnelEnabled,
+        tunnelHost: ConnectionTemplateSetupService.templates[0].defaultTunnelHost
     )
-    @State private var credentialStatus: AccountSetupCredentialStatus?
+    @State private var credentialStatus: ConnectionTemplateCredentialStatus?
     @State private var password = ""
     @State private var totpSeed = ""
     @State private var setupMessage: String?
 
     private var selectedTemplate: ConnectionTemplate {
-        AccountSetupService.template(for: selectedTemplateID) ?? AccountSetupService.templates[0]
+        ConnectionTemplateSetupService.template(for: selectedTemplateID) ?? ConnectionTemplateSetupService.templates[0]
     }
 
     var body: some View {
@@ -113,7 +113,7 @@ struct ConnectionTemplateSetupView: View {
 
     private var templateStep: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(AccountSetupService.templates) { template in
+            ForEach(ConnectionTemplateSetupService.templates) { template in
                 ConnectionTemplateSelectionRow(
                     template: template,
                     isSelected: selectedTemplateID == template.id
@@ -174,7 +174,7 @@ struct ConnectionTemplateSetupView: View {
         }
     }
 
-    private var resolvedInput: AccountSetupInput {
+    private var resolvedInput: ConnectionTemplateSetupInput {
         var resolved = input
         resolved.isSelected = true
         resolved.passwordAvailable = passwordAvailable
@@ -192,7 +192,7 @@ struct ConnectionTemplateSetupView: View {
             || credentialStatus?.totpSeedState == .available
     }
 
-    private func loadTemplate(_ templateID: AccountPresetID) {
+    private func loadTemplate(_ templateID: ConnectionTemplateID) {
         input = appState.defaultConnectionTemplateSetupInput(for: templateID)
         input.isSelected = true
         password = ""
@@ -226,13 +226,13 @@ struct ConnectionTemplateSetupView: View {
             dismiss()
         } catch {
             setupMessage = error.localizedDescription
-            if let setupError = error as? AccountSetupError {
+            if let setupError = error as? ConnectionTemplateSetupError {
                 switch setupError {
                 case .missingUsername, .missingPassword:
                     step = .credentials
                 case .missingTunnelHost:
                     step = .tunnel
-                case .unknownPreset:
+                case .unknownTemplate:
                     step = .template
                 }
             }
@@ -291,8 +291,8 @@ private struct ConnectionTemplateSelectionRow: View {
 
 private struct TemplateCredentialView: View {
     var template: ConnectionTemplate
-    @Binding var input: AccountSetupInput
-    var status: AccountSetupCredentialStatus?
+    @Binding var input: ConnectionTemplateSetupInput
+    var status: ConnectionTemplateCredentialStatus?
     @Binding var password: String
     @Binding var totpSeed: String
     var refreshStatus: () -> Void
@@ -372,7 +372,7 @@ private struct TemplateCredentialView: View {
 
 private struct TemplateTunnelView: View {
     var template: ConnectionTemplate
-    @Binding var input: AccountSetupInput
+    @Binding var input: ConnectionTemplateSetupInput
 
     var body: some View {
         SectionPanel(title: "Tunnel", systemImage: "server.rack") {
@@ -440,7 +440,7 @@ private struct TemplateTunnelView: View {
 
 private struct ConnectionTemplateReviewView: View {
     var template: ConnectionTemplate
-    var input: AccountSetupInput
+    var input: ConnectionTemplateSetupInput
     var configuration: AppConfiguration
 
     var body: some View {

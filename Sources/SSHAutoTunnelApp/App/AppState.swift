@@ -539,30 +539,30 @@ final class AppState: ObservableObject {
         }
     }
 
-    func defaultConnectionTemplateSetupInput(for templateID: AccountPresetID) -> AccountSetupInput {
-        AccountSetupService.defaultInput(for: templateID, in: configuration)
-            ?? AccountSetupInput(
+    func defaultConnectionTemplateSetupInput(for templateID: ConnectionTemplateID) -> ConnectionTemplateSetupInput {
+        ConnectionTemplateSetupService.defaultInput(for: templateID, in: configuration)
+            ?? ConnectionTemplateSetupInput(
                 id: templateID,
                 username: NSUserName(),
-                useForTunnelling: AccountSetupService.template(for: templateID)?.defaultTunnelEnabled ?? true,
-                tunnelHost: AccountSetupService.template(for: templateID)?.defaultTunnelHost ?? ""
+                useForTunnelling: ConnectionTemplateSetupService.template(for: templateID)?.defaultTunnelEnabled ?? true,
+                tunnelHost: ConnectionTemplateSetupService.template(for: templateID)?.defaultTunnelHost ?? ""
             )
     }
 
-    func accountSetupCredentialStatus(for input: AccountSetupInput) -> AccountSetupCredentialStatus {
+    func accountSetupCredentialStatus(for input: ConnectionTemplateSetupInput) -> ConnectionTemplateCredentialStatus {
         restoringWindowFocus {
-            AccountSetupService.credentialStatus(for: input, checker: keychain)
+            ConnectionTemplateSetupService.credentialStatus(for: input, checker: keychain)
         }
     }
 
     @discardableResult
     func applyConnectionTemplateSetup(
-        input: AccountSetupInput,
+        input: ConnectionTemplateSetupInput,
         password: String,
         totpSeed: String
-    ) throws -> AccountSetupResult {
-        guard let template = AccountSetupService.template(for: input.id) else {
-            throw AccountSetupError.unknownPreset(input.id)
+    ) throws -> ConnectionTemplateSetupResult {
+        guard let template = ConnectionTemplateSetupService.template(for: input.id) else {
+            throw ConnectionTemplateSetupError.unknownTemplate(input.id)
         }
 
         let resolvedInput = try restoringWindowFocus {
@@ -591,7 +591,7 @@ final class AppState: ObservableObject {
             return resolved
         }
 
-        let (updated, result) = try AccountSetupService.apply(inputs: [resolvedInput], to: configuration)
+        let (updated, result) = try ConnectionTemplateSetupService.apply(inputs: [resolvedInput], to: configuration)
         configuration = updated
         saveConfiguration()
         lastProxyMessage = "Connection saved from \(template.displayName)"

@@ -605,7 +605,7 @@ public struct InteractiveTerminalPreference: Codable, Equatable, Sendable {
     }
 }
 
-public enum AccountPresetID: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum ConnectionTemplateID: String, Codable, CaseIterable, Identifiable, Sendable {
     case cernLxPlus
     case psiTier3
     case psiGeneral
@@ -614,7 +614,7 @@ public enum AccountPresetID: String, Codable, CaseIterable, Identifiable, Sendab
 }
 
 public struct AccountConfiguration: Identifiable, Codable, Equatable, Sendable {
-    public var id: AccountPresetID
+    public var id: ConnectionTemplateID
     public var displayName: String
     public var username: String
     public var credentialHost: String
@@ -627,7 +627,7 @@ public struct AccountConfiguration: Identifiable, Codable, Equatable, Sendable {
     public var keychain: KeychainReference
 
     public init(
-        id: AccountPresetID,
+        id: ConnectionTemplateID,
         displayName: String,
         username: String,
         credentialHost: String,

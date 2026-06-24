@@ -1,13 +1,13 @@
 import XCTest
 @testable import SSHAutoTunnelCore
 
-final class AccountSetupServiceTests: XCTestCase {
+final class ConnectionTemplateSetupServiceTests: XCTestCase {
     func testBuiltInTemplatesUseAccountSpecificTunnelDefaults() throws {
-        let cern = try XCTUnwrap(AccountSetupService.template(for: .cernLxPlus))
-        let tier3 = try XCTUnwrap(AccountSetupService.template(for: .psiTier3))
-        let psi = try XCTUnwrap(AccountSetupService.template(for: .psiGeneral))
+        let cern = try XCTUnwrap(ConnectionTemplateSetupService.template(for: .cernLxPlus))
+        let tier3 = try XCTUnwrap(ConnectionTemplateSetupService.template(for: .psiTier3))
+        let psi = try XCTUnwrap(ConnectionTemplateSetupService.template(for: .psiGeneral))
 
-        XCTAssertEqual(AccountSetupService.templates.map(\.id), [.cernLxPlus, .psiTier3, .psiGeneral])
+        XCTAssertEqual(ConnectionTemplateSetupService.templates.map(\.id), [.cernLxPlus, .psiTier3, .psiGeneral])
         XCTAssertEqual(cern.credentialHost, "lxplus.cern.ch")
         XCTAssertEqual(cern.interactiveHost, "lxplus.cern.ch")
         XCTAssertEqual(cern.profileName, "CERN LxPlus")
@@ -37,7 +37,7 @@ final class AccountSetupServiceTests: XCTestCase {
     }
 
     func testDefaultInputCanBeLoadedForSingleTemplate() throws {
-        let input = try XCTUnwrap(AccountSetupService.defaultInput(
+        let input = try XCTUnwrap(ConnectionTemplateSetupService.defaultInput(
             for: .psiGeneral,
             in: AppConfiguration(),
             defaultUsername: "psiuser"
@@ -51,13 +51,13 @@ final class AccountSetupServiceTests: XCTestCase {
     }
 
     func testCredentialStatusChecksPasswordAndTOTPWithoutReadingSecrets() {
-        let input = AccountSetupInput(
+        let input = ConnectionTemplateSetupInput(
             id: .cernLxPlus,
             username: "clange",
             useForTunnelling: true,
             tunnelHost: "lxtunnel.cern.ch"
         )
-        let status = AccountSetupService.credentialStatus(
+        let status = ConnectionTemplateSetupService.credentialStatus(
             for: input,
             checker: FakePasswordExistenceChecker(results: [
                 "cern-lxplus-password|clange": .success(true),
@@ -70,13 +70,13 @@ final class AccountSetupServiceTests: XCTestCase {
     }
 
     func testCredentialStatusMarksUnreadableErrors() {
-        let input = AccountSetupInput(
+        let input = ConnectionTemplateSetupInput(
             id: .psiGeneral,
             username: "psiuser",
             useForTunnelling: true,
             tunnelHost: "login.psi.ch"
         )
-        let status = AccountSetupService.credentialStatus(
+        let status = ConnectionTemplateSetupService.credentialStatus(
             for: input,
             checker: FakePasswordExistenceChecker(results: [
                 "psi-general-password|psiuser": .failure(FakeSetupError.denied),
@@ -89,7 +89,7 @@ final class AccountSetupServiceTests: XCTestCase {
     }
 
     func testValidationRequiresPasswordForSelectedAccount() {
-        let input = AccountSetupInput(
+        let input = ConnectionTemplateSetupInput(
             id: .cernLxPlus,
             username: "clange",
             passwordAvailable: false,
@@ -97,13 +97,13 @@ final class AccountSetupServiceTests: XCTestCase {
             tunnelHost: "lxtunnel.cern.ch"
         )
 
-        XCTAssertThrowsError(try AccountSetupService.validate([input])) { error in
-            XCTAssertEqual(error as? AccountSetupError, .missingPassword(.cernLxPlus))
+        XCTAssertThrowsError(try ConnectionTemplateSetupService.validate([input])) { error in
+            XCTAssertEqual(error as? ConnectionTemplateSetupError, .missingPassword(.cernLxPlus))
         }
     }
 
     func testAppliesCERNAccountWithLxTunnelTargetAndPasswordOnlyAuth() throws {
-        let input = AccountSetupInput(
+        let input = ConnectionTemplateSetupInput(
             id: .cernLxPlus,
             username: "clange",
             passwordAvailable: true,
@@ -112,7 +112,7 @@ final class AccountSetupServiceTests: XCTestCase {
             tunnelHost: "lxtunnel.cern.ch"
         )
 
-        let (configuration, result) = try AccountSetupService.apply(inputs: [input], to: AppConfiguration())
+        let (configuration, result) = try ConnectionTemplateSetupService.apply(inputs: [input], to: AppConfiguration())
         let account = try XCTUnwrap(configuration.accounts.first)
         let profile = try XCTUnwrap(configuration.profiles.first)
 
@@ -133,7 +133,7 @@ final class AccountSetupServiceTests: XCTestCase {
     }
 
     func testAppliesPSIGeneralThroughHopxToLoginHost() throws {
-        let input = AccountSetupInput(
+        let input = ConnectionTemplateSetupInput(
             id: .psiGeneral,
             username: "psiuser",
             passwordAvailable: true,
@@ -142,7 +142,7 @@ final class AccountSetupServiceTests: XCTestCase {
             tunnelHost: "login.psi.ch"
         )
 
-        let (configuration, _) = try AccountSetupService.apply(inputs: [input], to: AppConfiguration())
+        let (configuration, _) = try ConnectionTemplateSetupService.apply(inputs: [input], to: AppConfiguration())
         let profile = try XCTUnwrap(configuration.profiles.first)
 
         XCTAssertEqual(profile.name, "PSI General")
@@ -157,7 +157,7 @@ final class AccountSetupServiceTests: XCTestCase {
     }
 
     func testTier3SelectedWithoutTunnelStoresCredentialsOnly() throws {
-        let input = AccountSetupInput(
+        let input = ConnectionTemplateSetupInput(
             id: .psiTier3,
             username: "tieruser",
             passwordAvailable: true,
@@ -165,7 +165,7 @@ final class AccountSetupServiceTests: XCTestCase {
             tunnelHost: ""
         )
 
-        let (configuration, _) = try AccountSetupService.apply(inputs: [input], to: AppConfiguration())
+        let (configuration, _) = try ConnectionTemplateSetupService.apply(inputs: [input], to: AppConfiguration())
         let account = try XCTUnwrap(configuration.accounts.first)
 
         XCTAssertEqual(account.id, .psiTier3)
@@ -175,14 +175,14 @@ final class AccountSetupServiceTests: XCTestCase {
     }
 
     func testTier3ExactPACRuleIsOrderedBeforeBroadPSIGeneralRule() throws {
-        let tier3 = AccountSetupInput(
+        let tier3 = ConnectionTemplateSetupInput(
             id: .psiTier3,
             username: "tieruser",
             passwordAvailable: true,
             useForTunnelling: true,
             tunnelHost: "worker01.psi.ch"
         )
-        let psi = AccountSetupInput(
+        let psi = ConnectionTemplateSetupInput(
             id: .psiGeneral,
             username: "psiuser",
             passwordAvailable: true,
@@ -190,7 +190,7 @@ final class AccountSetupServiceTests: XCTestCase {
             tunnelHost: "login.psi.ch"
         )
 
-        let (configuration, _) = try AccountSetupService.apply(inputs: [psi, tier3], to: AppConfiguration())
+        let (configuration, _) = try ConnectionTemplateSetupService.apply(inputs: [psi, tier3], to: AppConfiguration())
         let tier3Profile = try XCTUnwrap(configuration.profiles.first { $0.name == "PSI CMS Tier-3" })
 
         XCTAssertEqual(configuration.pacRules.map(\.domainPattern), ["worker01.psi.ch", "*.psi.ch"])
@@ -207,7 +207,7 @@ final class AccountSetupServiceTests: XCTestCase {
             profileID: profile.id,
             failureMode: .failClosed
         )
-        let input = AccountSetupInput(
+        let input = ConnectionTemplateSetupInput(
             id: .cernLxPlus,
             username: "clange",
             passwordAvailable: true,
@@ -215,7 +215,7 @@ final class AccountSetupServiceTests: XCTestCase {
             tunnelHost: "lxtunnel.cern.ch"
         )
 
-        let (configuration, _) = try AccountSetupService.apply(
+        let (configuration, _) = try ConnectionTemplateSetupService.apply(
             inputs: [input],
             to: AppConfiguration(profiles: [profile], pacRules: [existingRule])
         )
@@ -224,18 +224,18 @@ final class AccountSetupServiceTests: XCTestCase {
     }
 
     func testSkippingPreviouslyConfiguredPresetRemovesGeneratedTunnel() throws {
-        let selected = AccountSetupInput(
+        let selected = ConnectionTemplateSetupInput(
             id: .cernLxPlus,
             username: "clange",
             passwordAvailable: true,
             useForTunnelling: true,
             tunnelHost: "lxtunnel.cern.ch"
         )
-        let (configured, _) = try AccountSetupService.apply(inputs: [selected], to: AppConfiguration())
+        let (configured, _) = try ConnectionTemplateSetupService.apply(inputs: [selected], to: AppConfiguration())
         var skipped = selected
         skipped.isSelected = false
 
-        let (configuration, result) = try AccountSetupService.apply(inputs: [skipped], to: configured)
+        let (configuration, result) = try ConnectionTemplateSetupService.apply(inputs: [skipped], to: configured)
 
         XCTAssertEqual(result.removedProfiles, 1)
         XCTAssertTrue(configuration.accounts.isEmpty)
@@ -244,7 +244,7 @@ final class AccountSetupServiceTests: XCTestCase {
     }
 
     func testRepeatedApplyUpdatesExistingProfileInsteadOfDuplicatingIt() throws {
-        let input = AccountSetupInput(
+        let input = ConnectionTemplateSetupInput(
             id: .psiGeneral,
             username: "psiuser",
             passwordAvailable: true,
@@ -252,8 +252,8 @@ final class AccountSetupServiceTests: XCTestCase {
             tunnelHost: "login.psi.ch"
         )
 
-        let (first, firstResult) = try AccountSetupService.apply(inputs: [input], to: AppConfiguration())
-        let (second, secondResult) = try AccountSetupService.apply(inputs: [input], to: first)
+        let (first, firstResult) = try ConnectionTemplateSetupService.apply(inputs: [input], to: AppConfiguration())
+        let (second, secondResult) = try ConnectionTemplateSetupService.apply(inputs: [input], to: first)
 
         XCTAssertEqual(firstResult.createdProfiles, 1)
         XCTAssertEqual(secondResult.createdProfiles, 0)

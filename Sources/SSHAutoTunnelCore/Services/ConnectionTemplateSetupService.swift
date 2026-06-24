@@ -9,14 +9,14 @@ public enum ConnectionTemplatePACDomain: Equatable, Sendable {
         case .fixed(let pattern):
             return pattern
         case .tunnelHost:
-            let trimmed = AccountSetupService.trimmed(tunnelHost)
+            let trimmed = ConnectionTemplateSetupService.trimmed(tunnelHost)
             return trimmed.isEmpty ? nil : trimmed
         }
     }
 }
 
 public struct ConnectionTemplate: Identifiable, Equatable, Sendable {
-    public var id: AccountPresetID
+    public var id: ConnectionTemplateID
     public var displayName: String
     public var profileName: String
     public var pacRuleName: String
@@ -34,7 +34,7 @@ public struct ConnectionTemplate: Identifiable, Equatable, Sendable {
     public var helpURLs: [String]
 
     public init(
-        id: AccountPresetID,
+        id: ConnectionTemplateID,
         displayName: String,
         profileName: String,
         pacRuleName: String,
@@ -78,10 +78,8 @@ public struct ConnectionTemplate: Identifiable, Equatable, Sendable {
     }
 }
 
-public typealias AccountSetupPreset = ConnectionTemplate
-
-public struct AccountSetupInput: Identifiable, Equatable, Sendable {
-    public var id: AccountPresetID
+public struct ConnectionTemplateSetupInput: Identifiable, Equatable, Sendable {
+    public var id: ConnectionTemplateID
     public var isSelected: Bool
     public var username: String
     public var passwordAvailable: Bool
@@ -90,7 +88,7 @@ public struct AccountSetupInput: Identifiable, Equatable, Sendable {
     public var tunnelHost: String
 
     public init(
-        id: AccountPresetID,
+        id: ConnectionTemplateID,
         isSelected: Bool = true,
         username: String = NSUserName(),
         passwordAvailable: Bool = false,
@@ -108,19 +106,19 @@ public struct AccountSetupInput: Identifiable, Equatable, Sendable {
     }
 }
 
-public struct AccountSetupCredentialStatus: Identifiable, Equatable, Sendable {
-    public var id: AccountPresetID
+public struct ConnectionTemplateCredentialStatus: Identifiable, Equatable, Sendable {
+    public var id: ConnectionTemplateID
     public var passwordState: KeychainCredentialState
     public var totpSeedState: KeychainCredentialState
 
-    public init(id: AccountPresetID, passwordState: KeychainCredentialState, totpSeedState: KeychainCredentialState) {
+    public init(id: ConnectionTemplateID, passwordState: KeychainCredentialState, totpSeedState: KeychainCredentialState) {
         self.id = id
         self.passwordState = passwordState
         self.totpSeedState = totpSeedState
     }
 }
 
-public struct AccountSetupResult: Equatable, Sendable {
+public struct ConnectionTemplateSetupResult: Equatable, Sendable {
     public var configuredAccounts: Int
     public var createdProfiles: Int
     public var updatedProfiles: Int
@@ -145,16 +143,16 @@ public struct AccountSetupResult: Equatable, Sendable {
     }
 }
 
-public enum AccountSetupError: LocalizedError, Equatable, Sendable {
-    case unknownPreset(AccountPresetID)
-    case missingUsername(AccountPresetID)
-    case missingPassword(AccountPresetID)
-    case missingTunnelHost(AccountPresetID)
+public enum ConnectionTemplateSetupError: LocalizedError, Equatable, Sendable {
+    case unknownTemplate(ConnectionTemplateID)
+    case missingUsername(ConnectionTemplateID)
+    case missingPassword(ConnectionTemplateID)
+    case missingTunnelHost(ConnectionTemplateID)
 
     public var errorDescription: String? {
         switch self {
-        case .unknownPreset(let id):
-            "Unknown setup account preset '\(id.rawValue)'."
+        case .unknownTemplate(let id):
+            "Unknown connection template '\(id.rawValue)'."
         case .missingUsername(let id):
             "\(displayName(for: id)) requires a username."
         case .missingPassword(let id):
@@ -164,12 +162,12 @@ public enum AccountSetupError: LocalizedError, Equatable, Sendable {
         }
     }
 
-    private func displayName(for id: AccountPresetID) -> String {
-        AccountSetupService.preset(for: id)?.displayName ?? id.rawValue
+    private func displayName(for id: ConnectionTemplateID) -> String {
+        ConnectionTemplateSetupService.template(for: id)?.displayName ?? id.rawValue
     }
 }
 
-public enum AccountSetupService {
+public enum ConnectionTemplateSetupService {
     public static let templates: [ConnectionTemplate] = [
         ConnectionTemplate(
             id: .cernLxPlus,
@@ -231,34 +229,26 @@ public enum AccountSetupService {
         )
     ]
 
-    public static var presets: [ConnectionTemplate] {
-        templates
-    }
-
-    public static func template(for id: AccountPresetID) -> ConnectionTemplate? {
+    public static func template(for id: ConnectionTemplateID) -> ConnectionTemplate? {
         templates.first { $0.id == id }
     }
 
-    public static func preset(for id: AccountPresetID) -> ConnectionTemplate? {
-        template(for: id)
-    }
-
     public static func defaultInput(
-        for templateID: AccountPresetID,
+        for templateID: ConnectionTemplateID,
         in configuration: AppConfiguration,
         defaultUsername: String = NSUserName()
-    ) -> AccountSetupInput? {
+    ) -> ConnectionTemplateSetupInput? {
         defaultInputs(in: configuration, defaultUsername: defaultUsername).first { $0.id == templateID }
     }
 
     public static func defaultInputs(
         in configuration: AppConfiguration,
         defaultUsername: String = NSUserName()
-    ) -> [AccountSetupInput] {
+    ) -> [ConnectionTemplateSetupInput] {
         templates.map { template in
             let account = configuration.accounts.first { $0.id == template.id }
             let profile = configuration.profiles.first { $0.name == template.profileName }
-            return AccountSetupInput(
+            return ConnectionTemplateSetupInput(
                 id: template.id,
                 isSelected: account != nil || profile != nil || configuration.accounts.isEmpty,
                 username: account?.username ?? profile?.user ?? defaultUsername,
@@ -271,59 +261,59 @@ public enum AccountSetupService {
     }
 
     public static func credentialStatus(
-        for input: AccountSetupInput,
+        for input: ConnectionTemplateSetupInput,
         checker: GenericPasswordExistenceChecking
-    ) -> AccountSetupCredentialStatus {
-        guard let preset = preset(for: input.id), !trimmed(input.username).isEmpty else {
-            return AccountSetupCredentialStatus(id: input.id, passwordState: .missing, totpSeedState: .missing)
+    ) -> ConnectionTemplateCredentialStatus {
+        guard let template = template(for: input.id), !trimmed(input.username).isEmpty else {
+            return ConnectionTemplateCredentialStatus(id: input.id, passwordState: .missing, totpSeedState: .missing)
         }
-        return AccountSetupCredentialStatus(
+        return ConnectionTemplateCredentialStatus(
             id: input.id,
-            passwordState: state(service: preset.passwordService, account: input.username, checker: checker),
-            totpSeedState: state(service: preset.totpService, account: input.username, checker: checker)
+            passwordState: state(service: template.passwordService, account: input.username, checker: checker),
+            totpSeedState: state(service: template.totpService, account: input.username, checker: checker)
         )
     }
 
     public static func apply(
-        inputs: [AccountSetupInput],
+        inputs: [ConnectionTemplateSetupInput],
         to configuration: AppConfiguration
-    ) throws -> (AppConfiguration, AccountSetupResult) {
+    ) throws -> (AppConfiguration, ConnectionTemplateSetupResult) {
         try validate(inputs)
 
         var updated = configuration
-        var result = AccountSetupResult()
+        var result = ConnectionTemplateSetupResult()
 
         for input in inputs {
-            guard let preset = preset(for: input.id) else {
-                throw AccountSetupError.unknownPreset(input.id)
+            guard let template = template(for: input.id) else {
+                throw ConnectionTemplateSetupError.unknownTemplate(input.id)
             }
 
             if !input.isSelected {
-                removeAccountAndGeneratedTunnel(for: preset, from: &updated, result: &result)
+                removeAccountAndGeneratedTunnel(for: template, from: &updated, result: &result)
                 continue
             }
 
             result.configuredAccounts += 1
             let username = trimmed(input.username)
             let tunnelHost = trimmed(input.tunnelHost)
-            let jumpHost = input.useForTunnelling ? preset.jumpHost(username: username) : nil
-            let interactiveHost = interactiveHost(for: preset, tunnelHost: tunnelHost)
-            let pacDomainPattern = input.useForTunnelling ? preset.pacDomainPattern(tunnelHost: tunnelHost) : nil
+            let jumpHost = input.useForTunnelling ? template.jumpHost(username: username) : nil
+            let interactiveHost = interactiveHost(for: template, tunnelHost: tunnelHost)
+            let pacDomainPattern = input.useForTunnelling ? template.pacDomainPattern(tunnelHost: tunnelHost) : nil
             let keychain = KeychainReference(
                 account: username,
-                passwordService: preset.passwordService,
-                totpService: input.totpSeedAvailable ? preset.totpService : nil
+                passwordService: template.passwordService,
+                totpService: input.totpSeedAvailable ? template.totpService : nil
             )
             let account = AccountConfiguration(
-                id: preset.id,
-                displayName: preset.displayName,
+                id: template.id,
+                displayName: template.displayName,
                 username: username,
-                credentialHost: preset.credentialHost,
+                credentialHost: template.credentialHost,
                 interactiveHost: interactiveHost,
                 tunnelEnabled: input.useForTunnelling,
                 tunnelHost: input.useForTunnelling ? tunnelHost : nil,
                 jumpHost: jumpHost,
-                localSocksPort: input.useForTunnelling ? localSocksPort(for: preset, in: updated) : nil,
+                localSocksPort: input.useForTunnelling ? localSocksPort(for: template, in: updated) : nil,
                 pacDomainPattern: pacDomainPattern,
                 keychain: keychain
             )
@@ -331,7 +321,7 @@ public enum AccountSetupService {
 
             if input.useForTunnelling {
                 let profileID = upsertProfile(
-                    preset: preset,
+                    template: template,
                     username: username,
                     tunnelHost: tunnelHost,
                     interactiveHost: interactiveHost,
@@ -343,7 +333,7 @@ public enum AccountSetupService {
                 )
                 if let pacDomainPattern {
                     ensurePACRule(
-                        name: preset.pacRuleName,
+                        name: template.pacRuleName,
                         pattern: pacDomainPattern,
                         profileID: profileID,
                         in: &updated,
@@ -351,7 +341,7 @@ public enum AccountSetupService {
                     )
                 }
             } else {
-                removeGeneratedTunnel(for: preset, from: &updated, result: &result)
+                removeGeneratedTunnel(for: template, from: &updated, result: &result)
             }
         }
 
@@ -360,19 +350,19 @@ public enum AccountSetupService {
         return (updated, result)
     }
 
-    public static func validate(_ inputs: [AccountSetupInput]) throws {
+    public static func validate(_ inputs: [ConnectionTemplateSetupInput]) throws {
         for input in inputs where input.isSelected {
-            guard preset(for: input.id) != nil else {
-                throw AccountSetupError.unknownPreset(input.id)
+            guard template(for: input.id) != nil else {
+                throw ConnectionTemplateSetupError.unknownTemplate(input.id)
             }
             guard !trimmed(input.username).isEmpty else {
-                throw AccountSetupError.missingUsername(input.id)
+                throw ConnectionTemplateSetupError.missingUsername(input.id)
             }
             guard input.passwordAvailable else {
-                throw AccountSetupError.missingPassword(input.id)
+                throw ConnectionTemplateSetupError.missingPassword(input.id)
             }
             if input.useForTunnelling, trimmed(input.tunnelHost).isEmpty {
-                throw AccountSetupError.missingTunnelHost(input.id)
+                throw ConnectionTemplateSetupError.missingTunnelHost(input.id)
             }
         }
     }
@@ -402,7 +392,7 @@ public enum AccountSetupService {
     }
 
     private static func upsertProfile(
-        preset: AccountSetupPreset,
+        template: ConnectionTemplate,
         username: String,
         tunnelHost: String,
         interactiveHost: String?,
@@ -410,9 +400,9 @@ public enum AccountSetupService {
         keychain: KeychainReference,
         hasTOTPSeed: Bool,
         in configuration: inout AppConfiguration,
-        result: inout AccountSetupResult
+        result: inout ConnectionTemplateSetupResult
     ) -> UUID {
-        if let index = configuration.profiles.firstIndex(where: { $0.name == preset.profileName }) {
+        if let index = configuration.profiles.firstIndex(where: { $0.name == template.profileName }) {
             configuration.profiles[index].host = tunnelHost
             configuration.profiles[index].user = username
             configuration.profiles[index].interactiveHost = interactiveHost
@@ -425,10 +415,10 @@ public enum AccountSetupService {
         }
 
         let profile = TunnelProfile(
-            name: preset.profileName,
+            name: template.profileName,
             host: tunnelHost,
             user: username,
-            localSocksPort: nextFreePort(preferred: preset.defaultLocalSocksPort, profiles: configuration.profiles),
+            localSocksPort: nextFreePort(preferred: template.defaultLocalSocksPort, profiles: configuration.profiles),
             interactiveHost: interactiveHost,
             jumpHost: jumpHost,
             authMode: hasTOTPSeed ? .passwordAndTOTP : .password,
@@ -440,8 +430,8 @@ public enum AccountSetupService {
         return profile.id
     }
 
-    private static func interactiveHost(for preset: AccountSetupPreset, tunnelHost: String) -> String? {
-        if let interactiveHost = preset.interactiveHost.map(trimmed), !interactiveHost.isEmpty {
+    private static func interactiveHost(for template: ConnectionTemplate, tunnelHost: String) -> String? {
+        if let interactiveHost = template.interactiveHost.map(trimmed), !interactiveHost.isEmpty {
             return interactiveHost
         }
         let tunnelHost = trimmed(tunnelHost)
@@ -453,7 +443,7 @@ public enum AccountSetupService {
         pattern: String,
         profileID: UUID,
         in configuration: inout AppConfiguration,
-        result: inout AccountSetupResult
+        result: inout ConnectionTemplateSetupResult
     ) {
         if let index = configuration.pacRules.firstIndex(where: { $0.name == name || $0.domainPattern == pattern }) {
             configuration.pacRules[index].name = name
@@ -469,34 +459,34 @@ public enum AccountSetupService {
     }
 
     private static func removeAccountAndGeneratedTunnel(
-        for preset: AccountSetupPreset,
+        for template: ConnectionTemplate,
         from configuration: inout AppConfiguration,
-        result: inout AccountSetupResult
+        result: inout ConnectionTemplateSetupResult
     ) {
-        configuration.accounts.removeAll { $0.id == preset.id }
-        removeGeneratedTunnel(for: preset, from: &configuration, result: &result)
+        configuration.accounts.removeAll { $0.id == template.id }
+        removeGeneratedTunnel(for: template, from: &configuration, result: &result)
     }
 
     private static func removeGeneratedTunnel(
-        for preset: AccountSetupPreset,
+        for template: ConnectionTemplate,
         from configuration: inout AppConfiguration,
-        result: inout AccountSetupResult
+        result: inout ConnectionTemplateSetupResult
     ) {
         let removedProfileIDs = configuration.profiles
-            .filter { $0.name == preset.profileName }
+            .filter { $0.name == template.profileName }
             .map(\.id)
         if !removedProfileIDs.isEmpty {
             result.removedProfiles += removedProfileIDs.count
             configuration.profiles.removeAll { removedProfileIDs.contains($0.id) }
         }
         configuration.pacRules.removeAll { rule in
-            removedProfileIDs.contains(rule.profileID) || rule.name == preset.pacRuleName
+            removedProfileIDs.contains(rule.profileID) || rule.name == template.pacRuleName
         }
     }
 
-    private static func localSocksPort(for preset: AccountSetupPreset, in configuration: AppConfiguration) -> Int {
-        configuration.profiles.first { $0.name == preset.profileName }?.localSocksPort
-            ?? nextFreePort(preferred: preset.defaultLocalSocksPort, profiles: configuration.profiles)
+    private static func localSocksPort(for template: ConnectionTemplate, in configuration: AppConfiguration) -> Int {
+        configuration.profiles.first { $0.name == template.profileName }?.localSocksPort
+            ?? nextFreePort(preferred: template.defaultLocalSocksPort, profiles: configuration.profiles)
     }
 
     private static func nextFreePort(preferred: Int, profiles: [TunnelProfile]) -> Int {
@@ -509,14 +499,14 @@ public enum AccountSetupService {
     }
 
     private static func orderPACRules(_ configuration: inout AppConfiguration) {
-        let tier3Rules = configuration.pacRules.filter { $0.name == AccountSetupPreset.psiTier3RuleName }
+        let tier3Rules = configuration.pacRules.filter { $0.name == ConnectionTemplate.psiTier3RuleName }
         guard !tier3Rules.isEmpty else { return }
-        configuration.pacRules.removeAll { $0.name == AccountSetupPreset.psiTier3RuleName }
+        configuration.pacRules.removeAll { $0.name == ConnectionTemplate.psiTier3RuleName }
         let broadPSIIndex = configuration.pacRules.firstIndex { $0.domainPattern == "*.psi.ch" } ?? configuration.pacRules.endIndex
         configuration.pacRules.insert(contentsOf: tier3Rules, at: broadPSIIndex)
     }
 }
 
-private extension AccountSetupPreset {
+private extension ConnectionTemplate {
     static let psiTier3RuleName = "PSI Tier-3"
 }
