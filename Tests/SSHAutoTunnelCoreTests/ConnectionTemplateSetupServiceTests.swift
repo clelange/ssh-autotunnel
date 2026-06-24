@@ -37,14 +37,13 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
     }
 
     func testDefaultInputCanBeLoadedForSingleTemplate() throws {
-        let input = try XCTUnwrap(ConnectionTemplateSetupService.defaultInput(
+        let input = ConnectionTemplateSetupService.defaultInput(
             for: .psiGeneral,
             in: AppConfiguration(),
             defaultUsername: "psiuser"
-        ))
+        )
 
         XCTAssertEqual(input.id, .psiGeneral)
-        XCTAssertTrue(input.isSelected)
         XCTAssertEqual(input.username, "psiuser")
         XCTAssertTrue(input.useForTunnelling)
         XCTAssertEqual(input.tunnelHost, "login.psi.ch")
@@ -88,7 +87,7 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
         XCTAssertEqual(status.totpSeedState, .missing)
     }
 
-    func testValidationRequiresPasswordForSelectedAccount() {
+    func testValidationRequiresPasswordForTemplateSetup() {
         let input = ConnectionTemplateSetupInput(
             id: .cernLxPlus,
             username: "clange",
@@ -97,7 +96,7 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
             tunnelHost: "lxtunnel.cern.ch"
         )
 
-        XCTAssertThrowsError(try ConnectionTemplateSetupService.validate([input])) { error in
+        XCTAssertThrowsError(try ConnectionTemplateSetupService.validate(input)) { error in
             XCTAssertEqual(error as? ConnectionTemplateSetupError, .missingPassword(.cernLxPlus))
         }
     }
@@ -112,11 +111,11 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
             tunnelHost: "lxtunnel.cern.ch"
         )
 
-        let (configuration, result) = try ConnectionTemplateSetupService.apply(inputs: [input], to: AppConfiguration())
+        let (configuration, result) = try ConnectionTemplateSetupService.apply(input: input, to: AppConfiguration())
         let account = try XCTUnwrap(configuration.accounts.first)
         let profile = try XCTUnwrap(configuration.profiles.first)
 
-        XCTAssertEqual(result.configuredAccounts, 1)
+        XCTAssertEqual(result.configuredTemplates, 1)
         XCTAssertEqual(result.createdProfiles, 1)
         XCTAssertEqual(account.id, .cernLxPlus)
         XCTAssertEqual(account.interactiveHost, "lxplus.cern.ch")
@@ -142,7 +141,7 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
             tunnelHost: "login.psi.ch"
         )
 
-        let (configuration, _) = try ConnectionTemplateSetupService.apply(inputs: [input], to: AppConfiguration())
+        let (configuration, _) = try ConnectionTemplateSetupService.apply(input: input, to: AppConfiguration())
         let profile = try XCTUnwrap(configuration.profiles.first)
 
         XCTAssertEqual(profile.name, "PSI General")
@@ -165,7 +164,7 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
             tunnelHost: ""
         )
 
-        let (configuration, _) = try ConnectionTemplateSetupService.apply(inputs: [input], to: AppConfiguration())
+        let (configuration, _) = try ConnectionTemplateSetupService.apply(input: input, to: AppConfiguration())
         let account = try XCTUnwrap(configuration.accounts.first)
 
         XCTAssertEqual(account.id, .psiTier3)
@@ -190,7 +189,8 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
             tunnelHost: "login.psi.ch"
         )
 
-        let (configuration, _) = try ConnectionTemplateSetupService.apply(inputs: [psi, tier3], to: AppConfiguration())
+        let (withPSI, _) = try ConnectionTemplateSetupService.apply(input: psi, to: AppConfiguration())
+        let (configuration, _) = try ConnectionTemplateSetupService.apply(input: tier3, to: withPSI)
         let tier3Profile = try XCTUnwrap(configuration.profiles.first { $0.name == "PSI CMS Tier-3" })
 
         XCTAssertEqual(configuration.pacRules.map(\.domainPattern), ["worker01.psi.ch", "*.psi.ch"])
@@ -216,14 +216,14 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
         )
 
         let (configuration, _) = try ConnectionTemplateSetupService.apply(
-            inputs: [input],
+            input: input,
             to: AppConfiguration(profiles: [profile], pacRules: [existingRule])
         )
 
         XCTAssertEqual(configuration.pacRules.first?.failureMode, .failClosed)
     }
 
-    func testSkippingPreviouslyConfiguredPresetRemovesGeneratedTunnel() throws {
+    func testDisablingTunnellingRemovesGeneratedTunnelAndKeepsAccount() throws {
         let selected = ConnectionTemplateSetupInput(
             id: .cernLxPlus,
             username: "clange",
@@ -231,14 +231,20 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
             useForTunnelling: true,
             tunnelHost: "lxtunnel.cern.ch"
         )
-        let (configured, _) = try ConnectionTemplateSetupService.apply(inputs: [selected], to: AppConfiguration())
-        var skipped = selected
-        skipped.isSelected = false
+        let (configured, _) = try ConnectionTemplateSetupService.apply(input: selected, to: AppConfiguration())
+        let credentialsOnly = ConnectionTemplateSetupInput(
+            id: .cernLxPlus,
+            username: "clange",
+            passwordAvailable: true,
+            useForTunnelling: false,
+            tunnelHost: ""
+        )
 
-        let (configuration, result) = try ConnectionTemplateSetupService.apply(inputs: [skipped], to: configured)
+        let (configuration, result) = try ConnectionTemplateSetupService.apply(input: credentialsOnly, to: configured)
 
         XCTAssertEqual(result.removedProfiles, 1)
-        XCTAssertTrue(configuration.accounts.isEmpty)
+        XCTAssertEqual(configuration.accounts.count, 1)
+        XCTAssertFalse(configuration.accounts[0].tunnelEnabled)
         XCTAssertTrue(configuration.profiles.isEmpty)
         XCTAssertTrue(configuration.pacRules.isEmpty)
     }
@@ -252,8 +258,8 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
             tunnelHost: "login.psi.ch"
         )
 
-        let (first, firstResult) = try ConnectionTemplateSetupService.apply(inputs: [input], to: AppConfiguration())
-        let (second, secondResult) = try ConnectionTemplateSetupService.apply(inputs: [input], to: first)
+        let (first, firstResult) = try ConnectionTemplateSetupService.apply(input: input, to: AppConfiguration())
+        let (second, secondResult) = try ConnectionTemplateSetupService.apply(input: input, to: first)
 
         XCTAssertEqual(firstResult.createdProfiles, 1)
         XCTAssertEqual(secondResult.createdProfiles, 0)

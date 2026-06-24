@@ -176,7 +176,6 @@ struct ConnectionTemplateSetupView: View {
 
     private var resolvedInput: ConnectionTemplateSetupInput {
         var resolved = input
-        resolved.isSelected = true
         resolved.passwordAvailable = passwordAvailable
         resolved.totpSeedAvailable = totpSeedAvailable
         return resolved
@@ -194,7 +193,6 @@ struct ConnectionTemplateSetupView: View {
 
     private func loadTemplate(_ templateID: ConnectionTemplateID) {
         input = appState.defaultConnectionTemplateSetupInput(for: templateID)
-        input.isSelected = true
         password = ""
         totpSeed = ""
         setupMessage = nil

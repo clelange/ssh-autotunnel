@@ -541,12 +541,6 @@ final class AppState: ObservableObject {
 
     func defaultConnectionTemplateSetupInput(for templateID: ConnectionTemplateID) -> ConnectionTemplateSetupInput {
         ConnectionTemplateSetupService.defaultInput(for: templateID, in: configuration)
-            ?? ConnectionTemplateSetupInput(
-                id: templateID,
-                username: NSUserName(),
-                useForTunnelling: ConnectionTemplateSetupService.template(for: templateID)?.defaultTunnelEnabled ?? true,
-                tunnelHost: ConnectionTemplateSetupService.template(for: templateID)?.defaultTunnelHost ?? ""
-            )
     }
 
     func accountSetupCredentialStatus(for input: ConnectionTemplateSetupInput) -> ConnectionTemplateCredentialStatus {
@@ -567,7 +561,6 @@ final class AppState: ObservableObject {
 
         let resolvedInput = try restoringWindowFocus {
             var resolved = input
-            resolved.isSelected = true
             let account = input.username.trimmingCharacters(in: .whitespacesAndNewlines)
             let password = password.trimmingCharacters(in: .whitespacesAndNewlines)
             let totpSeed = totpSeed.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -591,7 +584,7 @@ final class AppState: ObservableObject {
             return resolved
         }
 
-        let (updated, result) = try ConnectionTemplateSetupService.apply(inputs: [resolvedInput], to: configuration)
+        let (updated, result) = try ConnectionTemplateSetupService.apply(input: resolvedInput, to: configuration)
         configuration = updated
         saveConfiguration()
         lastProxyMessage = "Connection saved from \(template.displayName)"

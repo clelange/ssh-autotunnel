@@ -107,6 +107,7 @@
 - Added synchronous SSH stop-on-quit with SIGTERM/SIGKILL fallback, process-group signaling, safer graceful app relaunch in the run script, and pid-validated interactive session markers to prevent orphaned tunnels and stale quit warnings.
 - Added runtime SOCKS port fallback with loopback bind probing, effective-port PAC/status/CLI/dashboard reporting, and one retry for app-owned SSH forwarding conflicts.
 - Replaced automatic first-launch setup with an on-demand template-based New Connection flow and a dashboard empty state for first profile creation.
+- Renamed the setup core from account presets to connection templates and simplified template setup to a single-template apply path.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -129,7 +130,7 @@ swift build
 swift test
 ```
 
-Both passed after the template-based New Connection update. The core test suite has 342 XCTest cases.
+Both passed after the connection-template setup refactor. The core test suite has 342 XCTest cases.
 
 ## Known Gaps
 

@@ -80,7 +80,6 @@ public struct ConnectionTemplate: Identifiable, Equatable, Sendable {
 
 public struct ConnectionTemplateSetupInput: Identifiable, Equatable, Sendable {
     public var id: ConnectionTemplateID
-    public var isSelected: Bool
     public var username: String
     public var passwordAvailable: Bool
     public var totpSeedAvailable: Bool
@@ -89,7 +88,6 @@ public struct ConnectionTemplateSetupInput: Identifiable, Equatable, Sendable {
 
     public init(
         id: ConnectionTemplateID,
-        isSelected: Bool = true,
         username: String = NSUserName(),
         passwordAvailable: Bool = false,
         totpSeedAvailable: Bool = false,
@@ -97,7 +95,6 @@ public struct ConnectionTemplateSetupInput: Identifiable, Equatable, Sendable {
         tunnelHost: String
     ) {
         self.id = id
-        self.isSelected = isSelected
         self.username = username
         self.passwordAvailable = passwordAvailable
         self.totpSeedAvailable = totpSeedAvailable
@@ -119,7 +116,7 @@ public struct ConnectionTemplateCredentialStatus: Identifiable, Equatable, Senda
 }
 
 public struct ConnectionTemplateSetupResult: Equatable, Sendable {
-    public var configuredAccounts: Int
+    public var configuredTemplates: Int
     public var createdProfiles: Int
     public var updatedProfiles: Int
     public var removedProfiles: Int
@@ -127,14 +124,14 @@ public struct ConnectionTemplateSetupResult: Equatable, Sendable {
     public var updatedPACRules: Int
 
     public init(
-        configuredAccounts: Int = 0,
+        configuredTemplates: Int = 0,
         createdProfiles: Int = 0,
         updatedProfiles: Int = 0,
         removedProfiles: Int = 0,
         createdPACRules: Int = 0,
         updatedPACRules: Int = 0
     ) {
-        self.configuredAccounts = configuredAccounts
+        self.configuredTemplates = configuredTemplates
         self.createdProfiles = createdProfiles
         self.updatedProfiles = updatedProfiles
         self.removedProfiles = removedProfiles
@@ -237,27 +234,20 @@ public enum ConnectionTemplateSetupService {
         for templateID: ConnectionTemplateID,
         in configuration: AppConfiguration,
         defaultUsername: String = NSUserName()
-    ) -> ConnectionTemplateSetupInput? {
-        defaultInputs(in: configuration, defaultUsername: defaultUsername).first { $0.id == templateID }
-    }
-
-    public static func defaultInputs(
-        in configuration: AppConfiguration,
-        defaultUsername: String = NSUserName()
-    ) -> [ConnectionTemplateSetupInput] {
-        templates.map { template in
-            let account = configuration.accounts.first { $0.id == template.id }
-            let profile = configuration.profiles.first { $0.name == template.profileName }
-            return ConnectionTemplateSetupInput(
-                id: template.id,
-                isSelected: account != nil || profile != nil || configuration.accounts.isEmpty,
-                username: account?.username ?? profile?.user ?? defaultUsername,
-                passwordAvailable: false,
-                totpSeedAvailable: false,
-                useForTunnelling: account?.tunnelEnabled ?? (profile != nil || template.defaultTunnelEnabled),
-                tunnelHost: account?.tunnelHost ?? profile?.host ?? template.defaultTunnelHost
-            )
+    ) -> ConnectionTemplateSetupInput {
+        let template = template(for: templateID)
+        let account = configuration.accounts.first { $0.id == templateID }
+        let profile = template.flatMap { template in
+            configuration.profiles.first { $0.name == template.profileName }
         }
+        return ConnectionTemplateSetupInput(
+            id: templateID,
+            username: account?.username ?? profile?.user ?? defaultUsername,
+            passwordAvailable: false,
+            totpSeedAvailable: false,
+            useForTunnelling: account?.tunnelEnabled ?? (profile != nil || template?.defaultTunnelEnabled ?? true),
+            tunnelHost: account?.tunnelHost ?? profile?.host ?? template?.defaultTunnelHost ?? ""
+        )
     }
 
     public static func credentialStatus(
@@ -275,74 +265,67 @@ public enum ConnectionTemplateSetupService {
     }
 
     public static func apply(
-        inputs: [ConnectionTemplateSetupInput],
+        input: ConnectionTemplateSetupInput,
         to configuration: AppConfiguration
     ) throws -> (AppConfiguration, ConnectionTemplateSetupResult) {
-        try validate(inputs)
+        try validate(input)
 
         var updated = configuration
         var result = ConnectionTemplateSetupResult()
 
-        for input in inputs {
-            guard let template = template(for: input.id) else {
-                throw ConnectionTemplateSetupError.unknownTemplate(input.id)
-            }
+        guard let template = template(for: input.id) else {
+            throw ConnectionTemplateSetupError.unknownTemplate(input.id)
+        }
 
-            if !input.isSelected {
-                removeAccountAndGeneratedTunnel(for: template, from: &updated, result: &result)
-                continue
-            }
+        result.configuredTemplates += 1
+        let username = trimmed(input.username)
+        let tunnelHost = trimmed(input.tunnelHost)
+        let jumpHost = input.useForTunnelling ? template.jumpHost(username: username) : nil
+        let interactiveHost = interactiveHost(for: template, tunnelHost: tunnelHost)
+        let pacDomainPattern = input.useForTunnelling ? template.pacDomainPattern(tunnelHost: tunnelHost) : nil
+        let keychain = KeychainReference(
+            account: username,
+            passwordService: template.passwordService,
+            totpService: input.totpSeedAvailable ? template.totpService : nil
+        )
+        let account = AccountConfiguration(
+            id: template.id,
+            displayName: template.displayName,
+            username: username,
+            credentialHost: template.credentialHost,
+            interactiveHost: interactiveHost,
+            tunnelEnabled: input.useForTunnelling,
+            tunnelHost: input.useForTunnelling ? tunnelHost : nil,
+            jumpHost: jumpHost,
+            localSocksPort: input.useForTunnelling ? localSocksPort(for: template, in: updated) : nil,
+            pacDomainPattern: pacDomainPattern,
+            keychain: keychain
+        )
+        upsertAccount(account, in: &updated)
 
-            result.configuredAccounts += 1
-            let username = trimmed(input.username)
-            let tunnelHost = trimmed(input.tunnelHost)
-            let jumpHost = input.useForTunnelling ? template.jumpHost(username: username) : nil
-            let interactiveHost = interactiveHost(for: template, tunnelHost: tunnelHost)
-            let pacDomainPattern = input.useForTunnelling ? template.pacDomainPattern(tunnelHost: tunnelHost) : nil
-            let keychain = KeychainReference(
-                account: username,
-                passwordService: template.passwordService,
-                totpService: input.totpSeedAvailable ? template.totpService : nil
-            )
-            let account = AccountConfiguration(
-                id: template.id,
-                displayName: template.displayName,
+        if input.useForTunnelling {
+            let profileID = upsertProfile(
+                template: template,
                 username: username,
-                credentialHost: template.credentialHost,
+                tunnelHost: tunnelHost,
                 interactiveHost: interactiveHost,
-                tunnelEnabled: input.useForTunnelling,
-                tunnelHost: input.useForTunnelling ? tunnelHost : nil,
                 jumpHost: jumpHost,
-                localSocksPort: input.useForTunnelling ? localSocksPort(for: template, in: updated) : nil,
-                pacDomainPattern: pacDomainPattern,
-                keychain: keychain
+                keychain: keychain,
+                hasTOTPSeed: input.totpSeedAvailable,
+                in: &updated,
+                result: &result
             )
-            upsertAccount(account, in: &updated)
-
-            if input.useForTunnelling {
-                let profileID = upsertProfile(
-                    template: template,
-                    username: username,
-                    tunnelHost: tunnelHost,
-                    interactiveHost: interactiveHost,
-                    jumpHost: jumpHost,
-                    keychain: keychain,
-                    hasTOTPSeed: input.totpSeedAvailable,
+            if let pacDomainPattern {
+                ensurePACRule(
+                    name: template.pacRuleName,
+                    pattern: pacDomainPattern,
+                    profileID: profileID,
                     in: &updated,
                     result: &result
                 )
-                if let pacDomainPattern {
-                    ensurePACRule(
-                        name: template.pacRuleName,
-                        pattern: pacDomainPattern,
-                        profileID: profileID,
-                        in: &updated,
-                        result: &result
-                    )
-                }
-            } else {
-                removeGeneratedTunnel(for: template, from: &updated, result: &result)
             }
+        } else {
+            removeGeneratedTunnel(for: template, from: &updated, result: &result)
         }
 
         orderPACRules(&updated)
@@ -350,20 +333,18 @@ public enum ConnectionTemplateSetupService {
         return (updated, result)
     }
 
-    public static func validate(_ inputs: [ConnectionTemplateSetupInput]) throws {
-        for input in inputs where input.isSelected {
-            guard template(for: input.id) != nil else {
-                throw ConnectionTemplateSetupError.unknownTemplate(input.id)
-            }
-            guard !trimmed(input.username).isEmpty else {
-                throw ConnectionTemplateSetupError.missingUsername(input.id)
-            }
-            guard input.passwordAvailable else {
-                throw ConnectionTemplateSetupError.missingPassword(input.id)
-            }
-            if input.useForTunnelling, trimmed(input.tunnelHost).isEmpty {
-                throw ConnectionTemplateSetupError.missingTunnelHost(input.id)
-            }
+    public static func validate(_ input: ConnectionTemplateSetupInput) throws {
+        guard template(for: input.id) != nil else {
+            throw ConnectionTemplateSetupError.unknownTemplate(input.id)
+        }
+        guard !trimmed(input.username).isEmpty else {
+            throw ConnectionTemplateSetupError.missingUsername(input.id)
+        }
+        guard input.passwordAvailable else {
+            throw ConnectionTemplateSetupError.missingPassword(input.id)
+        }
+        if input.useForTunnelling, trimmed(input.tunnelHost).isEmpty {
+            throw ConnectionTemplateSetupError.missingTunnelHost(input.id)
         }
     }
 
@@ -456,15 +437,6 @@ public enum ConnectionTemplateSetupService {
 
         configuration.pacRules.append(PACRule(name: name, domainPattern: pattern, profileID: profileID))
         result.createdPACRules += 1
-    }
-
-    private static func removeAccountAndGeneratedTunnel(
-        for template: ConnectionTemplate,
-        from configuration: inout AppConfiguration,
-        result: inout ConnectionTemplateSetupResult
-    ) {
-        configuration.accounts.removeAll { $0.id == template.id }
-        removeGeneratedTunnel(for: template, from: &configuration, result: &result)
     }
 
     private static func removeGeneratedTunnel(
