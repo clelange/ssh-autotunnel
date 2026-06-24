@@ -19,7 +19,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertFalse(json.contains("secret-local-token"))
         XCTAssertEqual(export.redaction.omittedFields, ["apiToken"])
         XCTAssertEqual(export.schemaVersion, 3)
-        XCTAssertEqual(export.accounts, configuration.accounts)
+        XCTAssertEqual(export.templateAccounts, configuration.templateAccounts)
         XCTAssertEqual(export.profiles, configuration.profiles)
         XCTAssertEqual(export.pacRules, configuration.pacRules)
         XCTAssertEqual(export.networkRules, configuration.networkRules)
@@ -39,7 +39,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         let exportedJSON = try XCTUnwrap(String(data: exportedData, encoding: .utf8))
 
         XCTAssertEqual(export.profiles, configuration.profiles)
-        XCTAssertEqual(export.accounts, configuration.accounts)
+        XCTAssertEqual(export.templateAccounts, configuration.templateAccounts)
         XCTAssertEqual(export.pacRules, configuration.pacRules)
         XCTAssertEqual(export.networkRules, configuration.networkRules)
         XCTAssertEqual(export.apiHTTPPort, configuration.apiHTTPPort)
@@ -61,7 +61,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         let imported = try ConfigurationExportService.importConfiguration(from: export, preservingLocalValuesFrom: current)
 
         XCTAssertEqual(imported.apiToken, "local-token")
-        XCTAssertEqual(imported.accounts, source.accounts)
+        XCTAssertEqual(imported.templateAccounts, source.templateAccounts)
         XCTAssertEqual(imported.profiles, source.profiles)
         XCTAssertEqual(imported.pacRules, source.pacRules)
         XCTAssertEqual(imported.networkRules, source.networkRules)
@@ -91,7 +91,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
 
         let export = try JSONDecoder().decode(ConfigurationExport.self, from: json)
 
-        XCTAssertEqual(export.accounts, [])
+        XCTAssertEqual(export.templateAccounts, [])
         XCTAssertEqual(export.pacAppendSource, PACAppendSource())
         XCTAssertEqual(export.interactiveTerminal, InteractiveTerminalPreference())
     }
@@ -118,7 +118,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
             preservingLocalValuesFrom: AppConfiguration(apiToken: "local-token")
         )
 
-        XCTAssertEqual(imported.accounts, [])
+        XCTAssertEqual(imported.templateAccounts, [])
         XCTAssertEqual(imported.apiToken, "local-token")
     }
 
@@ -210,7 +210,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         let exportedConfiguration = try XCTUnwrap(object["configuration"] as? [String: Any])
 
         XCTAssertEqual(bundle.configuration.profiles, configuration.profiles)
-        XCTAssertEqual(bundle.configuration.accounts, configuration.accounts)
+        XCTAssertEqual(bundle.configuration.templateAccounts, configuration.templateAccounts)
         XCTAssertEqual(bundle.diagnostics, diagnostics)
         XCTAssertNil(exportedConfiguration["apiToken"])
         XCTAssertFalse(json.contains("secret-local-token"))
@@ -268,7 +268,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
             authMode: .kerberosAndTOTP,
             keychain: KeychainReference(account: "user", totpService: "cern-lxplus-otp-secret")
         )
-        let account = AccountConfiguration(
+        let account = ConnectionTemplateAccount(
             id: .cernLxPlus,
             displayName: "CERN LxPlus",
             username: "user",
@@ -281,7 +281,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
             keychain: KeychainReference(account: "user", passwordService: "cern-lxplus-password", totpService: "cern-lxplus-otp-secret")
         )
         return AppConfiguration(
-            accounts: [account],
+            templateAccounts: [account],
             profiles: [profile],
             pacRules: [
                 PACRule(

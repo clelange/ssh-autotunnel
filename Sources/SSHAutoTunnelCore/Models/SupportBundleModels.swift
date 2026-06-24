@@ -17,7 +17,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
     public var schemaVersion: Int
     public var exportedAt: Date
     public var appIdentifier: String
-    public var accounts: [AccountConfiguration]
+    public var templateAccounts: [ConnectionTemplateAccount]
     public var profiles: [TunnelProfile]
     public var pacRules: [PACRule]
     public var networkRules: [NetworkPolicyRule]
@@ -33,7 +33,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         case schemaVersion
         case exportedAt
         case appIdentifier
-        case accounts
+        case templateAccounts
         case profiles
         case pacRules
         case networkRules
@@ -50,7 +50,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         schemaVersion: Int = 3,
         exportedAt: Date = Date(),
         appIdentifier: String,
-        accounts: [AccountConfiguration] = [],
+        templateAccounts: [ConnectionTemplateAccount] = [],
         profiles: [TunnelProfile],
         pacRules: [PACRule],
         networkRules: [NetworkPolicyRule],
@@ -65,7 +65,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         self.schemaVersion = schemaVersion
         self.exportedAt = exportedAt
         self.appIdentifier = appIdentifier
-        self.accounts = accounts
+        self.templateAccounts = templateAccounts
         self.profiles = profiles
         self.pacRules = pacRules
         self.networkRules = networkRules
@@ -83,7 +83,7 @@ public struct ConfigurationExport: Codable, Equatable, Sendable {
         schemaVersion = try container.decode(Int.self, forKey: .schemaVersion)
         exportedAt = try container.decode(Date.self, forKey: .exportedAt)
         appIdentifier = try container.decode(String.self, forKey: .appIdentifier)
-        accounts = try container.decodeIfPresent([AccountConfiguration].self, forKey: .accounts) ?? []
+        templateAccounts = try container.decodeIfPresent([ConnectionTemplateAccount].self, forKey: .templateAccounts) ?? []
         profiles = try container.decode([TunnelProfile].self, forKey: .profiles)
         pacRules = try container.decode([PACRule].self, forKey: .pacRules)
         networkRules = try container.decode([NetworkPolicyRule].self, forKey: .networkRules)

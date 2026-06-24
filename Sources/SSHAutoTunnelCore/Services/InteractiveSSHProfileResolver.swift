@@ -8,7 +8,7 @@ public enum InteractiveSSHProfileResolver {
             return interactiveProfile
         }
 
-        guard let account = configuration.accounts.first(where: { account in
+        guard let account = configuration.templateAccounts.first(where: { account in
             guard account.tunnelEnabled, account.tunnelHost == profile.host else { return false }
             return ConnectionTemplateSetupService.template(for: account.id)?.profileName == profile.name
         }),

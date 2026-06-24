@@ -12,7 +12,7 @@ public enum ConfigurationContentValidator {
     public static func validate(_ configuration: AppConfiguration) throws {
         var messages: [String] = []
 
-        for account in configuration.accounts {
+        for account in configuration.templateAccounts {
             messages += validationMessages(for: account)
         }
         for profile in configuration.profiles {
@@ -125,18 +125,18 @@ public enum ConfigurationContentValidator {
         return messages
     }
 
-    private static func validationMessages(for account: AccountConfiguration) -> [String] {
+    private static func validationMessages(for account: ConnectionTemplateAccount) -> [String] {
         invalidTextMessages([
-            ("Account '\(account.displayName)' display name", account.displayName),
-            ("Account '\(account.displayName)' username", account.username),
-            ("Account '\(account.displayName)' credential host", account.credentialHost),
-            ("Account '\(account.displayName)' interactive host", account.interactiveHost),
-            ("Account '\(account.displayName)' tunnel host", account.tunnelHost),
-            ("Account '\(account.displayName)' jump host", account.jumpHost),
-            ("Account '\(account.displayName)' PAC domain pattern", account.pacDomainPattern),
-            ("Account '\(account.displayName)' Keychain account", account.keychain.account),
-            ("Account '\(account.displayName)' password Keychain service", account.keychain.passwordService),
-            ("Account '\(account.displayName)' TOTP Keychain service", account.keychain.totpService)
+            ("Template account '\(account.displayName)' display name", account.displayName),
+            ("Template account '\(account.displayName)' username", account.username),
+            ("Template account '\(account.displayName)' credential host", account.credentialHost),
+            ("Template account '\(account.displayName)' interactive host", account.interactiveHost),
+            ("Template account '\(account.displayName)' tunnel host", account.tunnelHost),
+            ("Template account '\(account.displayName)' jump host", account.jumpHost),
+            ("Template account '\(account.displayName)' PAC domain pattern", account.pacDomainPattern),
+            ("Template account '\(account.displayName)' Keychain account", account.keychain.account),
+            ("Template account '\(account.displayName)' password Keychain service", account.keychain.passwordService),
+            ("Template account '\(account.displayName)' TOTP Keychain service", account.keychain.totpService)
         ])
     }
 

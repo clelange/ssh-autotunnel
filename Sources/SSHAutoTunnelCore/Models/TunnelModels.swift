@@ -613,7 +613,7 @@ public enum ConnectionTemplateID: String, Codable, CaseIterable, Identifiable, S
     public var id: String { rawValue }
 }
 
-public struct AccountConfiguration: Identifiable, Codable, Equatable, Sendable {
+public struct ConnectionTemplateAccount: Identifiable, Codable, Equatable, Sendable {
     public var id: ConnectionTemplateID
     public var displayName: String
     public var username: String
@@ -654,7 +654,7 @@ public struct AccountConfiguration: Identifiable, Codable, Equatable, Sendable {
 }
 
 public struct AppConfiguration: Codable, Equatable, Sendable {
-    public var accounts: [AccountConfiguration]
+    public var templateAccounts: [ConnectionTemplateAccount]
     public var profiles: [TunnelProfile]
     public var pacRules: [PACRule]
     public var networkRules: [NetworkPolicyRule]
@@ -667,7 +667,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     public var interactiveTerminal: InteractiveTerminalPreference
 
     private enum CodingKeys: String, CodingKey {
-        case accounts
+        case templateAccounts
         case profiles
         case pacRules
         case networkRules
@@ -681,7 +681,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
     }
 
     public init(
-        accounts: [AccountConfiguration] = [],
+        templateAccounts: [ConnectionTemplateAccount] = [],
         profiles: [TunnelProfile] = [],
         pacRules: [PACRule] = [],
         networkRules: [NetworkPolicyRule] = [],
@@ -693,7 +693,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
         pacAppendSource: PACAppendSource = PACAppendSource(),
         interactiveTerminal: InteractiveTerminalPreference = InteractiveTerminalPreference()
     ) {
-        self.accounts = accounts
+        self.templateAccounts = templateAccounts
         self.profiles = profiles
         self.pacRules = pacRules
         self.networkRules = networkRules
@@ -708,7 +708,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        accounts = try container.decodeIfPresent([AccountConfiguration].self, forKey: .accounts) ?? []
+        templateAccounts = try container.decodeIfPresent([ConnectionTemplateAccount].self, forKey: .templateAccounts) ?? []
         profiles = try container.decodeIfPresent([TunnelProfile].self, forKey: .profiles) ?? []
         pacRules = try container.decodeIfPresent([PACRule].self, forKey: .pacRules) ?? []
         networkRules = try container.decodeIfPresent([NetworkPolicyRule].self, forKey: .networkRules) ?? []
@@ -723,7 +723,7 @@ public struct AppConfiguration: Codable, Equatable, Sendable {
 
     public func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encode(accounts, forKey: .accounts)
+        try container.encode(templateAccounts, forKey: .templateAccounts)
         try container.encode(profiles, forKey: .profiles)
         try container.encode(pacRules, forKey: .pacRules)
         try container.encode(networkRules, forKey: .networkRules)

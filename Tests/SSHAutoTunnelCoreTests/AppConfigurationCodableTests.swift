@@ -18,7 +18,7 @@ final class AppConfigurationCodableTests: XCTestCase {
 
         let config = try JSONDecoder().decode(AppConfiguration.self, from: json)
 
-        XCTAssertEqual(config.accounts, [])
+        XCTAssertEqual(config.templateAccounts, [])
         XCTAssertEqual(config.blockingHTTPProxyPort, 18485)
         XCTAssertEqual(config.apiToken, "token")
         XCTAssertEqual(config.interactiveTerminal, InteractiveTerminalPreference())
@@ -83,8 +83,8 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(terminal["customApplicationPath"] as? String, "/Applications/Ghostty.app")
     }
 
-    func testEncodesAccounts() throws {
-        let account = AccountConfiguration(
+    func testEncodesTemplateAccounts() throws {
+        let account = ConnectionTemplateAccount(
             id: .cernLxPlus,
             displayName: "CERN LxPlus",
             username: "clange",
@@ -96,11 +96,11 @@ final class AppConfigurationCodableTests: XCTestCase {
             pacDomainPattern: "*.cern.ch",
             keychain: KeychainReference(account: "clange", passwordService: "cern-lxplus-password")
         )
-        let config = AppConfiguration(accounts: [account])
+        let config = AppConfiguration(templateAccounts: [account])
         let data = try JSONEncoder().encode(config)
         let decoded = try JSONDecoder().decode(AppConfiguration.self, from: data)
 
-        XCTAssertEqual(decoded.accounts, [account])
+        XCTAssertEqual(decoded.templateAccounts, [account])
     }
 
     func testProfileOrderSurvivesEncodeDecode() throws {
@@ -209,7 +209,7 @@ final class AppConfigurationCodableTests: XCTestCase {
     func testDefaultConfigurationStartsWithoutAccountProfiles() throws {
         let config = AppConfiguration.defaultConfiguration()
 
-        XCTAssertTrue(config.accounts.isEmpty)
+        XCTAssertTrue(config.templateAccounts.isEmpty)
         XCTAssertTrue(config.profiles.isEmpty)
         XCTAssertTrue(config.pacRules.isEmpty)
         XCTAssertEqual(config.proxyApplyMode, .manual)

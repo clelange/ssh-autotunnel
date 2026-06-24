@@ -236,7 +236,7 @@ public enum ConnectionTemplateSetupService {
         defaultUsername: String = NSUserName()
     ) -> ConnectionTemplateSetupInput {
         let template = template(for: templateID)
-        let account = configuration.accounts.first { $0.id == templateID }
+        let account = configuration.templateAccounts.first { $0.id == templateID }
         let profile = template.flatMap { template in
             configuration.profiles.first { $0.name == template.profileName }
         }
@@ -288,7 +288,7 @@ public enum ConnectionTemplateSetupService {
             passwordService: template.passwordService,
             totpService: input.totpSeedAvailable ? template.totpService : nil
         )
-        let account = AccountConfiguration(
+        let account = ConnectionTemplateAccount(
             id: template.id,
             displayName: template.displayName,
             username: username,
@@ -364,11 +364,11 @@ public enum ConnectionTemplateSetupService {
         }
     }
 
-    private static func upsertAccount(_ account: AccountConfiguration, in configuration: inout AppConfiguration) {
-        if let index = configuration.accounts.firstIndex(where: { $0.id == account.id }) {
-            configuration.accounts[index] = account
+    private static func upsertAccount(_ account: ConnectionTemplateAccount, in configuration: inout AppConfiguration) {
+        if let index = configuration.templateAccounts.firstIndex(where: { $0.id == account.id }) {
+            configuration.templateAccounts[index] = account
         } else {
-            configuration.accounts.append(account)
+            configuration.templateAccounts.append(account)
         }
     }
 

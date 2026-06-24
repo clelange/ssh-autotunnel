@@ -18,11 +18,11 @@ final class ConfigurationStoreTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: backupURL, encoding: .utf8), "{ invalid json")
         XCTAssertEqual(try posixPermissions(of: backupURL), FileProtection.privateFilePermissions)
         XCTAssertEqual(try posixPermissions(of: url), FileProtection.privateFilePermissions)
-        XCTAssertTrue(result.configuration.accounts.isEmpty)
+        XCTAssertTrue(result.configuration.templateAccounts.isEmpty)
         XCTAssertTrue(result.configuration.profiles.isEmpty)
 
         let recovered = try store.load()
-        XCTAssertTrue(recovered.accounts.isEmpty)
+        XCTAssertTrue(recovered.templateAccounts.isEmpty)
         XCTAssertTrue(recovered.profiles.isEmpty)
     }
 

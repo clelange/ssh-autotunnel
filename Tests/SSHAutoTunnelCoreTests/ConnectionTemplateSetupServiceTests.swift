@@ -112,7 +112,7 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
         )
 
         let (configuration, result) = try ConnectionTemplateSetupService.apply(input: input, to: AppConfiguration())
-        let account = try XCTUnwrap(configuration.accounts.first)
+        let account = try XCTUnwrap(configuration.templateAccounts.first)
         let profile = try XCTUnwrap(configuration.profiles.first)
 
         XCTAssertEqual(result.configuredTemplates, 1)
@@ -165,7 +165,7 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
         )
 
         let (configuration, _) = try ConnectionTemplateSetupService.apply(input: input, to: AppConfiguration())
-        let account = try XCTUnwrap(configuration.accounts.first)
+        let account = try XCTUnwrap(configuration.templateAccounts.first)
 
         XCTAssertEqual(account.id, .psiTier3)
         XCTAssertFalse(account.tunnelEnabled)
@@ -243,8 +243,8 @@ final class ConnectionTemplateSetupServiceTests: XCTestCase {
         let (configuration, result) = try ConnectionTemplateSetupService.apply(input: credentialsOnly, to: configured)
 
         XCTAssertEqual(result.removedProfiles, 1)
-        XCTAssertEqual(configuration.accounts.count, 1)
-        XCTAssertFalse(configuration.accounts[0].tunnelEnabled)
+        XCTAssertEqual(configuration.templateAccounts.count, 1)
+        XCTAssertFalse(configuration.templateAccounts[0].tunnelEnabled)
         XCTAssertTrue(configuration.profiles.isEmpty)
         XCTAssertTrue(configuration.pacRules.isEmpty)
     }

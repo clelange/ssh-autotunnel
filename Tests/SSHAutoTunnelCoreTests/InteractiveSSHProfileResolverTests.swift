@@ -22,7 +22,7 @@ final class InteractiveSSHProfileResolverTests: XCTestCase {
             host: "lxtunnel.cern.ch",
             localSocksPort: 1081
         )
-        let account = AccountConfiguration(
+        let account = ConnectionTemplateAccount(
             id: .cernLxPlus,
             displayName: "CERN LxPlus",
             username: "clange",
@@ -34,7 +34,7 @@ final class InteractiveSSHProfileResolverTests: XCTestCase {
             localSocksPort: 1081,
             pacDomainPattern: "*.cern.ch"
         )
-        let configuration = AppConfiguration(accounts: [account], profiles: [profile])
+        let configuration = AppConfiguration(templateAccounts: [account], profiles: [profile])
 
         let resolved = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
 

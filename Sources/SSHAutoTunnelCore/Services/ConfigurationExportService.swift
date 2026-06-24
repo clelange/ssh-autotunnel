@@ -56,7 +56,7 @@ public enum ConfigurationExportService {
             schemaVersion: schemaVersion,
             exportedAt: exportedAt,
             appIdentifier: appIdentifier,
-            accounts: configuration.accounts,
+            templateAccounts: configuration.templateAccounts,
             profiles: configuration.profiles,
             pacRules: configuration.pacRules,
             networkRules: configuration.networkRules,
@@ -75,7 +75,7 @@ public enum ConfigurationExportService {
     ) throws -> AppConfiguration {
         try validate(export)
         let imported = AppConfiguration(
-            accounts: export.accounts,
+            templateAccounts: export.templateAccounts,
             profiles: export.profiles,
             pacRules: export.pacRules,
             networkRules: export.networkRules,
@@ -209,7 +209,7 @@ public enum ConfigurationExportService {
 private extension ConfigurationExport {
     func asConfiguration(preservingLocalValuesFrom currentConfiguration: AppConfiguration) -> AppConfiguration {
         AppConfiguration(
-            accounts: accounts,
+            templateAccounts: templateAccounts,
             profiles: profiles,
             pacRules: pacRules,
             networkRules: networkRules,
