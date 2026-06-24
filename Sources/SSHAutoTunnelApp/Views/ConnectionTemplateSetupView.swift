@@ -128,7 +128,8 @@ struct ConnectionTemplateSetupView: View {
         TemplateCredentialView(
             template: selectedTemplate,
             input: $input,
-            status: credentialStatus,
+            passwordReadiness: passwordReadiness,
+            totpSeedReadiness: totpSeedReadiness,
             password: $password,
             totpSeed: $totpSeed,
             refreshStatus: refreshCredentialStatus
@@ -143,7 +144,10 @@ struct ConnectionTemplateSetupView: View {
         ConnectionTemplateReviewView(
             template: selectedTemplate,
             input: resolvedInput,
-            configuration: appState.configuration
+            configuration: appState.configuration,
+            passwordReadiness: passwordReadiness,
+            totpSeedReadiness: totpSeedReadiness,
+            validationMessage: saveValidationMessage
         )
     }
 
@@ -165,6 +169,8 @@ struct ConnectionTemplateSetupView: View {
                     finish()
                 }
                 .keyboardShortcut(.defaultAction)
+                .disabled(saveValidationMessage != nil)
+                .help(saveValidationMessage ?? "Save this connection")
             } else {
                 Button("Next") {
                     advance()
@@ -176,19 +182,40 @@ struct ConnectionTemplateSetupView: View {
 
     private var resolvedInput: ConnectionTemplateSetupInput {
         var resolved = input
-        resolved.passwordAvailable = passwordAvailable
-        resolved.totpSeedAvailable = totpSeedAvailable
+        resolved.passwordAvailable = passwordReadiness.isAvailable
+        resolved.totpSeedAvailable = totpSeedReadiness.isAvailable
         return resolved
     }
 
-    private var passwordAvailable: Bool {
-        !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || credentialStatus?.passwordState == .available
+    private var passwordReadiness: CredentialReadiness {
+        credentialReadiness(typedValue: password, keychainState: credentialStatus?.passwordState)
     }
 
-    private var totpSeedAvailable: Bool {
-        !totpSeed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            || credentialStatus?.totpSeedState == .available
+    private var totpSeedReadiness: CredentialReadiness {
+        credentialReadiness(typedValue: totpSeed, keychainState: credentialStatus?.totpSeedState)
+    }
+
+    private var saveValidationMessage: String? {
+        do {
+            try ConnectionTemplateSetupService.validate(resolvedInput)
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
+    private func credentialReadiness(typedValue: String, keychainState: KeychainCredentialState?) -> CredentialReadiness {
+        if !typedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return .entered
+        }
+        switch keychainState {
+        case .available:
+            return .found
+        case .unreadable(let message):
+            return .unreadable(message)
+        case .missing, nil:
+            return .missing
+        }
     }
 
     private func loadTemplate(_ templateID: ConnectionTemplateID) {
@@ -210,8 +237,8 @@ struct ConnectionTemplateSetupView: View {
 
     private func refreshCredentialStatus() {
         credentialStatus = appState.accountSetupCredentialStatus(for: input)
-        input.passwordAvailable = passwordAvailable
-        input.totpSeedAvailable = totpSeedAvailable
+        input.passwordAvailable = passwordReadiness.isAvailable
+        input.totpSeedAvailable = totpSeedReadiness.isAvailable
     }
 
     private func finish() {
@@ -234,6 +261,79 @@ struct ConnectionTemplateSetupView: View {
                     step = .template
                 }
             }
+        }
+    }
+}
+
+private enum CredentialReadiness: Equatable {
+    case found
+    case entered
+    case missing
+    case unreadable(String)
+
+    var isAvailable: Bool {
+        switch self {
+        case .found, .entered:
+            true
+        case .missing, .unreadable:
+            false
+        }
+    }
+
+    var reviewText: String {
+        switch self {
+        case .found:
+            "Found in Keychain"
+        case .entered:
+            "Entered now"
+        case .missing:
+            "Not found"
+        case .unreadable:
+            "Keychain unreadable"
+        }
+    }
+
+    var statusText: String {
+        switch self {
+        case .found:
+            "Found"
+        case .entered:
+            "Entered"
+        case .missing:
+            "Not found"
+        case .unreadable:
+            "Unreadable"
+        }
+    }
+
+    var detailText: String? {
+        switch self {
+        case .unreadable(let message):
+            message
+        case .found, .entered, .missing:
+            nil
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .found, .entered:
+            "checkmark.circle.fill"
+        case .missing:
+            "questionmark.circle"
+        case .unreadable:
+            "exclamationmark.triangle.fill"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .found, .entered:
+            .green
+        case .missing:
+            .secondary
+        case .unreadable:
+            .orange
         }
     }
 }
@@ -290,7 +390,8 @@ private struct ConnectionTemplateSelectionRow: View {
 private struct TemplateCredentialView: View {
     var template: ConnectionTemplate
     @Binding var input: ConnectionTemplateSetupInput
-    var status: ConnectionTemplateCredentialStatus?
+    var passwordReadiness: CredentialReadiness
+    var totpSeedReadiness: CredentialReadiness
     @Binding var password: String
     @Binding var totpSeed: String
     var refreshStatus: () -> Void
@@ -302,8 +403,8 @@ private struct TemplateCredentialView: View {
                     Text(template.displayName)
                         .font(.headline)
                     Spacer()
-                    CredentialStatusLabel(title: "Password", state: passwordState)
-                    CredentialStatusLabel(title: "TOTP", state: totpState)
+                    CredentialStatusLabel(title: "Password", readiness: passwordReadiness)
+                    CredentialStatusLabel(title: "TOTP", readiness: totpSeedReadiness)
                     Button {
                         refreshStatus()
                     } label: {
@@ -325,7 +426,7 @@ private struct TemplateCredentialView: View {
                         Text(template.credentialHost)
                             .textSelection(.enabled)
                     }
-                    if passwordState != .available {
+                    if showsPasswordField {
                         GridRow {
                             Text("Password")
                                 .foregroundStyle(.secondary)
@@ -333,7 +434,7 @@ private struct TemplateCredentialView: View {
                                 .textFieldStyle(.roundedBorder)
                         }
                     }
-                    if totpState != .available {
+                    if showsTOTPSeedField {
                         GridRow {
                             Text("TOTP Seed")
                                 .foregroundStyle(.secondary)
@@ -353,18 +454,12 @@ private struct TemplateCredentialView: View {
         }
     }
 
-    private var passwordState: KeychainCredentialState {
-        if !password.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return .available
-        }
-        return status?.passwordState ?? .missing
+    private var showsPasswordField: Bool {
+        passwordReadiness != .found
     }
 
-    private var totpState: KeychainCredentialState {
-        if !totpSeed.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return .available
-        }
-        return status?.totpSeedState ?? .missing
+    private var showsTOTPSeedField: Bool {
+        totpSeedReadiness != .found
     }
 }
 
@@ -440,39 +535,77 @@ private struct ConnectionTemplateReviewView: View {
     var template: ConnectionTemplate
     var input: ConnectionTemplateSetupInput
     var configuration: AppConfiguration
+    var passwordReadiness: CredentialReadiness
+    var totpSeedReadiness: CredentialReadiness
+    var validationMessage: String?
 
     var body: some View {
         SectionPanel(title: "Review", systemImage: "checklist") {
-            KeyValueGrid(rows: rows)
+            VStack(alignment: .leading, spacing: 14) {
+                if let validationMessage {
+                    InlineNotice(
+                        title: "Setup needs attention",
+                        message: validationMessage,
+                        systemImage: "exclamationmark.triangle"
+                    )
+                }
+
+                ReviewGroup(
+                    title: "Template",
+                    rows: [
+                        KeyValueRow("Name", template.displayName),
+                        KeyValueRow("Credential Host", template.credentialHost)
+                    ]
+                )
+
+                Divider()
+
+                ReviewGroup(
+                    title: "Credentials",
+                    rows: [
+                        KeyValueRow("Username", input.username.trimmingCharacters(in: .whitespacesAndNewlines)),
+                        KeyValueRow("Password", passwordReadiness.reviewText),
+                        KeyValueRow("TOTP Seed", totpSeedReadiness.reviewText)
+                    ]
+                )
+
+                Divider()
+
+                ReviewGroup(title: "Tunnel", rows: tunnelRows)
+
+                if !pacRows.isEmpty {
+                    Divider()
+                    ReviewGroup(title: "PAC", rows: pacRows)
+                }
+            }
         }
     }
 
-    private var rows: [KeyValueRow] {
-        var values = [
-            KeyValueRow("Template", template.displayName),
-            KeyValueRow("Username", input.username.trimmingCharacters(in: .whitespacesAndNewlines)),
-            KeyValueRow("Password", input.passwordAvailable ? "Available" : "Missing"),
-            KeyValueRow("TOTP Seed", input.totpSeedAvailable ? "Available" : "Not configured")
-        ]
-
+    private var tunnelRows: [KeyValueRow] {
         guard input.useForTunnelling else {
-            values.append(KeyValueRow("Tunnel", "Credentials only"))
-            return values
+            return [KeyValueRow("Mode", "Credentials only")]
         }
 
-        values.append(contentsOf: [
+        var values = [
             KeyValueRow("Profile", template.profileName),
             KeyValueRow("Final Server", input.tunnelHost.trimmingCharacters(in: .whitespacesAndNewlines)),
             KeyValueRow("SOCKS Port", "\(resolvedLocalSocksPort)")
-        ])
+        ]
 
         if let jumpHost = template.jumpHost(username: input.username.trimmingCharacters(in: .whitespacesAndNewlines)) {
             values.append(KeyValueRow("Bastion", jumpHost))
         }
-        if let pacRule = template.pacDomainPattern(tunnelHost: input.tunnelHost) {
-            values.append(KeyValueRow("PAC Rule", "\(template.pacRuleName): \(pacRule)"))
-        }
         return values
+    }
+
+    private var pacRows: [KeyValueRow] {
+        guard input.useForTunnelling, let pacRule = template.pacDomainPattern(tunnelHost: input.tunnelHost) else {
+            return []
+        }
+        return [
+            KeyValueRow("Rule", template.pacRuleName),
+            KeyValueRow("Domain Pattern", pacRule)
+        ]
     }
 
     private var resolvedLocalSocksPort: Int {
@@ -485,6 +618,19 @@ private struct ConnectionTemplateReviewView: View {
             port += 1
         }
         return port
+    }
+}
+
+private struct ReviewGroup: View {
+    var title: String
+    var rows: [KeyValueRow]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.callout.weight(.semibold))
+            KeyValueGrid(rows: rows)
+        }
     }
 }
 
@@ -518,28 +664,13 @@ private struct EditableSuggestionField: View {
 
 private struct CredentialStatusLabel: View {
     var title: String
-    var state: KeychainCredentialState
+    var readiness: CredentialReadiness
 
     var body: some View {
-        Label(title, systemImage: symbol)
+        Label("\(title) \(readiness.statusText)", systemImage: readiness.symbol)
             .font(.caption)
-            .foregroundStyle(color)
-    }
-
-    private var symbol: String {
-        switch state {
-        case .available: "checkmark.circle.fill"
-        case .missing: "questionmark.circle"
-        case .unreadable: "exclamationmark.triangle.fill"
-        }
-    }
-
-    private var color: Color {
-        switch state {
-        case .available: .green
-        case .missing: .secondary
-        case .unreadable: .orange
-        }
+            .foregroundStyle(readiness.color)
+            .help(readiness.detailText ?? readiness.reviewText)
     }
 }
 

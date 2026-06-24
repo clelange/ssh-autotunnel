@@ -109,6 +109,7 @@
 - Replaced automatic first-launch setup with an on-demand template-based New Connection flow and a dashboard empty state for first profile creation.
 - Renamed the setup core from account presets to connection templates and simplified template setup to a single-template apply path.
 - Renamed stored setup account state to template accounts in app configuration and redacted exports.
+- Polished first-run template setup UI with fitting empty-state actions, human-readable System PAC summaries, clearer credential readiness labels, and disabled save with review warnings when required setup input is missing.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -132,6 +133,16 @@ swift test
 ```
 
 Both passed after the connection-template setup and template-account configuration refactors. The core test suite has 342 XCTest cases.
+
+Latest UI polish validation:
+
+```sh
+swift build
+swift test
+./script/build_and_run.sh --verify
+```
+
+All passed on `feat/new-connection-ui-polish`. Computer Use smoke-tested the isolated first-run dashboard and New Connection wizard with a temporary `CFFIXED_USER_HOME`: empty-state buttons fit, the System PAC tile showed “Not configured,” PSI Tier-3 missing credentials disabled Save with a review warning, typed password state changed to “Entered now,” and cancelling left the temporary config empty.
 
 Latest non-live validation:
 

@@ -173,6 +173,25 @@ extension AppState {
         }
     }
 
+    var systemPACStatusSummary: String {
+        if networkDecision.shouldDisableProxy {
+            return "Disabled"
+        }
+
+        switch systemPACStatus.state {
+        case .active:
+            return "Active"
+        case .staleAutoTunnelPAC:
+            return "Needs refresh"
+        case .notConfigured:
+            return "Not configured"
+        case .otherPAC:
+            return "Other PAC"
+        case .unknown:
+            return "Unknown"
+        }
+    }
+
     var systemPACStatusDetail: String {
         if networkDecision.shouldDisableProxy {
             return "Matched rule: \(networkDecision.matchedRule?.name ?? "unknown"). Active service: \(activePACServiceName)."

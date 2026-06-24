@@ -57,7 +57,7 @@ struct OverviewPage: View {
                     MetricTile(title: "Profiles", value: "\(appState.configuration.profiles.count)", detail: "\(runningTunnels) tunnels running")
                     MetricTile(title: "Hops", value: "\(runningHops)", detail: "App-owned jump connections")
                     MetricTile(title: "Needs Attention", value: "\(attentionProfiles.count)", detail: attentionProfiles.first?.name ?? "No active issues")
-                    MetricTile(title: "System PAC", value: appState.systemPACStatus.state.rawValue, detail: appState.systemPACStatusTitle)
+                    MetricTile(title: "System PAC", value: appState.systemPACStatusSummary, detail: appState.systemPACStatusTitle)
                 }
 
                 SectionPanel(title: "System PAC", systemImage: "network") {
@@ -173,7 +173,7 @@ private struct FirstConnectionPanel: View {
 
     var body: some View {
         SectionPanel(title: "No Profiles", systemImage: "server.rack") {
-            HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text("Create the first SSH connection.")
                         .font(.callout.weight(.medium))
@@ -181,8 +181,6 @@ private struct FirstConnectionPanel: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
-
-                Spacer(minLength: 12)
 
                 HStack(spacing: 8) {
                     Button {
@@ -205,6 +203,7 @@ private struct FirstConnectionPanel: View {
                     }
                 }
                 .buttonStyle(.bordered)
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
     }
