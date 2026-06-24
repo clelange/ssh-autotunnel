@@ -59,6 +59,8 @@ Create an unsigned/ad-hoc-signed local zip with the app bundle and CLI helper:
 
 The archive is written to `dist/package/SSH-AutoTunnel-local.zip` with a matching `.sha256` checksum. CI verifies this package and uploads both files as short-lived GitHub Actions artifacts.
 
+Use [Docs/TesterQAChecklist.md](Docs/TesterQAChecklist.md) for manual tester-build validation.
+
 ## Local Endpoints
 
 When running, the app serves loopback-only endpoints:

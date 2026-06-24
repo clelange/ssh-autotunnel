@@ -110,6 +110,7 @@
 - Renamed the setup core from account presets to connection templates and simplified template setup to a single-template apply path.
 - Renamed stored setup account state to template accounts in app configuration and redacted exports.
 - Polished first-run template setup UI with fitting empty-state actions, human-readable System PAC summaries, clearer credential readiness labels, and disabled save with review warnings when required setup input is missing.
+- Added a tester QA checklist covering first-run setup, templates, credentials, tunnels, PAC/network behavior, CLI, Shortcuts, cleanup, and issue reporting for ad-hoc builds.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -143,6 +144,17 @@ swift test
 ```
 
 All passed on `feat/new-connection-ui-polish`. Computer Use smoke-tested the isolated first-run dashboard and New Connection wizard with a temporary `CFFIXED_USER_HOME`: empty-state buttons fit, the System PAC tile showed “Not configured,” PSI Tier-3 missing credentials disabled Save with a review warning, typed password state changed to “Entered now,” and cancelling left the temporary config empty.
+
+Latest tester-build validation:
+
+```sh
+swift build
+swift test
+./script/build_and_run.sh --verify
+./script/package_local.sh --verify
+```
+
+All passed on `main`. The package artifact is `dist/package/SSH-AutoTunnel-local.zip` with SHA-256 `abd278ff5a018bea6689d07e50de122972084df494197f2823c306ef4c393791`. The release app bundle was verified with `codesign --verify --deep --strict`, inspected as ad-hoc signed with bundle ID `dev.clange.ssh-autotunnel`, and launched successfully with a temporary `CFFIXED_USER_HOME`.
 
 Latest non-live validation:
 
