@@ -91,15 +91,35 @@ final class AppState: ObservableObject {
     }
 
     var pacURL: String {
-        "http://127.0.0.1:\(localServers.activePorts?.pacHTTPPort ?? configuration.pacHTTPPort)/proxy.pac?v=\(pacVersion)"
+        pacURL(port: localServers.activePorts?.pacHTTPPort ?? configuration.pacHTTPPort)
     }
 
     var statusURL: String {
         "http://127.0.0.1:\(localServers.activePorts?.pacHTTPPort ?? configuration.pacHTTPPort)/status"
     }
 
+    var configuredPACURL: String {
+        pacURL(port: configuration.pacHTTPPort)
+    }
+
+    var activePACURL: String {
+        pacURL(port: localServers.activePorts?.pacHTTPPort ?? configuration.pacHTTPPort)
+    }
+
+    var configuredAPIURL: String {
+        "http://127.0.0.1:\(configuration.apiHTTPPort)"
+    }
+
+    var activeAPIURL: String {
+        "http://127.0.0.1:\(localServers.activePorts?.apiHTTPPort ?? configuration.apiHTTPPort)"
+    }
+
     var activeServerPorts: LocalServerPorts? {
         localServers.activePorts
+    }
+
+    private func pacURL(port: Int) -> String {
+        "http://127.0.0.1:\(port)/proxy.pac?v=\(pacVersion)"
     }
 
     private var pacVersion: Int {

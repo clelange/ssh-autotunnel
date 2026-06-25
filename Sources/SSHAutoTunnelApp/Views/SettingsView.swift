@@ -6,24 +6,96 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @EnvironmentObject private var appState: AppState
     @State private var configurationFileMessage = ""
+    @State private var apiTokenMessage = ""
     @State private var sshConfigMessage = ""
     @State private var confirmsManagedSSHConfigInstall = false
 
     var body: some View {
+        TabView {
+            pacTab
+                .tabItem {
+                    Label("PAC", systemImage: "network")
+                }
+            localAPITab
+                .tabItem {
+                    Label("Local API", systemImage: "terminal")
+                }
+            openSSHConfigTab
+                .tabItem {
+                    Label("OpenSSH", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+            migrationTab
+                .tabItem {
+                    Label("Migration", systemImage: "arrow.triangle.2.circlepath")
+                }
+        }
+        .padding(12)
+        .frame(minWidth: 640, idealWidth: 640, minHeight: 460, idealHeight: 460)
+        .onChange(of: appState.configuration) {
+            appState.scheduleConfigurationSave()
+        }
+        .confirmationDialog(
+            "Install SSH AutoTunnel managed OpenSSH config?",
+            isPresented: $confirmsManagedSSHConfigInstall,
+            titleVisibility: .visible
+        ) {
+            Button("Install Include") {
+                installManagedSSHConfig()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This writes ~/.ssh/config.d/ssh-autotunnel.conf and adds or reuses SSH AutoTunnel's marked Include block in ~/.ssh/config. Existing unmarked OpenSSH config blocks and system settings are not rewritten. If ~/.ssh/config already exists and the Include block must be added, a backup is created first.")
+        }
+    }
+
+    private var pacTab: some View {
         Form {
-            Section("PAC") {
+            Section("Status") {
                 SystemPACStatusDetailView()
-                Text(appState.pacURL)
-                    .textSelection(.enabled)
-                TextField("PAC HTTP port", value: $appState.configuration.pacHTTPPort, format: .number)
-                TextField("Blocking proxy port", value: $appState.configuration.blockingHTTPProxyPort, format: .number)
+                CopyableValueRow(
+                    title: "Configured PAC URL",
+                    value: appState.configuredPACURL,
+                    help: "Copy the PAC URL that matches the configured PAC HTTP port"
+                )
+                if appState.activePACURL != appState.configuredPACURL {
+                    CopyableValueRow(
+                        title: "Active PAC URL",
+                        value: appState.activePACURL,
+                        help: "Copy the PAC URL served by the currently running listener"
+                    )
+                    Text("The running PAC listener is still using the previous port. It will move to the configured port after the configuration is saved and local servers restart.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Section("Local Service Ports") {
+                PortField(
+                    title: "PAC HTTP port",
+                    value: $appState.configuration.pacHTTPPort,
+                    defaultValue: SettingsPortDefaults.pacHTTP,
+                    help: "Loopback HTTP port that serves the PAC file and local status page."
+                )
+                PortField(
+                    title: "Blocking proxy port",
+                    value: $appState.configuration.blockingHTTPProxyPort,
+                    defaultValue: SettingsPortDefaults.blockingHTTPProxy,
+                    help: "Loopback HTTP proxy used by fail-closed PAC rules when a matching destination should be blocked instead of sent directly."
+                )
+                resetAllPortsButton
+                configurationValidationNotice
+            }
+
+            Section("PAC Composition") {
                 Toggle("Append existing PAC", isOn: $appState.configuration.pacAppendSource.enabled)
+                    .help("Append another PAC file after SSH AutoTunnel's generated rules.")
                 Picker("Existing PAC source", selection: $appState.configuration.pacAppendSource.kind) {
                     ForEach(PACAppendSourceKind.allCases) { kind in
                         Text(kind.displayName).tag(kind)
                     }
                 }
                 .disabled(!appState.configuration.pacAppendSource.enabled)
+                .help("Choose whether the appended PAC is loaded from an HTTP(S) URL or a local file.")
                 pacAppendSourceLocationField
                 HStack {
                     Button("Reload Existing PAC") {
@@ -36,36 +108,83 @@ struct SettingsView: View {
                         .foregroundStyle(.secondary)
                         .textSelection(.enabled)
                 }
-                if let message = appState.configurationValidationMessage {
-                    Text(message)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
+            }
+
+            Section("System Proxy") {
                 Picker("System proxy", selection: $appState.configuration.proxyApplyMode) {
                     Text("Manual").tag(ProxyApplyMode.manual)
                     Text("Apply to active service").tag(ProxyApplyMode.activeNetworkServicePAC)
                 }
-                Button("Apply System PAC Now") {
-                    appState.applySystemPAC()
+                .help("Choose whether SSH AutoTunnel should manage macOS Automatic Proxy Configuration for the active network service.")
+                HStack {
+                    Button("Apply System PAC Now") {
+                        appState.applySystemPAC()
+                    }
+                    .help("Apply the configured SSH AutoTunnel PAC URL to the active network service.")
+                    Button("Restore Previous System Proxy") {
+                        appState.restoreSystemPAC()
+                    }
+                    .help("Restore the proxy settings saved before SSH AutoTunnel applied its PAC URL.")
                 }
-                .help("Apply PAC to active network service")
-                Button("Restore Previous System Proxy") {
-                    appState.restoreSystemPAC()
-                }
-                .help("Restore previous system proxy settings")
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var localAPITab: some View {
+        Form {
             Section("Local API") {
-                Text("http://127.0.0.1:\(appState.configuration.apiHTTPPort)")
-                    .textSelection(.enabled)
-                TextField("API HTTP port", value: $appState.configuration.apiHTTPPort, format: .number)
-                SecureField("API token", text: $appState.configuration.apiToken)
+                CopyableValueRow(
+                    title: "Configured API URL",
+                    value: appState.configuredAPIURL,
+                    help: "Copy the local API URL that matches the configured API HTTP port"
+                )
+                if appState.activeAPIURL != appState.configuredAPIURL {
+                    CopyableValueRow(
+                        title: "Active API URL",
+                        value: appState.activeAPIURL,
+                        help: "Copy the local API URL served by the currently running listener"
+                    )
+                    Text("The running API listener is still using the previous port. It will move to the configured port after the configuration is saved and local servers restart.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                PortField(
+                    title: "API HTTP port",
+                    value: $appState.configuration.apiHTTPPort,
+                    defaultValue: SettingsPortDefaults.apiHTTP,
+                    help: "Loopback HTTP port used by ssh-autotunnelctl, Shortcuts actions, and local automation."
+                )
+                resetAllPortsButton
+                configurationValidationNotice
+                HStack {
+                    SecureField("API token", text: $appState.configuration.apiToken)
+                        .help("Token required by local API clients. The server only listens on loopback.")
+                    Button {
+                        copyAPIToken()
+                    } label: {
+                        Label("Copy API Token", systemImage: "doc.on.doc")
+                    }
+                    .help("Copy the current API token")
+                }
                 Button("Rotate API Token") {
                     appState.rotateAPIToken()
+                    apiTokenMessage = "Rotated API token"
                 }
                 .help("Create a new local API token")
+                if !apiTokenMessage.isEmpty {
+                    Text(apiTokenMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var openSSHConfigTab: some View {
+        Form {
             Section("OpenSSH Config") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -78,10 +197,13 @@ struct SettingsView: View {
                         Button {
                             confirmsManagedSSHConfigInstall = true
                         } label: {
-                            Label("Install Managed Include...", systemImage: "square.and.arrow.down")
+                            Label("Install Include...", systemImage: "square.and.arrow.down")
                         }
-                        .help("Install managed SSH include configuration")
+                        .help("Write SSH AutoTunnel's managed OpenSSH include file and add a marked Include block to ~/.ssh/config when needed.")
                     }
+                    Text("The managed include is limited to SSH AutoTunnel jump-host profile entries. Installation writes a separate managed file and only adds a marked Include block to your main OpenSSH config when that block is missing.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                     ScrollView {
                         Text(managedSSHConfigPreview())
                             .font(.caption.monospaced())
@@ -97,7 +219,12 @@ struct SettingsView: View {
                     }
                 }
             }
+        }
+        .formStyle(.grouped)
+    }
 
+    private var migrationTab: some View {
+        Form {
             Section("Migration") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -166,23 +293,6 @@ struct SettingsView: View {
             }
         }
         .formStyle(.grouped)
-        .padding()
-        .frame(minWidth: 640, minHeight: 620)
-        .onChange(of: appState.configuration) {
-            appState.scheduleConfigurationSave()
-        }
-        .confirmationDialog(
-            "Install SSH AutoTunnel managed OpenSSH config?",
-            isPresented: $confirmsManagedSSHConfigInstall,
-            titleVisibility: .visible
-        ) {
-            Button("Install Managed Include") {
-                installManagedSSHConfig()
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("This writes ~/.ssh/config.d/ssh-autotunnel.conf and adds a marked Include block to ~/.ssh/config. Existing SSH config blocks are not edited.")
-        }
     }
 
     @ViewBuilder
@@ -190,9 +300,11 @@ struct SettingsView: View {
         if appState.configuration.pacAppendSource.kind == .url {
             TextField("Existing PAC URL", text: $appState.configuration.pacAppendSource.location)
                 .disabled(!appState.configuration.pacAppendSource.enabled)
+                .help("HTTP(S) PAC URL to append after SSH AutoTunnel's generated rules.")
         } else {
             HStack {
                 TextField("Existing PAC file", text: $appState.configuration.pacAppendSource.location)
+                    .help("Local PAC file to append after SSH AutoTunnel's generated rules.")
                 Button("Choose...") {
                     choosePACFile()
                 }
@@ -200,6 +312,32 @@ struct SettingsView: View {
             }
             .disabled(!appState.configuration.pacAppendSource.enabled)
         }
+    }
+
+    @ViewBuilder
+    private var configurationValidationNotice: some View {
+        if let message = appState.configurationValidationMessage {
+            Text(message)
+                .font(.caption)
+                .foregroundStyle(.red)
+                .textSelection(.enabled)
+        }
+    }
+
+    private var resetAllPortsButton: some View {
+        Button {
+            resetAllLocalServicePorts()
+        } label: {
+            Label("Reset All Ports to Defaults", systemImage: "arrow.counterclockwise")
+        }
+        .disabled(usesDefaultLocalServicePorts)
+        .help("Restore PAC HTTP \(SettingsPortDefaults.pacHTTP), API HTTP \(SettingsPortDefaults.apiHTTP), and blocking proxy \(SettingsPortDefaults.blockingHTTPProxy).")
+    }
+
+    private var usesDefaultLocalServicePorts: Bool {
+        appState.configuration.pacHTTPPort == SettingsPortDefaults.pacHTTP &&
+            appState.configuration.apiHTTPPort == SettingsPortDefaults.apiHTTP &&
+            appState.configuration.blockingHTTPProxyPort == SettingsPortDefaults.blockingHTTPProxy
     }
 
     private func keychainStatusLabel(_ state: KeychainCredentialState) -> String {
@@ -210,11 +348,21 @@ struct SettingsView: View {
         }
     }
 
+    private func resetAllLocalServicePorts() {
+        appState.configuration.pacHTTPPort = SettingsPortDefaults.pacHTTP
+        appState.configuration.apiHTTPPort = SettingsPortDefaults.apiHTTP
+        appState.configuration.blockingHTTPProxyPort = SettingsPortDefaults.blockingHTTPProxy
+    }
+
+    private func copyAPIToken() {
+        copyToPasteboard(appState.configuration.apiToken)
+        apiTokenMessage = "Copied API token"
+    }
+
     private func copyManagedSSHConfigSnippet() {
         do {
             let snippet = try appState.managedSSHConfigSnippet()
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(snippet, forType: .string)
+            copyToPasteboard(snippet)
             sshConfigMessage = "Copied managed OpenSSH config snippet"
         } catch {
             sshConfigMessage = "Could not copy managed OpenSSH config: \(error.localizedDescription)"
@@ -353,5 +501,73 @@ struct SettingsView: View {
         alert.addButton(withTitle: "Import")
         alert.addButton(withTitle: "Cancel")
         return alert.runModal() == .alertFirstButtonReturn
+    }
+
+    private func copyToPasteboard(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+private enum SettingsPortDefaults {
+    static let pacHTTP = 18_483
+    static let apiHTTP = 18_484
+    static let blockingHTTPProxy = 18_485
+}
+
+private struct PortField: View {
+    var title: String
+    @Binding var value: Int
+    var defaultValue: Int
+    var help: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            TextField(title, value: $value, format: .number)
+                .frame(width: 190)
+                .help(help)
+            Stepper("Adjust \(title)", value: $value, in: PortConfigurationValidator.validRange)
+                .labelsHidden()
+                .help(help)
+            Button {
+                value = defaultValue
+            } label: {
+                Label("Reset \(title)", systemImage: "arrow.counterclockwise")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .disabled(value == defaultValue)
+            .opacity(value == defaultValue ? 0 : 1)
+            .help("Reset \(title) to \(defaultValue)")
+        }
+    }
+}
+
+private struct CopyableValueRow: View {
+    var title: String
+    var value: String
+    var help: String
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(title)
+                .foregroundStyle(.secondary)
+                .frame(width: 150, alignment: .leading)
+            Text(value)
+                .font(.callout.monospaced())
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .textSelection(.enabled)
+            Spacer()
+            Button {
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(value, forType: .string)
+            } label: {
+                Label("Copy \(title)", systemImage: "doc.on.doc")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help(help)
+        }
     }
 }

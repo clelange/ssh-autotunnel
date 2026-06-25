@@ -45,7 +45,7 @@ struct SSHAutoTunnelApp: App {
                 .onAppear {
                     appDelegate.appState = appState
                 }
-                .frame(minWidth: 760, minHeight: 500)
+                .frame(minWidth: 640, minHeight: 460)
         }
 
         Window("SSH AutoTunnel Diagnostics", id: "diagnostics") {
