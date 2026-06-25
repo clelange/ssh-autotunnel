@@ -98,7 +98,7 @@ struct ConnectionTemplateSetupView: View {
 
     private var header: some View {
         HStack(alignment: .firstTextBaseline) {
-            Label("New Connection", systemImage: "plus.circle")
+            Label("New Connection from Template", systemImage: "plus.circle")
                 .font(.title2)
             Spacer()
             Button {
@@ -113,6 +113,21 @@ struct ConnectionTemplateSetupView: View {
 
     private var templateStep: some View {
         VStack(alignment: .leading, spacing: 12) {
+            SectionPanel(title: "Templates are optional", systemImage: "info.circle") {
+                HStack(alignment: .firstTextBaseline, spacing: 12) {
+                    Text("Templates prefill CERN and PSI settings. For another SSH server, start with a blank profile and edit it in Profiles.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 12)
+                    Button {
+                        createBlankProfile()
+                    } label: {
+                        Label("Blank Profile", systemImage: "plus")
+                    }
+                }
+            }
+
             ForEach(ConnectionTemplateSetupService.templates) { template in
                 ConnectionTemplateSelectionRow(
                     template: template,
@@ -262,6 +277,14 @@ struct ConnectionTemplateSetupView: View {
                 }
             }
         }
+    }
+
+    private func createBlankProfile() {
+        let profileID = appState.addGenericProfile()
+        DashboardNavigationRequest.shared.selectProfile(profileID)
+        openWindow(id: "main")
+        AppActivation.activate()
+        dismiss()
     }
 }
 

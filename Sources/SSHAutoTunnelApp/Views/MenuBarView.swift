@@ -118,9 +118,18 @@ struct MenuBarView: View {
                 Label("Diagnostics", systemImage: "stethoscope")
             }
 
-            Button {
-                openWindow(id: "connection-template-setup")
-                AppActivation.activate()
+            Menu {
+                Button {
+                    openConnectionTemplateSetup()
+                } label: {
+                    Label("From Template...", systemImage: "list.bullet.rectangle")
+                }
+
+                Button {
+                    createBlankProfile()
+                } label: {
+                    Label("Blank Profile", systemImage: "plus")
+                }
             } label: {
                 Label("New Connection", systemImage: "plus.circle")
             }
@@ -159,5 +168,17 @@ struct MenuBarView: View {
     private func copy(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+
+    private func openConnectionTemplateSetup() {
+        openWindow(id: "connection-template-setup")
+        AppActivation.activate()
+    }
+
+    private func createBlankProfile() {
+        let profileID = appState.addGenericProfile()
+        DashboardNavigationRequest.shared.selectProfile(profileID)
+        openWindow(id: "main")
+        AppActivation.activate()
     }
 }

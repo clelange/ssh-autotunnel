@@ -5,6 +5,7 @@ import SwiftUI
 struct DashboardView: View {
     @EnvironmentObject private var appState: AppState
     @Environment(\.openWindow) private var openWindow
+    @StateObject private var navigationRequest = DashboardNavigationRequest.shared
     @State private var selection: DashboardSelection? = .overview
     @State private var deleteCandidates: [TunnelProfile] = []
 
@@ -44,13 +45,22 @@ struct DashboardView: View {
                     }
 
                     ToolbarItemGroup {
-                        Button {
-                            openWindow(id: "connection-template-setup")
-                            AppActivation.activate()
+                        Menu {
+                            Button {
+                                openConnectionTemplateSetup()
+                            } label: {
+                                Label("From Template...", systemImage: "list.bullet.rectangle")
+                            }
+
+                            Button {
+                                createBlankProfile()
+                            } label: {
+                                Label("Blank Profile", systemImage: "plus")
+                            }
                         } label: {
                             Label("New Connection", systemImage: "plus.circle")
                         }
-                        .help("Create a connection from a template")
+                        .help("Create a connection from a template or a blank profile")
 
                         Button {
                             openWindow(id: "settings")
@@ -92,6 +102,13 @@ struct DashboardView: View {
         } message: {
             Text("Keychain cleanup removes configured password and TOTP items only when no remaining profile references the same service and account.")
         }
+        .onAppear {
+            consumePendingProfileSelection()
+        }
+        .onReceive(navigationRequest.$pendingProfileSelection.compactMap { $0 }) { request in
+            selectProfile(request.profileID)
+            navigationRequest.clear(request)
+        }
     }
 
     @ViewBuilder
@@ -99,8 +116,7 @@ struct DashboardView: View {
         switch selection ?? .overview {
         case .overview:
             OverviewPage {
-                let profileID = appState.addGenericProfile()
-                selection = .profile(profileID)
+                createBlankProfile()
             }
                 .environmentObject(appState)
                 .navigationTitle("Overview")
@@ -165,8 +181,7 @@ struct DashboardView: View {
     private var profileControlBar: some View {
         HStack(spacing: 8) {
             Button {
-                let profileID = appState.addGenericProfile()
-                selection = .profile(profileID)
+                createBlankProfile()
             } label: {
                 Label("Add Profile", systemImage: "plus")
             }
@@ -251,6 +266,29 @@ struct DashboardView: View {
 
         selection = nextSelection
         appState.deleteProfiles(at: offsets, deleteKeychainItems: deleteKeychainItems)
+    }
+
+    private func openConnectionTemplateSetup() {
+        openWindow(id: "connection-template-setup")
+        AppActivation.activate()
+    }
+
+    @discardableResult
+    private func createBlankProfile() -> UUID {
+        let profileID = appState.addGenericProfile()
+        selectProfile(profileID)
+        return profileID
+    }
+
+    private func selectProfile(_ profileID: UUID) {
+        guard appState.configuration.profiles.contains(where: { $0.id == profileID }) else { return }
+        selection = .profile(profileID)
+    }
+
+    private func consumePendingProfileSelection() {
+        guard let request = navigationRequest.pendingProfileSelection else { return }
+        selectProfile(request.profileID)
+        navigationRequest.clear(request)
     }
 
     private func selectionAfterDeleting(ids deletingIDs: [UUID]) -> DashboardSelection {
