@@ -5,6 +5,8 @@ MODE="${1:-run}"
 APP_NAME="SSHAutoTunnel"
 BUNDLE_ID="dev.clange.ssh-autotunnel"
 MIN_SYSTEM_VERSION="26.0"
+APP_VERSION="0.2.0"
+APP_BUILD="2"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -84,6 +86,10 @@ cat >"$INFO_PLIST" <<PLIST
   <string>SSH AutoTunnel</string>
   <key>CFBundlePackageType</key>
   <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$APP_VERSION</string>
+  <key>CFBundleVersion</key>
+  <string>$APP_BUILD</string>
   <key>LSMinimumSystemVersion</key>
   <string>$MIN_SYSTEM_VERSION</string>
   <key>NSPrincipalClass</key>
