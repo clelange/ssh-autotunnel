@@ -29,16 +29,15 @@ public enum SSHCommandBuilder {
             arguments.append("-N")
         }
         arguments += [
+            "-F", "none",
             "-D", "127.0.0.1:\(profile.localSocksPort)",
             "-p", "\(profile.sshPort)",
             "-o", "ExitOnForwardFailure=yes",
-            "-o", "ControlMaster=no",
-            "-o", "ControlPath=none",
-            "-o", "ControlPersist=no",
             "-o", "ForkAfterAuthentication=no",
             "-o", "ServerAliveInterval=20",
             "-o", "ServerAliveCountMax=2"
         ]
+        appendControlMasterSuppression(to: &arguments)
 
         if let strictHostKeyCheckingValue = profile.hostKeyPolicy.strictHostKeyCheckingValue {
             arguments += ["-o", "StrictHostKeyChecking=\(strictHostKeyCheckingValue)"]
@@ -78,6 +77,8 @@ public enum SSHCommandBuilder {
         var arguments = [
             "-p", "\(profile.sshPort)"
         ]
+        appendControlMasterSuppression(to: &arguments)
+        appendForwardingSuppression(to: &arguments)
 
         if let strictHostKeyCheckingValue = profile.hostKeyPolicy.strictHostKeyCheckingValue {
             arguments += ["-o", "StrictHostKeyChecking=\(strictHostKeyCheckingValue)"]
@@ -146,6 +147,18 @@ public enum SSHCommandBuilder {
         for forwarding in profile.localPortForwardings where forwarding.enabled {
             arguments += ["-L", forwarding.sshArgument]
         }
+    }
+
+    private static func appendControlMasterSuppression(to arguments: inout [String]) {
+        arguments += [
+            "-o", "ControlMaster=no",
+            "-o", "ControlPath=none",
+            "-o", "ControlPersist=no"
+        ]
+    }
+
+    static func appendForwardingSuppression(to arguments: inout [String]) {
+        arguments += ["-o", "ClearAllForwardings=yes"]
     }
 
     static func appendLaunchOptions(_ options: SSHLaunchOptions, profile: TunnelProfile, to arguments: inout [String]) {

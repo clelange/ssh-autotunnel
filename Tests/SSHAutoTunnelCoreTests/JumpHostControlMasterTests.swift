@@ -25,6 +25,7 @@ final class JumpHostControlMasterTests: XCTestCase {
         XCTAssertTrue(controlMaster.controlPath.hasSuffix("/ssh-autotunnel-\(profileID.uuidString)/control"))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-M", "-tt", "-S", controlMaster.controlPath]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "ControlMaster=yes"]))
+        XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "ClearAllForwardings=yes"]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "StrictHostKeyChecking=yes"]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "PreferredAuthentications=keyboard-interactive,password"]))
         XCTAssertFalse(controlMaster.command.arguments.containsSubsequence(["-o", "LogLevel=DEBUG"]))
@@ -33,7 +34,7 @@ final class JumpHostControlMasterTests: XCTestCase {
         XCTAssertNil(controlMaster.finalProfile.jumpHost)
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.contains("-o"))
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.contains { option in
-            option == "ProxyCommand=/usr/bin/ssh -o ControlMaster=auto -o BatchMode=yes -S \(controlMaster.controlPath) -W %h:%p alice@hopx.psi.ch"
+            option == "ProxyCommand=/usr/bin/ssh -o ControlMaster=auto -o BatchMode=yes -o ClearAllForwardings=yes -S \(controlMaster.controlPath) -W %h:%p alice@hopx.psi.ch"
         })
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.containsSubsequence(["-o", "LogLevel=DEBUG", "-o"]))
     }

@@ -45,6 +45,7 @@ public enum JumpHostControlMasterFactory {
             "-o", "ServerAliveCountMax=2",
             "-p", "\(profile.sshPort)"
         ]
+        SSHCommandBuilder.appendForwardingSuppression(to: &masterArguments)
 
         if let strictHostKeyCheckingValue = profile.hostKeyPolicy.strictHostKeyCheckingValue {
             masterArguments += ["-o", "StrictHostKeyChecking=\(strictHostKeyCheckingValue)"]
@@ -116,6 +117,7 @@ public enum JumpHostControlMasterFactory {
             "/usr/bin/ssh",
             "-o", "ControlMaster=auto",
             "-o", "BatchMode=yes",
+            "-o", "ClearAllForwardings=yes",
             "-S", SSHCommand.shellQuoted(controlPath),
             "-W", "%h:%p",
             SSHCommand.shellQuoted(jumpHost)

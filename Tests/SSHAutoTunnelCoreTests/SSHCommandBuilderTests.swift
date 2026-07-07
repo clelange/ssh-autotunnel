@@ -15,6 +15,7 @@ final class SSHCommandBuilderTests: XCTestCase {
 
         XCTAssertEqual(command.executable, "/usr/bin/ssh")
         XCTAssertEqual(command.arguments.first, "-N")
+        XCTAssertTrue(command.arguments.containsSubsequence(["-F", "none"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-D", "127.0.0.1:1090"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ControlMaster=no"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ControlPath=none"]))
@@ -56,9 +57,10 @@ final class SSHCommandBuilderTests: XCTestCase {
         XCTAssertEqual(command.executable, "/usr/bin/ssh")
         XCTAssertFalse(command.arguments.contains("-N"))
         XCTAssertFalse(command.arguments.contains("-D"))
-        XCTAssertFalse(command.arguments.contains("ControlMaster=no"))
-        XCTAssertFalse(command.arguments.contains("ControlPath=none"))
-        XCTAssertFalse(command.arguments.contains("ControlPersist=no"))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ControlMaster=no"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ControlPath=none"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ControlPersist=no"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ClearAllForwardings=yes"]))
         XCTAssertFalse(command.arguments.contains("ForkAfterAuthentication=no"))
         XCTAssertTrue(command.arguments.containsSubsequence(["-p", "2222"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-J", "alice@bastion.example.org"]))
@@ -136,6 +138,25 @@ final class SSHCommandBuilderTests: XCTestCase {
         XCTAssertTrue(command.arguments.containsSubsequence(["-o", "PasswordAuthentication=no"]))
     }
 
+    func testCERNLxPlusTunnelTargetsLxTunnelDirectly() {
+        let profile = TunnelProfile(
+            name: "CERN LxPlus",
+            host: "lxtunnel.cern.ch",
+            user: "clange",
+            localSocksPort: 1083,
+            interactiveHost: "lxplus.cern.ch",
+            authMode: .passwordAndTOTP
+        )
+
+        let command = SSHCommandBuilder.tunnelCommand(for: profile)
+
+        XCTAssertEqual(command.arguments.last, "clange@lxtunnel.cern.ch")
+        XCTAssertTrue(command.arguments.containsSubsequence(["-F", "none"]))
+        XCTAssertFalse(command.arguments.contains("-J"))
+        XCTAssertFalse(command.arguments.contains { $0.contains("ProxyCommand") })
+        XCTAssertFalse(command.arguments.contains { $0.contains("lxplus.cern.ch") })
+    }
+
     func testExtraOptionsArePreservedBeforeDestination() {
         let profile = TunnelProfile(
             name: "Options",
@@ -210,6 +231,7 @@ final class SSHCommandBuilderTests: XCTestCase {
         let command = SSHCommandBuilder.tunnelCommand(for: profile)
 
         XCTAssertFalse(command.arguments.contains("-N"))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-F", "none"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-D", "127.0.0.1:1099"]))
         XCTAssertEqual(command.arguments.last, "ssh.example.org")
     }
@@ -227,6 +249,7 @@ final class SSHCommandBuilderTests: XCTestCase {
 
         let command = SSHCommandBuilder.tunnelCommand(for: profile)
 
+        XCTAssertTrue(command.arguments.containsSubsequence(["-F", "none"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-L", "127.0.0.1:10201:10.0.0.5:22"]))
         XCTAssertFalse(command.arguments.contains("127.0.0.1:10202:10.0.0.6:5432"))
     }
