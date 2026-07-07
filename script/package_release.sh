@@ -190,16 +190,16 @@ sign_code "$APP_BUNDLE"
 /usr/bin/hdiutil create -volname "SSH AutoTunnel" -srcfolder "$PAYLOAD_DIR" -ov -format UDZO "$DMG_PATH" >/dev/null
 sign_disk_image
 
-(
-  cd "$DIST_DIR"
-  /usr/bin/shasum -a 256 "$(basename "$DMG_PATH")" >"$(basename "$CHECKSUM_PATH")"
-)
-
 if [[ "$NOTARIZE" == "1" ]]; then
   notarize_and_staple
 else
   echo "Skipping notarization. Re-run with NOTARY_PROFILE=<profile> $0 --notarize for a Gatekeeper-ready release." >&2
 fi
+
+(
+  cd "$DIST_DIR"
+  /usr/bin/shasum -a 256 "$(basename "$DMG_PATH")" >"$(basename "$CHECKSUM_PATH")"
+)
 
 case "$MODE" in
   package|--package|notarize|--notarize)

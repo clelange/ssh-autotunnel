@@ -174,9 +174,10 @@ Latest release packaging validation:
 swift build
 swift test
 CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --verify
+NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --notarize
 ```
 
-All passed on `feat/ssh-command-config-isolation`. `swift test` executed 347 XCTest cases, and `package_release.sh --verify` produced `dist/release/SSH-AutoTunnel-0.2.0.dmg` with a matching checksum. The app signature was Developer ID-signed with hardened runtime and timestamp, and the DMG was Developer ID-signed. Gatekeeper still rejects the DMG as `Unnotarized Developer ID` until notary credentials are configured and `./script/package_release.sh --notarize` succeeds.
+All passed on `feat/ssh-command-config-isolation`. `swift test` executed 347 XCTest cases. `package_release.sh --verify` produced `dist/release/SSH-AutoTunnel-0.2.0.dmg` with a matching checksum. `package_release.sh --notarize` submitted the DMG to Apple, received `Accepted`, stapled the ticket, validated the stapled DMG, and passed Gatekeeper assessment as `Notarized Developer ID`. The notarized DMG SHA-256 is `295ad3ef70aae666f65eebf57c372a5604f0da07c4214dfc826c9c317eb11577`.
 
 ## Known Gaps
 
@@ -187,7 +188,7 @@ All passed on `feat/ssh-command-config-isolation`. `swift test` executed 347 XCT
 - Configuration export/import and support-bundle generation are unit-tested and exposed through CLI/API/Shortcuts, but live Shortcuts import/export invocation still needs end-to-end validation.
 - The local API token can be rotated from settings and is stored in a user-private config file; client authentication and error handling have integration coverage.
 - `ssh-auto2fa` service detection is unit-tested with fake readers; real Keychain availability still depends on the user's local items and access prompts.
-- The local package script creates an ad-hoc-signed zip. The release package script can Developer ID-sign a DMG, but live notarization still needs a configured notarytool profile or Apple/App Store Connect notary credentials.
+- The local package script creates an ad-hoc-signed zip. The release package script can Developer ID-sign and notarize a DMG; future release machines still need their own notarytool profile or Apple/App Store Connect notary credentials configured.
 
 ## Next Useful Milestones
 
