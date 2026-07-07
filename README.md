@@ -59,6 +59,17 @@ Create an unsigned/ad-hoc-signed local zip with the app bundle and CLI helper:
 
 The archive is written to `dist/package/SSH-AutoTunnel-local.zip` with a matching `.sha256` checksum. CI verifies this package and uploads both files as short-lived GitHub Actions artifacts.
 
+## Developer ID Release
+
+Create a Developer ID-signed DMG for distribution outside the Mac App Store:
+
+```sh
+CODESIGN_IDENTITY="<Developer ID Application SHA-1>" ./script/package_release.sh --verify
+NOTARY_PROFILE="ssh-autotunnel-notary" CODESIGN_IDENTITY="<Developer ID Application SHA-1>" ./script/package_release.sh --notarize
+```
+
+The release DMG is written to `dist/release/SSH-AutoTunnel-<version>.dmg` with a matching `.sha256` checksum. See [Docs/ReleaseDistribution.md](Docs/ReleaseDistribution.md) for notary credential setup and GitHub Releases commands.
+
 Use [Docs/TesterQAChecklist.md](Docs/TesterQAChecklist.md) for manual tester-build validation.
 
 ## Local Endpoints

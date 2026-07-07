@@ -111,6 +111,7 @@
 - Renamed stored setup account state to template accounts in app configuration and redacted exports.
 - Polished first-run template setup UI with fitting empty-state actions, human-readable System PAC summaries, clearer credential readiness labels, and disabled save with review warnings when required setup input is missing.
 - Added a tester QA checklist covering first-run setup, templates, credentials, tunnels, PAC/network behavior, CLI, Shortcuts, cleanup, and issue reporting for ad-hoc builds.
+- Added a Developer ID release packaging path that signs the app, embedded CLI, top-level CLI, and DMG with hardened runtime/timestamps, supports notarytool submission/stapling, and documents GitHub Release publishing.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -167,6 +168,16 @@ swift test
 
 All passed on `main` after the default-branch merge. `swift test` executed 342 XCTest cases, `build_and_run.sh --verify` built, signed, launched, and detected the app, and `package_local.sh --verify` produced and verified `dist/package/SSH-AutoTunnel-local.zip`.
 
+Latest release packaging validation:
+
+```sh
+swift build
+swift test
+CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --verify
+```
+
+All passed on `feat/ssh-command-config-isolation`. `swift test` executed 347 XCTest cases, and `package_release.sh --verify` produced `dist/release/SSH-AutoTunnel-0.2.0.dmg` with a matching checksum. The app signature was Developer ID-signed with hardened runtime and timestamp, and the DMG was Developer ID-signed. Gatekeeper still rejects the DMG as `Unnotarized Developer ID` until notary credentials are configured and `./script/package_release.sh --notarize` succeeds.
+
 ## Known Gaps
 
 - Real CERN/PSI SSH login flows still need live validation with the user’s Keychain secrets and reachable networks.
@@ -176,7 +187,7 @@ All passed on `main` after the default-branch merge. `swift test` executed 342 X
 - Configuration export/import and support-bundle generation are unit-tested and exposed through CLI/API/Shortcuts, but live Shortcuts import/export invocation still needs end-to-end validation.
 - The local API token can be rotated from settings and is stored in a user-private config file; client authentication and error handling have integration coverage.
 - `ssh-auto2fa` service detection is unit-tested with fake readers; real Keychain availability still depends on the user's local items and access prompts.
-- The package script creates a local ad-hoc-signed zip; Developer ID signing and notarization still need signing credentials and distribution decisions.
+- The local package script creates an ad-hoc-signed zip. The release package script can Developer ID-sign a DMG, but live notarization still needs a configured notarytool profile or Apple/App Store Connect notary credentials.
 
 ## Next Useful Milestones
 
