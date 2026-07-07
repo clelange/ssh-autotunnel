@@ -16,9 +16,12 @@ public final class TunnelManager {
     private let totpGenerator: (String) throws -> String
     private let initialReadinessGracePeriod: TimeInterval
     private let processExitOutputSettleDelay: TimeInterval
+    private let stopForceKillDelay: TimeInterval
+    private let stopVerificationDelay: TimeInterval
     private let now: () -> Date
     private let queue = DispatchQueue(label: "dev.clange.ssh-autotunnel.tunnels")
     private var processes: [UUID: ManagedTunnel] = [:]
+    private var terminatingProcesses: [Int32: ManagedTunnel] = [:]
     private var statuses: [UUID: TunnelRuntimeStatus] = [:]
     private var reconnectTokens: [UUID: UUID] = [:]
     private var reconnectAttempts: [UUID: Int] = [:]
@@ -53,6 +56,8 @@ public final class TunnelManager {
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
         initialReadinessGracePeriod: TimeInterval = 60,
         processExitOutputSettleDelay: TimeInterval = 0.05,
+        stopForceKillDelay: TimeInterval = 2.0,
+        stopVerificationDelay: TimeInterval = 1.0,
         now: @escaping () -> Date = Date.init,
         startsHealthTimer: Bool = true
     ) {
@@ -67,7 +72,10 @@ public final class TunnelManager {
         self.totpGenerator = totpGenerator
         self.initialReadinessGracePeriod = initialReadinessGracePeriod
         self.processExitOutputSettleDelay = processExitOutputSettleDelay
+        self.stopForceKillDelay = stopForceKillDelay
+        self.stopVerificationDelay = stopVerificationDelay
         self.now = now
+        tunnelProcessRegistry.pruneInactive()
         if startsHealthTimer {
             startHealthTimer()
         }
@@ -77,7 +85,7 @@ public final class TunnelManager {
         healthTimer?.cancel()
         reconnectTokens.removeAll()
         reconnectAttempts.removeAll()
-        for managed in processes.values {
+        for managed in allManagedTunnelsLocked() {
             managed.stopReason = .user
             if managed.session?.isRunning == true {
                 managed.session.terminate()
@@ -85,6 +93,7 @@ public final class TunnelManager {
             }
         }
         processes.removeAll()
+        terminatingProcesses.removeAll()
     }
 
     public func status(for profileID: UUID) -> TunnelRuntimeStatus {
@@ -117,7 +126,8 @@ public final class TunnelManager {
         queue.sync {
             reconnectTokens.removeAll()
             reconnectAttempts.removeAll()
-            for profileID in Array(processes.keys) {
+            let profileIDs = Set(processes.keys).union(terminatingProcesses.values.map { $0.profile.id })
+            for profileID in profileIDs {
                 stopLocked(profileID: profileID, updateStatus: true, reason: .user)
             }
         }
@@ -128,9 +138,10 @@ public final class TunnelManager {
         let managedTunnels = queue.sync {
             reconnectTokens.removeAll()
             reconnectAttempts.removeAll()
-            let managedTunnels = Array(processes.values)
+            let managedTunnels = allManagedTunnelsLocked()
             for managed in managedTunnels {
                 managed.stopReason = .user
+                managed.stopUpdatesStatus = true
                 if managed.session.isRunning {
                     logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: managed.profile.id)
                     managed.session.terminate()
@@ -160,6 +171,9 @@ public final class TunnelManager {
                 if processes[managed.profile.id] === managed {
                     processes[managed.profile.id] = nil
                 }
+                if terminatingProcesses[managed.session.processIdentifier] === managed {
+                    terminatingProcesses[managed.session.processIdentifier] = nil
+                }
                 tunnelProcessRegistry.remove(profileID: managed.profile.id, pid: managed.session.processIdentifier)
                 if managed.session.isRunning {
                     updateStatusLocked(
@@ -174,6 +188,13 @@ public final class TunnelManager {
             }
         }
         return didExit
+    }
+
+    private func allManagedTunnelsLocked() -> [ManagedTunnel] {
+        var managedTunnels = Array(processes.values)
+        let activePIDs = Set(managedTunnels.map { $0.session.processIdentifier })
+        managedTunnels.append(contentsOf: terminatingProcesses.values.filter { !activePIDs.contains($0.session.processIdentifier) })
+        return managedTunnels
     }
 
     public func reconnect(profile: TunnelProfile, options: SSHLaunchOptions = .standard, reservedSocksPorts: Set<Int> = []) {
@@ -340,7 +361,6 @@ public final class TunnelManager {
             onTermination: { [weak self, weak managed] session in
                 self?.queue.async {
                     guard let self, let managed else { return }
-                    guard self.processes[profile.id] === managed else { return }
                     self.observeProcessTerminationLocked(managed, terminationStatus: session.terminationStatus)
                 }
             }
@@ -449,25 +469,72 @@ public final class TunnelManager {
     private func stopLocked(profileID: UUID, updateStatus: Bool, reason: ManagedTunnel.StopReason) {
         guard let managed = processes.removeValue(forKey: profileID) else {
             if updateStatus {
-                updateStatusLocked(profileID, .stopped, "Stopped", pid: nil)
+                if let stopping = terminatingProcesses.values.first(where: { $0.profile.id == profileID }) {
+                    updateStatusLocked(
+                        profileID,
+                        .stopping,
+                        "Stopping SSH process",
+                        pid: stopping.session.processIdentifier,
+                        effectiveLocalSocksPort: stopping.runtimeProfile.localSocksPort
+                    )
+                } else {
+                    updateStatusLocked(profileID, .stopped, "Stopped", pid: nil)
+                }
             }
             return
         }
         flushRedactedOutputLocked(managed)
         managed.stopReason = reason
+        managed.stopUpdatesStatus = updateStatus
         if managed.session.isRunning {
+            terminatingProcesses[managed.session.processIdentifier] = managed
             logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: profileID)
-            managed.session.terminate()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self, weak managed] in
-                guard let managed, managed.session.isRunning else { return }
-                self?.queue.async {
-                    self?.logEventLocked("still running after stop timeout; sending SIGKILL to pid \(managed.session.processIdentifier)", profileID: profileID)
-                }
-                managed.session.forceKill()
+            if updateStatus {
+                updateStatusLocked(
+                    profileID,
+                    .stopping,
+                    "Stopping SSH process",
+                    pid: managed.session.processIdentifier,
+                    effectiveLocalSocksPort: managed.runtimeProfile.localSocksPort
+                )
             }
+            managed.session.terminate()
+            queue.asyncAfter(deadline: .now() + stopForceKillDelay) { [weak self, managed] in
+                self?.forceKillIfStillStoppingLocked(managed)
+            }
+        } else {
+            terminatingProcesses[managed.session.processIdentifier] = managed
+            observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
         }
-        if updateStatus {
-            updateStatusLocked(profileID, .stopped, "Stopped", pid: nil)
+    }
+
+    private func forceKillIfStillStoppingLocked(_ managed: ManagedTunnel) {
+        guard terminatingProcesses[managed.session.processIdentifier] === managed else { return }
+        guard managed.session.isRunning else {
+            observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
+            return
+        }
+        logEventLocked("still running after stop timeout; sending SIGKILL to pid \(managed.session.processIdentifier)", profileID: managed.profile.id)
+        managed.session.forceKill()
+        queue.asyncAfter(deadline: .now() + stopVerificationDelay) { [weak self, managed] in
+            self?.verifyStoppedAfterForceKillLocked(managed)
+        }
+    }
+
+    private func verifyStoppedAfterForceKillLocked(_ managed: ManagedTunnel) {
+        guard terminatingProcesses[managed.session.processIdentifier] === managed else { return }
+        guard managed.session.isRunning else {
+            observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
+            return
+        }
+        if managed.stopUpdatesStatus {
+            updateStatusLocked(
+                managed.profile.id,
+                .failed,
+                "Could not stop SSH process after SIGKILL",
+                pid: managed.session.processIdentifier,
+                effectiveLocalSocksPort: managed.runtimeProfile.localSocksPort
+            )
         }
     }
 
@@ -500,7 +567,7 @@ public final class TunnelManager {
     }
 
     private func observeProcessTerminationLocked(_ managed: ManagedTunnel, terminationStatus: Int32) {
-        guard processes[managed.profile.id] === managed else { return }
+        guard isTrackedLocked(managed) else { return }
         guard managed.observedTerminationStatus == nil else { return }
 
         managed.observedTerminationStatus = terminationStatus
@@ -519,14 +586,27 @@ public final class TunnelManager {
     }
 
     private func finalizeProcessTerminationLocked(_ managed: ManagedTunnel) {
-        guard processes[managed.profile.id] === managed,
+        guard isTrackedLocked(managed),
               let terminationStatus = managed.observedTerminationStatus else {
             return
         }
 
         flushRedactedOutputLocked(managed)
-        processes[managed.profile.id] = nil
+        let wasTerminating = terminatingProcesses[managed.session.processIdentifier] === managed
+        if processes[managed.profile.id] === managed {
+            processes[managed.profile.id] = nil
+        }
+        if wasTerminating {
+            terminatingProcesses[managed.session.processIdentifier] = nil
+        }
         tunnelProcessRegistry.remove(profileID: managed.profile.id, pid: managed.session.processIdentifier)
+
+        if wasTerminating {
+            if managed.stopUpdatesStatus {
+                updateStatusLocked(managed.profile.id, .stopped, "Stopped", pid: nil)
+            }
+            return
+        }
 
         let forwardingFailure = managed.forwardingFailure
         if shouldRetryAppForwardingFailure(forwardingFailure, managed: managed) {
@@ -562,6 +642,11 @@ public final class TunnelManager {
             exitDetail: forwardingFailure?.statusDetail ?? managed.lastOutputLine,
             reservedSocksPorts: managed.reservedSocksPorts
         )
+    }
+
+    private func isTrackedLocked(_ managed: ManagedTunnel) -> Bool {
+        processes[managed.profile.id] === managed
+            || terminatingProcesses[managed.session.processIdentifier] === managed
     }
 
     private func shouldRetryAppForwardingFailure(_ forwardingFailure: SSHForwardingFailure?, managed: ManagedTunnel) -> Bool {
@@ -662,6 +747,7 @@ public final class TunnelManager {
     }
 
     private func checkHealthLocked() {
+        finalizeExitedTerminatingProcessesLocked()
         for (profileID, managed) in Array(processes) {
             if managed.observedTerminationStatus != nil {
                 continue
@@ -721,6 +807,12 @@ public final class TunnelManager {
         }
     }
 
+    private func finalizeExitedTerminatingProcessesLocked() {
+        for managed in Array(terminatingProcesses.values) where !managed.session.isRunning {
+            observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
+        }
+    }
+
     func runHealthCheckForTesting() {
         queue.sync {
             checkHealthLocked()
@@ -758,6 +850,7 @@ private final class ManagedTunnel {
     var redactedSecrets: [String]
     var redactor: SSHTranscriptRedactor
     var stopReason: StopReason?
+    var stopUpdatesStatus = false
     var observedTerminationStatus: Int32?
     var sentHostKeyConfirmation = false
     var sentPassword = false

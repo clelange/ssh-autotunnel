@@ -85,7 +85,7 @@ public enum QuitConnectionWarningPolicy {
 
     public static func isActive(_ health: TunnelHealth) -> Bool {
         switch health {
-        case .connecting, .healthy, .degraded, .unhealthy, .reconnecting:
+        case .connecting, .stopping, .healthy, .degraded, .unhealthy, .reconnecting:
             return true
         case .stopped, .failed:
             return false

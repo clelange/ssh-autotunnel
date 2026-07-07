@@ -1324,7 +1324,7 @@ final class AppState: ObservableObject {
 
     private func isActive(_ health: TunnelHealth) -> Bool {
         switch health {
-        case .healthy, .connecting, .degraded, .reconnecting:
+        case .healthy, .connecting, .stopping, .degraded, .reconnecting:
             true
         case .stopped, .unhealthy, .failed:
             false

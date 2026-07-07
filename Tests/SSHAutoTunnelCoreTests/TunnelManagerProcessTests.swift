@@ -27,12 +27,96 @@ final class TunnelManagerProcessTests: XCTestCase {
         let session = try XCTUnwrap(launcher.sessions.first)
 
         manager.stop(profileID: profile.id)
-        wait(for: [stopped], timeout: 1)
+        waitUntil("tunnel enters stopping") {
+            manager.status(for: profile.id).health == .stopping
+        }
         session.exit(status: SIGTERM)
+        wait(for: [stopped], timeout: 1)
         Thread.sleep(forTimeInterval: 0.05)
 
         XCTAssertEqual(manager.status(for: profile.id).health, .stopped)
         XCTAssertEqual(launcher.sessions.count, 1)
+    }
+
+    func testManualStopRemovesRegistryOnlyAfterProcessTerminates() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let registry = FakeTunnelProcessRegistry()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            tunnelProcessRegistry: registry,
+            processExitOutputSettleDelay: 0,
+            stopForceKillDelay: 1,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.exitsOnTerminate = false
+
+        manager.stop(profileID: profile.id)
+        waitUntil("tunnel enters stopping") {
+            manager.status(for: profile.id).health == .stopping
+        }
+
+        XCTAssertEqual(manager.status(for: profile.id).pid, session.processIdentifier)
+        XCTAssertTrue(registry.removals.isEmpty)
+        XCTAssertEqual(session.forceKillCallCount, 0)
+
+        session.exit(status: SIGTERM)
+        waitUntil("tunnel stops") {
+            manager.status(for: profile.id).health == .stopped
+        }
+
+        XCTAssertEqual(registry.removals.map(\.pid), [session.processIdentifier])
+        XCTAssertEqual(session.forceKillCallCount, 0)
+    }
+
+    func testManualStopForceKillsStubbornTunnelBeforeReportingStopped() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let registry = FakeTunnelProcessRegistry()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            tunnelProcessRegistry: registry,
+            processExitOutputSettleDelay: 0,
+            stopForceKillDelay: 0.01,
+            stopVerificationDelay: 0.01,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.exitsOnTerminate = false
+
+        manager.stop(profileID: profile.id)
+        waitUntil("tunnel enters stopping") {
+            manager.status(for: profile.id).health == .stopping
+        }
+        waitUntil("stubborn tunnel is force killed") {
+            session.forceKillCallCount == 1
+        }
+        waitUntil("tunnel stops after force kill") {
+            manager.status(for: profile.id).health == .stopped
+        }
+
+        XCTAssertEqual(session.terminateCallCount, 1)
+        XCTAssertFalse(session.isRunning)
+        XCTAssertEqual(registry.removals.map(\.pid), [session.processIdentifier])
     }
 
     func testStopAllWaitingForceKillsStubbornTunnelBeforeReturning() throws {
@@ -761,6 +845,7 @@ final class TunnelManagerProcessTests: XCTestCase {
         session.emit("654")
         session.emit("321\r\n")
         manager.stop(profileID: profile.id)
+        session.exit(status: SIGTERM)
         waitUntil("tunnel stops") {
             manager.status(for: profile.id).health == .stopped
         }

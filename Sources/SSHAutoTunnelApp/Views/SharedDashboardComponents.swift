@@ -172,7 +172,7 @@ func statusColor(for health: TunnelHealth) -> Color {
     switch health {
     case .healthy:
         .green
-    case .degraded, .connecting, .reconnecting:
+    case .degraded, .connecting, .stopping, .reconnecting:
         .orange
     case .unhealthy, .failed:
         .red
@@ -184,7 +184,7 @@ func statusColor(for health: TunnelHealth) -> Color {
 extension TunnelHealth {
     var isRunning: Bool {
         switch self {
-        case .healthy, .connecting, .degraded, .reconnecting:
+        case .healthy, .connecting, .stopping, .degraded, .reconnecting:
             true
         case .stopped, .unhealthy, .failed:
             false
@@ -195,7 +195,7 @@ extension TunnelHealth {
         switch self {
         case .unhealthy, .failed, .reconnecting:
             true
-        case .stopped, .connecting, .healthy, .degraded:
+        case .stopped, .stopping, .connecting, .healthy, .degraded:
             false
         }
     }
@@ -206,7 +206,7 @@ extension TunnelHealth {
             "checkmark.circle.fill"
         case .degraded:
             "exclamationmark.triangle.fill"
-        case .connecting, .reconnecting:
+        case .connecting, .stopping, .reconnecting:
             "arrow.triangle.2.circlepath"
         case .unhealthy, .failed:
             "xmark.octagon.fill"

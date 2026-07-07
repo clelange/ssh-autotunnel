@@ -144,6 +144,7 @@ final class HopConnectionManagerTests: XCTestCase {
         session.emit("654")
         session.emit("321\r\n")
         manager.stop(profileID: profile.id)
+        session.exit(status: SIGTERM)
         waitUntil("hop stops") {
             manager.status(for: profile.id)?.health == .stopped
         }
@@ -302,6 +303,82 @@ final class HopConnectionManagerTests: XCTestCase {
         XCTAssertFalse(session.isRunning)
         XCTAssertEqual(manager.status(for: profile.id)?.health, .stopped)
         XCTAssertEqual(launcher.sessions.count, 1)
+    }
+
+    func testManualStopWaitsForHopProcessTerminationBeforeReportingStopped() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            processExitObservationDelay: 0,
+            stopForceKillDelay: 1,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "hop process started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH hop process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.exitsOnTerminate = false
+
+        manager.stop(profileID: profile.id)
+        waitUntil("hop enters stopping") {
+            manager.status(for: profile.id)?.health == .stopping
+        }
+
+        XCTAssertEqual(manager.status(for: profile.id)?.pid, session.processIdentifier)
+        XCTAssertEqual(session.forceKillCallCount, 0)
+
+        session.exit(status: SIGTERM)
+        waitUntil("hop stops") {
+            manager.status(for: profile.id)?.health == .stopped
+        }
+
+        XCTAssertEqual(session.forceKillCallCount, 0)
+    }
+
+    func testManualStopForceKillsStubbornHopBeforeReportingStopped() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            processExitObservationDelay: 0,
+            stopForceKillDelay: 0.01,
+            stopVerificationDelay: 0.01,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "hop process started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH hop process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.exitsOnTerminate = false
+
+        manager.stop(profileID: profile.id)
+        waitUntil("hop enters stopping") {
+            manager.status(for: profile.id)?.health == .stopping
+        }
+        waitUntil("stubborn hop is force killed") {
+            session.forceKillCallCount == 1
+        }
+        waitUntil("hop stops after force kill") {
+            manager.status(for: profile.id)?.health == .stopped
+        }
+
+        XCTAssertEqual(session.terminateCallCount, 1)
+        XCTAssertFalse(session.isRunning)
     }
 
     func testExistingSessionMessageStopsReconnectAndMarksFailure() throws {

@@ -12,9 +12,12 @@ public final class HopConnectionManager {
     private let totpGenerator: (String) throws -> String
     private let initialReadinessGracePeriod: TimeInterval
     private let processExitObservationDelay: TimeInterval
+    private let stopForceKillDelay: TimeInterval
+    private let stopVerificationDelay: TimeInterval
     private let now: () -> Date
     private let queue = DispatchQueue(label: "dev.clange.ssh-autotunnel.hops")
     private var processes: [UUID: ManagedHopConnection] = [:]
+    private var terminatingProcesses: [Int32: ManagedHopConnection] = [:]
     private var statuses: [UUID: HopRuntimeStatus] = [:]
     private var reconnectTokens: [UUID: UUID] = [:]
     private var reconnectAttempts: [UUID: Int] = [:]
@@ -41,6 +44,8 @@ public final class HopConnectionManager {
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
         initialReadinessGracePeriod: TimeInterval = 60,
         processExitObservationDelay: TimeInterval = 0.1,
+        stopForceKillDelay: TimeInterval = 2.0,
+        stopVerificationDelay: TimeInterval = 1.0,
         now: @escaping () -> Date = Date.init,
         startsHealthTimer: Bool = true
     ) {
@@ -51,6 +56,8 @@ public final class HopConnectionManager {
         self.totpGenerator = totpGenerator
         self.initialReadinessGracePeriod = initialReadinessGracePeriod
         self.processExitObservationDelay = processExitObservationDelay
+        self.stopForceKillDelay = stopForceKillDelay
+        self.stopVerificationDelay = stopVerificationDelay
         self.now = now
         if startsHealthTimer {
             startHealthTimer()
@@ -61,7 +68,7 @@ public final class HopConnectionManager {
         healthTimer?.cancel()
         reconnectTokens.removeAll()
         reconnectAttempts.removeAll()
-        for managed in processes.values {
+        for managed in allManagedHopsLocked() {
             managed.stopReason = .user
             if managed.session?.isRunning == true {
                 managed.session.terminate()
@@ -69,6 +76,7 @@ public final class HopConnectionManager {
             }
         }
         processes.removeAll()
+        terminatingProcesses.removeAll()
     }
 
     public func status(for profileID: UUID) -> HopRuntimeStatus? {
@@ -108,7 +116,8 @@ public final class HopConnectionManager {
         queue.sync {
             reconnectTokens.removeAll()
             reconnectAttempts.removeAll()
-            for profileID in Array(processes.keys) {
+            let profileIDs = Set(processes.keys).union(terminatingProcesses.values.map { $0.profile.id })
+            for profileID in profileIDs {
                 stopLocked(profileID: profileID, updateStatus: true, reason: .user)
             }
         }
@@ -119,9 +128,10 @@ public final class HopConnectionManager {
         let managedHops = queue.sync {
             reconnectTokens.removeAll()
             reconnectAttempts.removeAll()
-            let managedHops = Array(processes.values)
+            let managedHops = allManagedHopsLocked()
             for managed in managedHops {
                 managed.stopReason = .user
+                managed.stopUpdatesStatus = true
                 if managed.session.isRunning {
                     logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: managed.profile.id)
                     managed.session.terminate()
@@ -151,6 +161,9 @@ public final class HopConnectionManager {
                 if processes[managed.profile.id] === managed {
                     processes[managed.profile.id] = nil
                 }
+                if terminatingProcesses[managed.session.processIdentifier] === managed {
+                    terminatingProcesses[managed.session.processIdentifier] = nil
+                }
                 try? FileManager.default.removeItem(at: managed.controlMaster.directory)
                 if managed.session.isRunning {
                     updateStatusLocked(
@@ -166,6 +179,13 @@ public final class HopConnectionManager {
             }
         }
         return didExit
+    }
+
+    private func allManagedHopsLocked() -> [ManagedHopConnection] {
+        var managedHops = Array(processes.values)
+        let activePIDs = Set(managedHops.map { $0.session.processIdentifier })
+        managedHops.append(contentsOf: terminatingProcesses.values.filter { !activePIDs.contains($0.session.processIdentifier) })
+        return managedHops
     }
 
     public func reconnect(profile: TunnelProfile, options: SSHLaunchOptions = .standard) {
@@ -243,32 +263,9 @@ public final class HopConnectionManager {
                 }
             },
             onTermination: { [weak self, weak managed] session in
-                guard let self else { return }
-                self.queue.asyncAfter(deadline: .now() + self.processExitObservationDelay) { [weak self, weak managed] in
+                self?.queue.async {
                     guard let self, let managed else { return }
-                    guard self.processes[profile.id] === managed else { return }
-                    self.flushRedactedOutputLocked(managed)
-                    self.processes[profile.id] = nil
-
-                    let hasExistingSessionConflict = managed.hasExistingSessionConflict || managed.matchesExistingSessionConflict
-                    let decision = hasExistingSessionConflict
-                        ? TunnelLifecyclePolicy.ProcessExitDecision.markFailed
-                        : TunnelLifecyclePolicy.processExitDecision(
-                        terminationStatus: session.terminationStatus,
-                        wasIntentionalStop: managed.stopReason != nil,
-                        autoReconnect: profile.autoReconnect
-                    )
-                    self.applyProcessExitDecisionLocked(
-                        decision,
-                        profile: profile,
-                        controlMaster: controlMaster,
-                        options: managed.launchOptions,
-                        terminationStatus: session.terminationStatus,
-                        exitDetail: managed.lastOutputLine,
-                        forcedFailureMessage: hasExistingSessionConflict
-                        ? Self.existingSessionFailureMessage(for: controlMaster.jumpHost)
-                        : nil
-                    )
+                    self.observeProcessTerminationLocked(managed, terminationStatus: session.terminationStatus)
                 }
             }
         )
@@ -404,28 +401,142 @@ public final class HopConnectionManager {
     private func stopLocked(profileID: UUID, updateStatus: Bool, reason: ManagedHopConnection.StopReason) {
         guard let managed = processes.removeValue(forKey: profileID) else {
             if updateStatus {
-                let existing = statuses[profileID]
-                updateStatusLocked(profileID, jumpHost: existing?.jumpHost ?? "", .stopped, "Stopped", pid: nil)
+                if let stopping = terminatingProcesses.values.first(where: { $0.profile.id == profileID }) {
+                    updateStatusLocked(
+                        profileID,
+                        jumpHost: stopping.controlMaster.jumpHost,
+                        .stopping,
+                        "Stopping SSH hop process",
+                        pid: stopping.session.processIdentifier
+                    )
+                } else {
+                    let existing = statuses[profileID]
+                    updateStatusLocked(profileID, jumpHost: existing?.jumpHost ?? "", .stopped, "Stopped", pid: nil)
+                }
             }
             return
         }
         flushRedactedOutputLocked(managed)
         managed.stopReason = reason
+        managed.stopUpdatesStatus = updateStatus
         if managed.session.isRunning {
+            terminatingProcesses[managed.session.processIdentifier] = managed
             logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: profileID)
-            managed.session.terminate()
-            DispatchQueue.global().asyncAfter(deadline: .now() + 2) { [weak self, weak managed] in
-                guard let managed, managed.session.isRunning else { return }
-                self?.queue.async {
-                    self?.logEventLocked("still running after stop timeout; sending SIGKILL to pid \(managed.session.processIdentifier)", profileID: profileID)
-                }
-                managed.session.forceKill()
+            if updateStatus {
+                updateStatusLocked(
+                    profileID,
+                    jumpHost: managed.controlMaster.jumpHost,
+                    .stopping,
+                    "Stopping SSH hop process",
+                    pid: managed.session.processIdentifier
+                )
             }
+            managed.session.terminate()
+            queue.asyncAfter(deadline: .now() + stopForceKillDelay) { [weak self, managed] in
+                self?.forceKillIfStillStoppingLocked(managed)
+            }
+        } else {
+            terminatingProcesses[managed.session.processIdentifier] = managed
+            observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
+        }
+    }
+
+    private func forceKillIfStillStoppingLocked(_ managed: ManagedHopConnection) {
+        guard terminatingProcesses[managed.session.processIdentifier] === managed else { return }
+        guard managed.session.isRunning else {
+            observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
+            return
+        }
+        logEventLocked("still running after stop timeout; sending SIGKILL to pid \(managed.session.processIdentifier)", profileID: managed.profile.id)
+        managed.session.forceKill()
+        queue.asyncAfter(deadline: .now() + stopVerificationDelay) { [weak self, managed] in
+            self?.verifyStoppedAfterForceKillLocked(managed)
+        }
+    }
+
+    private func verifyStoppedAfterForceKillLocked(_ managed: ManagedHopConnection) {
+        guard terminatingProcesses[managed.session.processIdentifier] === managed else { return }
+        guard managed.session.isRunning else {
+            observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
+            return
+        }
+        if managed.stopUpdatesStatus {
+            updateStatusLocked(
+                managed.profile.id,
+                jumpHost: managed.controlMaster.jumpHost,
+                .failed,
+                "Could not stop SSH hop process after SIGKILL",
+                pid: managed.session.processIdentifier
+            )
+        }
+    }
+
+    private func observeProcessTerminationLocked(_ managed: ManagedHopConnection, terminationStatus: Int32) {
+        guard isTrackedLocked(managed) else { return }
+        guard managed.observedTerminationStatus == nil else { return }
+
+        managed.observedTerminationStatus = terminationStatus
+        flushRedactedOutputLocked(managed)
+
+        let finalize = { [weak self, weak managed] in
+            guard let self, let managed else { return }
+            self.finalizeProcessTerminationLocked(managed)
+        }
+
+        if processExitObservationDelay <= 0 {
+            finalize()
+        } else {
+            queue.asyncAfter(deadline: .now() + processExitObservationDelay, execute: finalize)
+        }
+    }
+
+    private func finalizeProcessTerminationLocked(_ managed: ManagedHopConnection) {
+        guard isTrackedLocked(managed),
+              let terminationStatus = managed.observedTerminationStatus else {
+            return
+        }
+
+        flushRedactedOutputLocked(managed)
+        let wasTerminating = terminatingProcesses[managed.session.processIdentifier] === managed
+        if processes[managed.profile.id] === managed {
+            processes[managed.profile.id] = nil
+        }
+        if wasTerminating {
+            terminatingProcesses[managed.session.processIdentifier] = nil
         }
         try? FileManager.default.removeItem(at: managed.controlMaster.directory)
-        if updateStatus {
-            updateStatusLocked(profileID, jumpHost: managed.controlMaster.jumpHost, .stopped, "Stopped", pid: nil)
+
+        if wasTerminating {
+            if managed.stopUpdatesStatus {
+                updateStatusLocked(managed.profile.id, jumpHost: managed.controlMaster.jumpHost, .stopped, "Stopped", pid: nil)
+            }
+            return
         }
+
+        let hasExistingSessionConflict = managed.hasExistingSessionConflict || managed.matchesExistingSessionConflict
+        let decision = hasExistingSessionConflict
+            ? TunnelLifecyclePolicy.ProcessExitDecision.markFailed
+            : TunnelLifecyclePolicy.processExitDecision(
+                terminationStatus: terminationStatus,
+                wasIntentionalStop: managed.stopReason != nil,
+                autoReconnect: managed.profile.autoReconnect
+            )
+        applyProcessExitDecisionLocked(
+            decision,
+            profile: managed.profile,
+            controlMaster: managed.controlMaster,
+            options: managed.launchOptions,
+            terminationStatus: terminationStatus,
+            exitDetail: managed.lastOutputLine,
+            forcedFailureMessage: hasExistingSessionConflict
+                ? Self.existingSessionFailureMessage(for: managed.controlMaster.jumpHost)
+                : nil
+        )
+    }
+
+    private func isTrackedLocked(_ managed: ManagedHopConnection) -> Bool {
+        processes[managed.profile.id] === managed
+            || terminatingProcesses[managed.session.processIdentifier] === managed
     }
 
     private func applyProcessExitDecisionLocked(
@@ -535,23 +646,10 @@ public final class HopConnectionManager {
     }
 
     private func checkHealthLocked() {
+        finalizeExitedTerminatingProcessesLocked()
         for (profileID, managed) in Array(processes) {
             guard managed.session.isRunning else {
-                flushRedactedOutputLocked(managed)
-                processes[profileID] = nil
-                let decision = TunnelLifecyclePolicy.processExitDecision(
-                    terminationStatus: managed.session.terminationStatus,
-                    wasIntentionalStop: managed.stopReason != nil,
-                    autoReconnect: managed.profile.autoReconnect
-                )
-                applyProcessExitDecisionLocked(
-                    decision,
-                    profile: managed.profile,
-                    controlMaster: managed.controlMaster,
-                    options: managed.launchOptions,
-                    terminationStatus: managed.session.terminationStatus,
-                    exitDetail: managed.lastOutputLine
-                )
+                observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
                 continue
             }
 
@@ -587,6 +685,12 @@ public final class HopConnectionManager {
                     scheduleReconnectLocked(profile: managed.profile, message: "Jump host ControlMaster check failed; reconnecting hop", options: managed.launchOptions)
                 }
             }
+        }
+    }
+
+    private func finalizeExitedTerminatingProcessesLocked() {
+        for managed in Array(terminatingProcesses.values) where !managed.session.isRunning {
+            observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
         }
     }
 
@@ -632,6 +736,8 @@ private final class ManagedHopConnection {
     var redactedSecrets: [String]
     var redactor: SSHTranscriptRedactor
     var stopReason: StopReason?
+    var stopUpdatesStatus = false
+    var observedTerminationStatus: Int32?
     var hasExistingSessionConflict = false
     var sentHostKeyConfirmation = false
     var sentPassword = false

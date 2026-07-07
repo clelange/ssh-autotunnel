@@ -49,6 +49,7 @@ public enum SSHHostKeyPolicy: String, Codable, CaseIterable, Identifiable, Senda
 
 public enum TunnelHealth: String, Codable, CaseIterable, Sendable {
     case stopped
+    case stopping
     case connecting
     case healthy
     case degraded
