@@ -193,7 +193,7 @@ CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_rele
 NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --notarize
 ```
 
-All passed on `feat/ssh-command-config-isolation`. `swift test` executed 347 XCTest cases. `package_release.sh --verify` produced `dist/release/SSH-AutoTunnel-0.2.0.dmg` with a matching checksum. `package_release.sh --notarize` submitted the DMG to Apple, received `Accepted`, stapled the ticket, validated the stapled DMG, and passed Gatekeeper assessment as `Notarized Developer ID`. The notarized DMG SHA-256 is `295ad3ef70aae666f65eebf57c372a5604f0da07c4214dfc826c9c317eb11577`.
+All passed for `v0.3.0`. `swift test` executed 378 XCTest cases. `package_release.sh --notarize` produced `dist/release/SSH-AutoTunnel-0.3.0.dmg`, and Apple accepted submission `e67072bb-8906-4d2b-bc94-40e93402ef0d`. The stapled DMG and a copy downloaded back from the draft GitHub Release both passed checksum verification, Gatekeeper assessment as `Notarized Developer ID`, read-only mounting, app signature validation, and version/build inspection. The published DMG SHA-256 is `8280ea4ae383fd3c375aac27806c8cf68e23312341481769e3c01efb930a2230`.
 
 ## Known Gaps
 
