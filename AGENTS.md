@@ -141,6 +141,17 @@ swift test
 
 Both passed on `feat/shared-hop-ssh-audit` after shared hop ownership/pooling, fail-closed adapters, recursive SSH config audit and safe-fix services, and Settings/API/CLI reporting. The core test suite has 378 XCTest cases.
 
+Latest shared-hop live validation:
+
+```sh
+./script/build_and_run.sh --verify
+ssh-autotunnelctl check-ssh-config --json
+ssh-autotunnelctl connect "PSI General"
+ssh-autotunnelctl connect "PSI CMS Tier-3"
+```
+
+All passed on `feat/shared-hop-ssh-audit`. PSI General used the stable app-owned `hopx.psi.ch` master and reached a healthy SOCKS5 tunnel on port 1084; a raw `-W hepserver.psi.ch:22` probe through the internal adapter returned the server SSH banner. PSI CMS Tier-3 used its separate stable app-owned `t3hop01.psi.ch` master, readiness marker, and healthy SOCKS5 tunnel on port 1085, then stopped cleanly while PSI General remained healthy. Settings displayed both adapter names and the v2 fail-closed snippet; Check SSH Config reported the real seven-file configuration with its safe replacement initially unselected and made no SSH config edits.
+
 Latest UI polish validation:
 
 ```sh
@@ -186,7 +197,7 @@ All passed on `feat/ssh-command-config-isolation`. `swift test` executed 347 XCT
 
 ## Known Gaps
 
-- Real CERN/PSI SSH login flows still need live validation with the user’s Keychain secrets and reachable networks.
+- The real PSI General and PSI CMS Tier-3 shared-hop/tunnel flows are live-validated. CERN SSH authentication still needs live validation with the user’s Keychain secrets and reachable network.
 - The pseudo-terminal process boundary and prompt matcher are now unit-tested with fakes and mixed prompt transcripts, but still need live tuning after real CERN/PSI server tests.
 - System PAC restoration command planning, durable snapshot storage, and manager orchestration are unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents now cover the local control API actions, but Shortcuts discovery and invocation still need end-to-end validation from the Shortcuts app.
@@ -197,6 +208,6 @@ All passed on `feat/ssh-command-config-isolation`. `swift test` executed 347 XCT
 
 ## Next Useful Milestones
 
-- Validate and tune CERN lxplus and PSI Tier-3 authentication prompts.
+- Validate and tune CERN lxplus authentication prompts.
 - Manually validate system PAC apply/restore across Wi-Fi, Ethernet, and VPN transitions.
 - Validate Shortcuts/App Intents discovery and invocation from the Shortcuts app.
