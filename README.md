@@ -15,7 +15,8 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - `ssh-auto2fa` Keychain service checks before importing legacy preset profiles.
 - `~/.ssh/config` import for literal `Host` entries, including common user, port, jump-host, and identity options.
 - SSH SOCKS5 tunnels using `/usr/bin/ssh -N -D`.
-- App-owned background SSH ControlMaster hop connections for jump-host profiles, so tunnel and interactive SSH actions wait for a verified hop without opening an extra hop terminal window.
+- Pooled app-owned SSH ControlMaster hop connections with stable fail-closed adapter aliases, verified ownership, and structured conflict reporting.
+- Read-only recursive OpenSSH config audit with reviewed, backup-protected fixes for existing equivalent single-hop `ProxyJump` targets.
 - Local PAC server with fail-closed routing when a tunnel is unhealthy.
 - Optional fallback to an existing PAC from an HTTP(S) URL or local file.
 - Local blocking proxy that shows an explanatory page for HTTP requests when a PAC-matched tunnel is down.
@@ -98,6 +99,7 @@ swift run ssh-autotunnelctl apply-system-pac
 swift run ssh-autotunnelctl restore-system-proxy
 swift run ssh-autotunnelctl import-ssh-auto2fa
 swift run ssh-autotunnelctl import-ssh-config
+swift run ssh-autotunnelctl check-ssh-config --json
 swift run ssh-autotunnelctl check-ssh-auto2fa --json
 swift run ssh-autotunnelctl diagnostics --json
 swift run ssh-autotunnelctl export-config ./ssh-autotunnel-config.json
@@ -165,7 +167,9 @@ Existing `ssh-auto2fa` Keychain service names can still be checked and imported 
 
 Settings, Shortcuts, and the CLI can also import literal `Host` entries from `~/.ssh/config`. Wildcard and negated host patterns are skipped because they do not map to one concrete tunnel profile.
 
-Settings can generate a managed OpenSSH snippet for jump-host profiles and can install it as `~/.ssh/config.d/ssh-autotunnel.conf` with a marked include block in `~/.ssh/config`. Existing SSH config blocks are not edited.
+Settings can generate a managed OpenSSH include for jump-host profiles and install it as `~/.ssh/config.d/ssh-autotunnel.conf`. It exposes one stable internal adapter alias per hop endpoint and keeps configured destination routes fail-closed while the app is stopped. Disconnecting, reconnecting, or quitting the app may close terminal sessions that share an app-owned master.
+
+**Check SSH Config** recursively follows `Include` files and reports safe replacements, manual recommendations, and information without executing `Match exec` or inferring routes from domain suffixes. Existing equivalent single-hop `ProxyJump` targets can be selected for reviewed application after a complete per-file diff; the app rechecks file hashes and metadata, creates private backups, and writes atomically. The API action `checkSSHConfig` and `ssh-autotunnelctl check-ssh-config` expose the report read-only; fixes remain Settings-only.
 
 Shortcuts/App Intents expose tunnel connect/disconnect/reconnect, status, diagnostics, imports, export validation, exports, support bundles, system PAC apply/restore, and profile/PAC/network rule management. Shortcuts can also list configured profiles, PAC rules, and network rules as typed results, use picker-based profile/rule parameters for selected-item actions, and return the current PAC URL, diagnostics summary, network fingerprint, redacted configuration JSON, validation summaries, and redacted support-bundle JSON as automation values.
 

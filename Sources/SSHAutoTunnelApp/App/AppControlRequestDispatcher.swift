@@ -29,12 +29,12 @@ struct AppControlRequestDispatcher {
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: appState.snapshot()) }
             guard appState.hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: appState.snapshot()) }
             appState.disconnectHop(profile)
-            return ControlResponse(ok: true, message: "Disconnecting hop for \(profile.name)", status: appState.snapshot())
+            return ControlResponse(ok: true, message: "Disconnecting hop for \(profile.name); terminal sessions sharing this master may close", status: appState.snapshot())
         case .reconnectHop:
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: appState.snapshot()) }
             guard appState.hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: appState.snapshot()) }
             appState.reconnectHop(profile)
-            return ControlResponse(ok: true, message: "Reconnecting hop for \(profile.name)", status: appState.snapshot())
+            return ControlResponse(ok: true, message: "Reconnecting hop for \(profile.name); terminal sessions sharing this master may close", status: appState.snapshot())
         case .reloadPAC:
             appState.refreshPACAppendSource(force: true)
             appState.writePACCopy()
@@ -75,6 +75,13 @@ struct AppControlRequestDispatcher {
             } catch {
                 return ControlResponse(ok: false, message: "Could not import SSH config: \(error.localizedDescription)", status: appState.snapshot())
             }
+        case .checkSSHConfig:
+            let report = appState.checkSSHConfig()
+            return ControlResponse(
+                ok: true,
+                message: "SSH config audit: \(report.safeReplacements.count) safe replacements, \(report.manualRecommendations.count) manual recommendations, \(report.warnings.count) warnings",
+                sshConfigAudit: report
+            )
         case .createProfile:
             guard let requestProfile = request.profile else {
                 return ControlResponse(ok: false, message: ProfileConfigurationEditorError.missingProfilePayload.localizedDescription, status: appState.snapshot())

@@ -9,6 +9,10 @@ struct SettingsView: View {
     @State private var apiTokenMessage = ""
     @State private var sshConfigMessage = ""
     @State private var confirmsManagedSSHConfigInstall = false
+    @State private var sshConfigAuditReport: SSHConfigAuditReport?
+    @State private var selectedSSHConfigFindingIDs: Set<String> = []
+    @State private var sshConfigFixPreviews: [SSHConfigFileFixPreview] = []
+    @State private var showsSSHConfigFixReview = false
 
     var body: some View {
         TabView {
@@ -30,7 +34,7 @@ struct SettingsView: View {
                 }
         }
         .padding(12)
-        .frame(minWidth: 640, idealWidth: 640, minHeight: 460, idealHeight: 460)
+        .frame(minWidth: 680, idealWidth: 720, minHeight: 520, idealHeight: 600)
         .onChange(of: appState.configuration) {
             appState.scheduleConfigurationSave()
         }
@@ -44,7 +48,14 @@ struct SettingsView: View {
             }
             Button("Cancel", role: .cancel) {}
         } message: {
-            Text("This writes ~/.ssh/config.d/ssh-autotunnel.conf and adds or reuses SSH AutoTunnel's marked Include block in ~/.ssh/config. Existing unmarked OpenSSH config blocks and system settings are not rewritten. If ~/.ssh/config already exists and the Include block must be added, a backup is created first.")
+            Text("This writes ~/.ssh/config.d/ssh-autotunnel.conf and adds or reuses SSH AutoTunnel's marked Include block in ~/.ssh/config. Existing unmarked OpenSSH config blocks and system settings are not rewritten. Files changed during installation are backed up, including an older managed include before migration.")
+        }
+        .sheet(isPresented: $showsSSHConfigFixReview) {
+            SSHConfigFixReviewSheet(
+                previews: sshConfigFixPreviews,
+                onCancel: { showsSSHConfigFixReview = false },
+                onApply: { applyReviewedSSHConfigFixes() }
+            )
         }
     }
 
@@ -185,7 +196,7 @@ struct SettingsView: View {
 
     private var openSSHConfigTab: some View {
         Form {
-            Section("OpenSSH Config") {
+            Section("Managed OpenSSH Adapter") {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
                         Button {
@@ -201,9 +212,29 @@ struct SettingsView: View {
                         }
                         .help("Write SSH AutoTunnel's managed OpenSSH include file and add a marked Include block to ~/.ssh/config when needed.")
                     }
-                    Text("The managed include is limited to SSH AutoTunnel jump-host profile entries. Installation writes a separate managed file and only adds a marked Include block to your main OpenSSH config when that block is missing.")
+                    Text("The managed include publishes fail-closed internal hop adapters and routes only the destinations already configured in SSH AutoTunnel. Your aliases, Host patterns, and routing policy remain in your SSH files.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
+                    let adapterNames = appState.managedHopAdapterNames()
+                    if adapterNames.isEmpty {
+                        Text("No internal hop adapter is available because no jump-host profile is configured.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    } else {
+                        ForEach(adapterNames, id: \.self) { adapterName in
+                            CopyableValueRow(
+                                title: "Internal adapter",
+                                value: adapterName,
+                                help: "Copy this stable alias for use as an existing ProxyJump target"
+                            )
+                        }
+                    }
+                    Label(
+                        "Disconnecting, reconnecting, or quitting the app can terminate terminal sessions that share an app-owned hop master.",
+                        systemImage: "exclamationmark.triangle"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(.orange)
                     ScrollView {
                         Text(managedSSHConfigPreview())
                             .font(.caption.monospaced())
@@ -219,8 +250,139 @@ struct SettingsView: View {
                     }
                 }
             }
+
+            Section("Check SSH Config") {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Button {
+                            runSSHConfigAudit()
+                        } label: {
+                            Label("Check SSH Config", systemImage: "checkmark.shield")
+                        }
+                        .help("Read ~/.ssh/config and included files, without executing Match exec")
+                        if let report = sshConfigAuditReport {
+                            Text("\(report.files.count) files · \(report.findings.count) findings · \(report.warnings.count) warnings")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    Text("The audit follows Include files and recommends only evidence-based changes. It never adds routing based on a domain suffix or executes Match exec.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            if let report = sshConfigAuditReport {
+                sshConfigFindingSection(
+                    title: "Safe replacements",
+                    findings: report.safeReplacements,
+                    selectable: true
+                )
+                sshConfigFindingSection(
+                    title: "Manual review",
+                    findings: report.manualRecommendations,
+                    selectable: false
+                )
+                sshConfigFindingSection(
+                    title: "Information",
+                    findings: report.information,
+                    selectable: false
+                )
+                if !report.warnings.isEmpty {
+                    Section("Audit warnings") {
+                        ForEach(report.warnings) { warning in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(warningLocation(warning))
+                                    .font(.caption.monospaced())
+                                    .textSelection(.enabled)
+                                Text(warning.message)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+                Section("Reviewed application") {
+                    Button("Review Selected Replacements...") {
+                        reviewSelectedSSHConfigFixes()
+                    }
+                    .disabled(selectedSSHConfigFindingIDs.isEmpty)
+                    Text("Only selected equivalent ProxyJump targets in eligible files can be applied. The next step shows complete per-file diffs; no API, CLI, or Shortcut can apply these edits.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
         }
         .formStyle(.grouped)
+    }
+
+    @ViewBuilder
+    private func sshConfigFindingSection(
+        title: String,
+        findings: [SSHConfigAuditFinding],
+        selectable: Bool
+    ) -> some View {
+        Section(title) {
+            if findings.isEmpty {
+                Text("None")
+                    .foregroundStyle(.secondary)
+            } else {
+                ForEach(findings) { finding in
+                    if selectable && finding.canApply {
+                        Toggle(
+                            isOn: Binding(
+                                get: { selectedSSHConfigFindingIDs.contains(finding.id) },
+                                set: { selected in
+                                    if selected {
+                                        selectedSSHConfigFindingIDs.insert(finding.id)
+                                    } else {
+                                        selectedSSHConfigFindingIDs.remove(finding.id)
+                                    }
+                                }
+                            )
+                        ) {
+                            sshConfigFindingDetails(finding)
+                        }
+                        .toggleStyle(.checkbox)
+                    } else {
+                        sshConfigFindingDetails(finding)
+                        if selectable {
+                            Text("Recommendation only: this source file is not eligible for automatic editing.")
+                                .font(.caption)
+                                .foregroundStyle(.orange)
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func sshConfigFindingDetails(_ finding: SSHConfigAuditFinding) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(finding.title)
+                .font(.callout.weight(.medium))
+            Text("\(finding.location.path):\(finding.location.line)")
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+            Text(finding.reasoning)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            if !finding.context.isEmpty {
+                Text(finding.context)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(finding.beforeText)
+                .font(.caption.monospaced())
+                .textSelection(.enabled)
+            if let afterText = finding.afterText {
+                Text("→ \(afterText)")
+                    .font(.caption.monospaced())
+                    .foregroundStyle(.blue)
+                    .textSelection(.enabled)
+            }
+        }
+        .padding(.vertical, 2)
     }
 
     private var migrationTab: some View {
@@ -374,10 +536,59 @@ struct SettingsView: View {
             let result = try appState.installManagedSSHConfig()
             let includeStatus = result.updatedMainConfig ? "added include" : "include already present"
             let backupStatus = result.backupURL.map { " Backup: \($0.path)" } ?? ""
-            sshConfigMessage = "Installed \(result.managedConfigURL.path), \(includeStatus).\(backupStatus)"
+            let migrationBackupStatus = result.managedConfigBackupURL.map { " Managed-config migration backup: \($0.path)" } ?? ""
+            sshConfigMessage = "Installed \(result.managedConfigURL.path), \(includeStatus).\(backupStatus)\(migrationBackupStatus)"
         } catch {
             sshConfigMessage = "Could not install managed OpenSSH config: \(error.localizedDescription)"
         }
+    }
+
+    private func runSSHConfigAudit() {
+        let report = appState.checkSSHConfig()
+        sshConfigAuditReport = report
+        selectedSSHConfigFindingIDs.removeAll()
+        sshConfigFixPreviews.removeAll()
+        sshConfigMessage = "SSH config audit found \(report.safeReplacements.count) safe replacement(s), \(report.manualRecommendations.count) manual recommendation(s), and \(report.warnings.count) warning(s)."
+    }
+
+    private func reviewSelectedSSHConfigFixes() {
+        guard let report = sshConfigAuditReport else { return }
+        do {
+            sshConfigFixPreviews = try appState.previewSSHConfigSafeFixes(
+                report: report,
+                findingIDs: selectedSSHConfigFindingIDs
+            )
+            guard !sshConfigFixPreviews.isEmpty else {
+                sshConfigMessage = "No eligible SSH config replacements are selected."
+                return
+            }
+            showsSSHConfigFixReview = true
+        } catch {
+            sshConfigMessage = error.localizedDescription
+        }
+    }
+
+    private func applyReviewedSSHConfigFixes() {
+        guard let report = sshConfigAuditReport else { return }
+        do {
+            let result = try appState.applySSHConfigSafeFixes(
+                report: report,
+                findingIDs: selectedSSHConfigFindingIDs
+            )
+            showsSSHConfigFixReview = false
+            let backups = result.backupPaths.isEmpty ? "" : " Backups: \(result.backupPaths.joined(separator: ", "))"
+            sshConfigMessage = "Applied \(result.appliedFindingIDs.count) reviewed replacement(s) in \(result.changedFiles.count) file(s).\(backups)"
+            sshConfigAuditReport = appState.checkSSHConfig()
+            selectedSSHConfigFindingIDs.removeAll()
+            sshConfigFixPreviews.removeAll()
+        } catch {
+            showsSSHConfigFixReview = false
+            sshConfigMessage = error.localizedDescription
+        }
+    }
+
+    private func warningLocation(_ warning: SSHConfigAuditWarning) -> String {
+        warning.line.map { "\(warning.path):\($0)" } ?? warning.path
     }
 
     private func managedSSHConfigPreview() -> String {
@@ -506,6 +717,48 @@ struct SettingsView: View {
     private func copyToPasteboard(_ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+    }
+}
+
+private struct SSHConfigFixReviewSheet: View {
+    let previews: [SSHConfigFileFixPreview]
+    let onCancel: () -> Void
+    let onApply: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Review SSH Config Replacements")
+                .font(.title2.weight(.semibold))
+            Text("Complete diffs are shown below. Applying creates private timestamped backups, then rechecks every file's content and metadata before writing atomically.")
+                .font(.callout)
+                .foregroundStyle(.secondary)
+
+            ScrollView {
+                LazyVStack(alignment: .leading, spacing: 16) {
+                    ForEach(Array(previews.enumerated()), id: \.offset) { _, preview in
+                        GroupBox(preview.path) {
+                            ScrollView(.horizontal) {
+                                Text(preview.unifiedDiff)
+                                    .font(.caption.monospaced())
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .textSelection(.enabled)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+            }
+
+            HStack {
+                Spacer()
+                Button("Cancel", action: onCancel)
+                    .keyboardShortcut(.cancelAction)
+                Button("Apply Reviewed Replacements", action: onApply)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(minWidth: 760, minHeight: 560)
     }
 }
 

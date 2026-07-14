@@ -1005,3 +1005,45 @@ private struct SSHConfigAuditAnalyzer {
         return findings.filter { seen.insert($0.id).inserted }
     }
 }
+
+public enum SSHConfigAuditTextRenderer {
+    public static func render(_ report: SSHConfigAuditReport) -> String {
+        var lines = [
+            "SSH config audit:",
+            "- Files: \(report.files.count)",
+            "- Safe replacements: \(report.safeReplacements.count)",
+            "- Manual recommendations: \(report.manualRecommendations.count)",
+            "- Information: \(report.information.count)",
+            "- Warnings: \(report.warnings.count)"
+        ]
+        for category in SSHConfigAuditCategory.allCases {
+            let findings = report.findings.filter { $0.category == category }
+            guard !findings.isEmpty else { continue }
+            lines.append("\(categoryLabel(category)):")
+            for finding in findings {
+                lines.append("- \(finding.location.path):\(finding.location.line) \(finding.title)")
+                lines.append("  \(finding.reasoning)")
+                if let after = finding.afterText {
+                    lines.append("  before: \(finding.beforeText)")
+                    lines.append("  after:  \(after.replacingOccurrences(of: "\n", with: "\\n"))")
+                }
+            }
+        }
+        if !report.warnings.isEmpty {
+            lines.append("Warnings:")
+            for warning in report.warnings {
+                let location = warning.line.map { "\(warning.path):\($0)" } ?? warning.path
+                lines.append("- \(location) \(warning.message)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    private static func categoryLabel(_ category: SSHConfigAuditCategory) -> String {
+        switch category {
+        case .safeReplacement: "Safe replacements"
+        case .manualRecommendation: "Manual review"
+        case .information: "Information"
+        }
+    }
+}

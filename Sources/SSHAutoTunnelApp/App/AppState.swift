@@ -212,7 +212,7 @@ final class AppState: ObservableObject {
 
     func disconnectHop(_ profile: TunnelProfile) {
         pendingTunnelStartTokens[profile.id] = nil
-        lastProxyMessage = "\(profile.name): Hop disconnect requested"
+        lastProxyMessage = "\(profile.name): Hop disconnect requested; terminal sessions sharing this master may close"
         hopManager.stop(profileID: profile.id)
     }
 
@@ -228,7 +228,7 @@ final class AppState: ObservableObject {
             health: .reconnecting,
             message: "Reconnect requested"
         )
-        lastProxyMessage = "\(profile.name): Hop reconnect requested"
+        lastProxyMessage = "\(profile.name): Hop reconnect requested; terminal sessions sharing this master may close"
         hopManager.reconnect(profile: profile, options: .standard)
     }
 
@@ -789,12 +789,42 @@ final class AppState: ObservableObject {
         try SSHConfigSetupService.managedSnippet(for: configuration)
     }
 
+    func managedHopAdapterNames() -> [String] {
+        Array(Set(configuration.profiles.compactMap { profile in
+            guard hasJumpHost(profile) else { return nil }
+            return try? HopEndpointKey(profile: profile).adapterHost
+        })).sorted()
+    }
+
+    func checkSSHConfig() -> SSHConfigAuditReport {
+        SSHConfigAuditService().check(configuration: configuration)
+    }
+
+    func previewSSHConfigSafeFixes(
+        report: SSHConfigAuditReport,
+        findingIDs: Set<String>
+    ) throws -> [SSHConfigFileFixPreview] {
+        try SSHConfigSafeFixService().preview(report: report, findingIDs: findingIDs)
+    }
+
+    @discardableResult
+    func applySSHConfigSafeFixes(
+        report: SSHConfigAuditReport,
+        findingIDs: Set<String>
+    ) throws -> SSHConfigSafeFixResult {
+        let result = try SSHConfigSafeFixService().apply(report: report, findingIDs: findingIDs)
+        let backups = result.backupPaths.isEmpty ? "" : " Backups: \(result.backupPaths.joined(separator: ", "))"
+        lastProxyMessage = "Applied \(result.appliedFindingIDs.count) reviewed SSH config replacement(s) in \(result.changedFiles.count) file(s).\(backups)"
+        return result
+    }
+
     @discardableResult
     func installManagedSSHConfig() throws -> SSHConfigInstallResult {
         let result = try SSHConfigSetupService.installManagedConfig(for: configuration)
         let includeMessage = result.updatedMainConfig ? "added include to \(result.mainConfigURL.path)" : "include already present"
         let backupMessage = result.backupURL.map { " Backup: \($0.path)" } ?? ""
-        lastProxyMessage = "Installed managed SSH config for \(result.profileCount) profiles: \(includeMessage).\(backupMessage)"
+        let migrationBackupMessage = result.managedConfigBackupURL.map { " Managed-config migration backup: \($0.path)" } ?? ""
+        lastProxyMessage = "Installed managed SSH config for \(result.profileCount) profiles: \(includeMessage).\(backupMessage)\(migrationBackupMessage)"
         return result
     }
 

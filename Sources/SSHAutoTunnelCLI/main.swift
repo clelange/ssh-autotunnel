@@ -92,6 +92,8 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .checkSSHAuto2FA))
             case "import-ssh-config":
                 response = try await client.send(ControlRequest(action: .importSSHConfig))
+            case "check-ssh-config":
+                response = try await client.send(ControlRequest(action: .checkSSHConfig))
             case "create-profile":
                 let profile = try readProfile(from: invocation.profileName)
                 response = try await client.send(ControlRequest(action: .createProfile, profile: profile))
@@ -162,6 +164,9 @@ struct SSHAutoTunnelCLI {
         }
 
         print(response.message)
+        if let audit = response.sshConfigAudit {
+            print(SSHConfigAuditTextRenderer.render(audit))
+        }
         guard let status = response.status else { return }
         print("PAC: \(status.pacURL)")
         if let systemPACStatus = status.systemPACStatus {
@@ -182,6 +187,13 @@ struct SSHAutoTunnelCLI {
             if let hop = profile.hop {
                 let hopPID = hop.pid.map { " pid=\($0)" } ?? ""
                 print("  hop \(hop.jumpHost): \(hop.health.rawValue)\(hopPID) - \(hop.message)")
+                if let ownership = hop.ownership {
+                    print("    ownership: \(ownership.rawValue)")
+                }
+                if let issue = hop.issue {
+                    print("    conflict \(issue.code.rawValue): \(issue.detail)")
+                    print("    recovery: \(issue.recoverySuggestion)")
+                }
             }
         }
         if let serviceStatuses = response.sshAuto2FAServiceStatuses {
@@ -363,6 +375,7 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl import-ssh-auto2fa
           ssh-autotunnelctl check-ssh-auto2fa
           ssh-autotunnelctl import-ssh-config
+          ssh-autotunnelctl check-ssh-config [--json]
           ssh-autotunnelctl diagnostics --json
           ssh-autotunnelctl export-config [config-export.json|-]
           ssh-autotunnelctl validate-config <config-export.json|->

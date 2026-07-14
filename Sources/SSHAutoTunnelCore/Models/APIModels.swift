@@ -15,6 +15,7 @@ public enum ControlAction: String, Codable, Sendable {
     case importSSHAuto2FA
     case checkSSHAuto2FA
     case importSSHConfig
+    case checkSSHConfig
     case createProfile
     case updateProfile
     case deleteProfile
@@ -128,12 +129,16 @@ public struct HopStatusSnapshot: Codable, Equatable, Sendable {
     public var health: TunnelHealth
     public var message: String
     public var pid: Int32?
+    public var ownership: HopMasterOwnership?
+    public var issue: HopConnectionIssue?
 
     public init(status: HopRuntimeStatus) {
         jumpHost = status.jumpHost
         health = status.health
         message = status.message
         pid = status.pid
+        ownership = status.ownership
+        issue = status.issue
     }
 }
 
@@ -245,6 +250,7 @@ public struct ControlResponse: Codable, Sendable {
     public var configurationExport: ConfigurationExport?
     public var supportBundle: SupportBundle?
     public var configurationValidation: ConfigurationValidationReport?
+    public var sshConfigAudit: SSHConfigAuditReport?
 
     public init(
         ok: Bool,
@@ -254,7 +260,8 @@ public struct ControlResponse: Codable, Sendable {
         diagnostics: DiagnosticsSnapshot? = nil,
         configurationExport: ConfigurationExport? = nil,
         supportBundle: SupportBundle? = nil,
-        configurationValidation: ConfigurationValidationReport? = nil
+        configurationValidation: ConfigurationValidationReport? = nil,
+        sshConfigAudit: SSHConfigAuditReport? = nil
     ) {
         self.ok = ok
         self.message = message
@@ -264,5 +271,6 @@ public struct ControlResponse: Codable, Sendable {
         self.configurationExport = configurationExport
         self.supportBundle = supportBundle
         self.configurationValidation = configurationValidation
+        self.sshConfigAudit = sshConfigAudit
     }
 }

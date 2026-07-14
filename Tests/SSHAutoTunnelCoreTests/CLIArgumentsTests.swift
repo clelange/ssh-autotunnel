@@ -85,6 +85,11 @@ final class CLIArgumentsTests: XCTestCase {
         XCTAssertEqual(invocation, CLIInvocation(command: "import-ssh-config"))
     }
 
+    func testParsesReadOnlySSHConfigAuditCommand() {
+        let invocation = CLIArguments.parse(["check-ssh-config", "--json"])
+        XCTAssertEqual(invocation, CLIInvocation(command: "check-ssh-config", outputJSON: true))
+    }
+
     func testParsesProfileManagementCommands() {
         XCTAssertEqual(
             CLIArguments.parse(["create-profile", "~/profile.json"]),

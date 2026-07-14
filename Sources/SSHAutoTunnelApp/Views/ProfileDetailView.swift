@@ -98,6 +98,9 @@ struct ProfileDetailPage: View {
                                 appState.connectHop(profile)
                             }
                         }
+                        .help(hop?.health.isRunning == true
+                            ? "Disconnect the shared hop master. Terminal sessions using its internal adapter may close."
+                            : "Connect the shared hop master")
                     }
                     Button {
                         appState.connectInteractiveSSH(profile)

@@ -112,6 +112,32 @@ final class ControlAPIRouterTests: XCTestCase {
         XCTAssertEqual(controlResponse.message, "handled connectHop")
     }
 
+    func testDispatchesReadOnlySSHConfigAuditAndReturnsStructuredReport() throws {
+        var handledRequest: ControlRequest?
+        let report = SSHConfigAuditReport(
+            generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            rootConfigPath: "/Users/test/.ssh/config",
+            sshDirectoryPath: "/Users/test/.ssh",
+            endpoints: [],
+            files: [],
+            findings: [],
+            warnings: []
+        )
+        let router = makeRouter { request in
+            handledRequest = request
+            return ControlResponse(ok: true, message: "audit complete", sshConfigAudit: report)
+        }
+        let body = try JSONEncoder().encode(ControlRequest(action: .checkSSHConfig))
+
+        let response = router.response(for: request(body: body))
+        let controlResponse = try decode(response)
+
+        XCTAssertEqual(handledRequest?.action, .checkSSHConfig)
+        XCTAssertNil(handledRequest?.profileName)
+        XCTAssertTrue(controlResponse.ok)
+        XCTAssertEqual(controlResponse.sshConfigAudit, report)
+    }
+
     func testReturnsNotFoundForUnknownAuthorizedRoute() {
         let router = makeRouter()
 

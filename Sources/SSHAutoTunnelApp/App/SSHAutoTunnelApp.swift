@@ -115,6 +115,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             text += "\n\nQuitting will stop app-owned tunnels and hop connections."
         }
+        text += " Terminal sessions configured to share an app-owned hop master may also be disconnected."
         text += "\n\nCancel to keep SSH AutoTunnel running."
         return text
     }

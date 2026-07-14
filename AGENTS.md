@@ -106,6 +106,11 @@
 - Added hop connect/disconnect/reconnect coverage to the local API, CLI, Shortcuts/App Intents, status snapshots, diagnostics, and tests.
 - Added synchronous SSH stop-on-quit with SIGTERM/SIGKILL fallback, process-group signaling, safer graceful app relaunch in the run script, and pid-validated interactive session markers to prevent orphaned tunnels and stale quit warnings.
 - Added runtime SOCKS port fallback with loopback bind probing, effective-port PAC/status/CLI/dashboard reporting, and one retry for app-owned SSH forwarding conflicts.
+- Pooled compatible jump-host profiles by normalized hop endpoint, added deterministic private ControlPaths, and made ownership manifests/locks safely adopt only verified masters left by an exited app instance.
+- Added structured hop ownership conflicts and recovery guidance to runtime status, diagnostics, the local API, and CLI while leaving foreign or unverified sockets untouched.
+- Replaced destination routing through raw hop endpoints with stable fail-closed internal OpenSSH adapter aliases and added managed-include migration backups.
+- Added a recursive read-only OpenSSH config audit with Include/glob provenance, safe Match evaluation, endpoint alias resolution, evidence-based findings, and read-only API/CLI JSON reporting.
+- Added Settings review/application for selected equivalent single-hop ProxyJump replacements with complete diffs, metadata revalidation, private backups, atomic writes, and multi-file rollback.
 - Replaced automatic first-launch setup with an on-demand template-based New Connection flow and a dashboard empty state for first profile creation.
 - Renamed the setup core from account presets to connection templates and simplified template setup to a single-template apply path.
 - Renamed stored setup account state to template accounts in app configuration and redacted exports.
@@ -134,7 +139,7 @@ swift build
 swift test
 ```
 
-Both passed after the connection-template setup and template-account configuration refactors. The core test suite has 342 XCTest cases.
+Both passed on `feat/shared-hop-ssh-audit` after shared hop ownership/pooling, fail-closed adapters, recursive SSH config audit and safe-fix services, and Settings/API/CLI reporting. The core test suite has 376 XCTest cases.
 
 Latest UI polish validation:
 

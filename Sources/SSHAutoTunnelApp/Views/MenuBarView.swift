@@ -66,7 +66,9 @@ struct MenuBarView: View {
                         } label: {
                             Label(profile.name.menuTruncated, systemImage: (hopStatus?.health ?? .stopped).systemImage)
                         }
-                        .help(hopStatus?.message ?? "Stopped")
+                        .help(hopStatus?.health.isRunning == true
+                            ? "\(hopStatus?.message ?? "Running"). Disconnecting can close terminal sessions sharing this master."
+                            : hopStatus?.message ?? "Stopped")
                     }
                 } label: {
                     Label("Hop Connections", systemImage: "point.3.connected.trianglepath.dotted")

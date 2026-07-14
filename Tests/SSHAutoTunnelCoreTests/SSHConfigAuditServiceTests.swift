@@ -197,6 +197,25 @@ final class SSHConfigAuditServiceTests: XCTestCase {
         XCTAssertEqual(report.endpoints.count, 1)
     }
 
+    func testTextRendererIncludesStructuredFindingAndWarningDetails() throws {
+        let sshDirectory = try temporarySSHDirectory()
+        try write("""
+        Include missing/*.conf
+        Host login.psi.ch
+          User alice
+        """ + "\n", to: sshDirectory.appendingPathComponent("config"))
+
+        let report = SSHConfigAuditService(sshDirectory: sshDirectory).check(
+            configuration: AppConfiguration(profiles: [appProfile()])
+        )
+        let text = SSHConfigAuditTextRenderer.render(report)
+
+        XCTAssertTrue(text.contains("SSH config audit:"))
+        XCTAssertTrue(text.contains("Manual review:"))
+        XCTAssertTrue(text.contains("Warnings:"))
+        XCTAssertTrue(text.contains(sshDirectory.path))
+    }
+
     private func appProfile() -> TunnelProfile {
         TunnelProfile(
             name: "PSI General",

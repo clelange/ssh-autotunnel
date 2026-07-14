@@ -7,7 +7,22 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         let profileID = try XCTUnwrap(UUID(uuidString: "11111111-1111-1111-1111-111111111111"))
         let profile = TunnelProfile(id: profileID, name: "PSI General", host: "login.psi.ch", localSocksPort: 1081, jumpHost: "alice@hopx.psi.ch")
         let status = TunnelRuntimeStatus(profileID: profileID, health: .healthy, message: "SOCKS5 OK", pid: 42)
-        let hopStatus = HopRuntimeStatus(profileID: profileID, jumpHost: "alice@hopx.psi.ch", health: .healthy, message: "Hop OK", pid: 41)
+        let hopIssue = HopConnectionIssue(
+            code: .foreignControlSocket,
+            summary: "Foreign socket",
+            detail: "The socket is not owned by SSH AutoTunnel.",
+            recoverySuggestion: "Choose a different socket path or remove it after verifying ownership.",
+            retryable: false
+        )
+        let hopStatus = HopRuntimeStatus(
+            profileID: profileID,
+            jumpHost: "alice@hopx.psi.ch",
+            health: .failed,
+            message: "Hop conflict",
+            pid: 41,
+            ownership: .adoptedAppOwned,
+            issue: hopIssue
+        )
         let snapshot = DiagnosticsSnapshot(
             generatedAt: Date(timeIntervalSince1970: 1_700_000_000),
             appIdentifier: "dev.clange.ssh-autotunnel",
@@ -43,6 +58,8 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         let decoded = try JSONDecoder().decode(DiagnosticsSnapshot.self, from: data)
 
         XCTAssertEqual(decoded, snapshot)
+        XCTAssertEqual(decoded.profiles.first?.hop?.ownership, .adoptedAppOwned)
+        XCTAssertEqual(decoded.profiles.first?.hop?.issue, hopIssue)
     }
 
     func testAppStatusSnapshotCarriesSystemPACStatus() throws {
