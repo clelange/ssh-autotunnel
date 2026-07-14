@@ -424,9 +424,7 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
     }
 
     private func jumpHostReadyPath(for profile: TunnelProfile) -> URL {
-        URL(fileURLWithPath: "/tmp", isDirectory: true)
-            .appendingPathComponent("ssh-autotunnel-\(profile.id.uuidString)", isDirectory: true)
-            .appendingPathComponent("ready")
+        try! JumpHostControlMasterFactory.make(for: profile).readyPath
     }
 }
 

@@ -4,6 +4,7 @@ import Foundation
 public final class InteractiveSSHSessionRunner {
     private let keychain: GenericPasswordReading
     private let processLauncher: SSHProcessLaunching
+    private let ownershipManager: HopControlMasterOwnershipManaging
     private let totpGenerator: (String) throws -> String
     private let runCommand: (String, [String]) throws -> Void
     private let runStatusCommand: (String, [String]) throws -> Int32
@@ -12,6 +13,7 @@ public final class InteractiveSSHSessionRunner {
         self.init(
             keychain: keychain,
             processLauncher: PTYSSHProcessLauncher(),
+            ownershipManager: FileHopControlMasterOwnershipManager(),
             totpGenerator: { try TOTPGenerator.generate(secretBase32: $0) },
             runCommand: { executable, arguments in
                 _ = try ShellRunner.run(executable, arguments)
@@ -25,6 +27,7 @@ public final class InteractiveSSHSessionRunner {
     init(
         keychain: GenericPasswordReading = KeychainService(),
         processLauncher: SSHProcessLaunching,
+        ownershipManager: HopControlMasterOwnershipManaging = FileHopControlMasterOwnershipManager(),
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
         runCommand: @escaping (String, [String]) throws -> Void = { executable, arguments in
             _ = try ShellRunner.run(executable, arguments)
@@ -35,6 +38,7 @@ public final class InteractiveSSHSessionRunner {
     ) {
         self.keychain = keychain
         self.processLauncher = processLauncher
+        self.ownershipManager = ownershipManager
         self.totpGenerator = totpGenerator
         self.runCommand = runCommand
         self.runStatusCommand = runStatusCommand
@@ -96,10 +100,21 @@ public final class InteractiveSSHSessionRunner {
         configureTerminal: Bool = true
     ) throws -> Int32 {
         writeStatus("Preparing jump host connection for \(profile.name)", to: output)
-        let credentials = try credentials(for: profile)
         let controlMaster = try JumpHostControlMasterFactory.make(for: profile)
-        try resetJumpHostControlMaster(controlMaster)
+        let preparation = try ownershipManager.prepare(controlMaster)
+        if let adoptedPID = preparation.adoptedPID {
+            writeStatus("Reusing verified SSH AutoTunnel hop master (pid \(adoptedPID)).", to: output)
+            return 0
+        }
+        _ = preparation.lease
+        let credentials = try credentials(for: profile)
         let readinessMarker = JumpHostReadinessMarker(controlMaster: controlMaster)
+        let ownershipState = InteractiveHopOwnershipState()
+        defer {
+            if let sessionPID = ownershipState.sessionPID {
+                ownershipManager.cleanup(controlMaster, sessionPID: sessionPID)
+            }
+        }
         writeStatus("Opening jump host setup connection to \(controlMaster.jumpHost)", to: output)
         writeStatus("Keep this window open while using the final SSH session.", to: output)
         writeStatus("Starting \(controlMaster.command.shellCommand)", to: output)
@@ -112,11 +127,17 @@ public final class InteractiveSSHSessionRunner {
             errorOutput: errorOutput,
             bridgeInput: bridgeInput,
             configureTerminal: configureTerminal,
+            onLaunch: { session in
+                ownershipState.setSessionPID(session.processIdentifier)
+                try self.ownershipManager.recordLaunch(controlMaster, sessionPID: session.processIdentifier)
+            },
             onOutput: { data in
                 readinessMarker?.handle(data)
+                ownershipState.recordReadyIfPossible {
+                    try self.ownershipManager.recordReady(controlMaster, sessionPID: $0)
+                }
             }
         )
-        try? FileManager.default.removeItem(at: controlMaster.directory)
         return status
     }
 
@@ -213,6 +234,7 @@ public final class InteractiveSSHSessionRunner {
         errorOutput: FileHandle,
         bridgeInput: Bool,
         configureTerminal: Bool,
+        onLaunch: ((SSHProcessSession) throws -> Void)? = nil,
         onOutput: ((Data) -> Void)? = nil
     ) throws -> Int32 {
         let promptState = InteractivePromptState(
@@ -244,6 +266,12 @@ public final class InteractiveSSHSessionRunner {
             }
         )
         sessionBox.session = session
+        do {
+            try onLaunch?(session)
+        } catch {
+            session.terminate()
+            throw error
+        }
         promptState.respondToBufferedPrompt(sessionBox: sessionBox)
 
         if bridgeInput {
@@ -258,13 +286,6 @@ public final class InteractiveSSHSessionRunner {
 
         termination.wait()
         return terminationStatus
-    }
-
-    private func resetJumpHostControlMaster(_ controlMaster: JumpHostControlMaster) throws {
-        try? runCommand("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "exit", controlMaster.jumpHost])
-        try? FileManager.default.removeItem(at: controlMaster.directory)
-        try FileManager.default.createDirectory(at: controlMaster.directory, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: controlMaster.directory.path)
     }
 
     private func waitForJumpHostControlMaster(_ controlMaster: JumpHostControlMaster, timeoutSeconds: TimeInterval = 120) -> Bool {
@@ -332,6 +353,30 @@ private struct InteractiveSSHCredentials {
 private struct KeychainSecretReference {
     var service: String
     var account: String
+}
+
+private final class InteractiveHopOwnershipState: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedSessionPID: Int32?
+    private var didRecordReady = false
+
+    var sessionPID: Int32? {
+        lock.withLock { storedSessionPID }
+    }
+
+    func setSessionPID(_ pid: Int32) {
+        lock.withLock {
+            storedSessionPID = pid
+        }
+    }
+
+    func recordReadyIfPossible(_ operation: (Int32) throws -> Void) {
+        lock.withLock {
+            guard !didRecordReady, let storedSessionPID else { return }
+            guard (try? operation(storedSessionPID)) != nil else { return }
+            didRecordReady = true
+        }
+    }
 }
 
 private final class InteractivePromptState {

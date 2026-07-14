@@ -182,6 +182,70 @@ final class HopConnectionManagerTests: XCTestCase {
         XCTAssertNotNil(manager.controlMaster(for: profile.id))
     }
 
+    func testCompatibleProfilesPoolOneHopProcessAndDetachIndependently() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let first = psiGeneralProfile(authMode: .none)
+        var second = first
+        second.id = UUID()
+        second.name = "PSI General second route"
+        second.host = "hepserver.psi.ch"
+        second.localSocksPort = 1183
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in true },
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: first)
+        waitUntil("first shared hop starts") {
+            manager.status(for: first.id)?.message == "SSH hop process started"
+        }
+        manager.start(profile: second)
+        waitUntil("second profile shares hop") {
+            manager.status(for: second.id)?.message.contains("Sharing hop ControlMaster") == true
+        }
+        manager.runHealthCheckForTesting()
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertEqual(manager.status(for: first.id)?.health, .healthy)
+        XCTAssertEqual(manager.status(for: second.id)?.health, .healthy)
+        XCTAssertEqual(manager.controlMaster(for: first.id)?.controlPath, manager.controlMaster(for: second.id)?.controlPath)
+
+        manager.stop(profileID: second.id)
+        waitUntil("second profile detaches") {
+            manager.status(for: second.id)?.health == .stopped
+        }
+        XCTAssertTrue(try XCTUnwrap(launcher.sessions.first).isRunning)
+        XCTAssertEqual(manager.status(for: first.id)?.health, .healthy)
+    }
+
+    func testProfilesWithIncompatiblePoliciesDoNotShareEndpoint() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let first = psiGeneralProfile(authMode: .none)
+        var second = first
+        second.id = UUID()
+        second.name = "Incompatible"
+        second.hostKeyPolicy = .strict
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: first)
+        waitUntil("first hop starts") {
+            manager.status(for: first.id)?.message == "SSH hop process started"
+        }
+        manager.start(profile: second)
+        waitUntil("incompatible profile fails") {
+            manager.status(for: second.id)?.health == .failed
+        }
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertEqual(manager.status(for: second.id)?.issue?.code, .incompatibleHopConfiguration)
+        XCTAssertTrue(try XCTUnwrap(launcher.sessions.first).isRunning)
+    }
+
     func testTier3HopWaitsForReadyMarkerAfterControlMasterCheckSucceeds() throws {
         let launcher = FakeHopSSHProcessLauncher()
         let profile = tier3Profile(authMode: .none)

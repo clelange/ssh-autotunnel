@@ -1,6 +1,6 @@
 import Foundation
 
-public enum TunnelAuthMode: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum TunnelAuthMode: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
     case none
     case password
     case totp
@@ -20,7 +20,7 @@ public enum TunnelAuthMode: String, Codable, CaseIterable, Identifiable, Sendabl
     }
 }
 
-public enum SSHHostKeyPolicy: String, Codable, CaseIterable, Identifiable, Sendable {
+public enum SSHHostKeyPolicy: String, Codable, CaseIterable, Identifiable, Hashable, Sendable {
     case acceptNew
     case strict
     case promptAndAccept
@@ -62,7 +62,7 @@ public enum TunnelHealth: String, Codable, CaseIterable, Sendable {
     }
 }
 
-public struct KeychainReference: Codable, Equatable, Sendable {
+public struct KeychainReference: Codable, Equatable, Hashable, Sendable {
     public var account: String
     public var passwordService: String?
     public var totpService: String?
@@ -459,6 +459,8 @@ public struct HopRuntimeStatus: Codable, Equatable, Sendable {
     public var health: TunnelHealth
     public var message: String
     public var pid: Int32?
+    public var ownership: HopMasterOwnership?
+    public var issue: HopConnectionIssue?
     public var lastChanged: Date
 
     public init(
@@ -467,6 +469,8 @@ public struct HopRuntimeStatus: Codable, Equatable, Sendable {
         health: TunnelHealth = .stopped,
         message: String = "Stopped",
         pid: Int32? = nil,
+        ownership: HopMasterOwnership? = nil,
+        issue: HopConnectionIssue? = nil,
         lastChanged: Date = Date()
     ) {
         self.profileID = profileID
@@ -474,6 +478,8 @@ public struct HopRuntimeStatus: Codable, Equatable, Sendable {
         self.health = health
         self.message = message
         self.pid = pid
+        self.ownership = ownership
+        self.issue = issue
         self.lastChanged = lastChanged
     }
 }

@@ -3,8 +3,12 @@ import Foundation
 public struct JumpHostControlMaster: Equatable, Sendable {
     public var profileID: UUID
     public var jumpHost: String
+    public var endpoint: HopEndpointKey
+    public var signature: HopSessionSignature
     public var controlPath: String
     public var readyPath: URL
+    public var manifestURL: URL
+    public var lockURL: URL
     public var directory: URL
     public var command: SSHCommand
     public var finalProfile: TunnelProfile
@@ -12,16 +16,24 @@ public struct JumpHostControlMaster: Equatable, Sendable {
     public init(
         profileID: UUID,
         jumpHost: String,
+        endpoint: HopEndpointKey,
+        signature: HopSessionSignature,
         controlPath: String,
         readyPath: URL,
+        manifestURL: URL,
+        lockURL: URL,
         directory: URL,
         command: SSHCommand,
         finalProfile: TunnelProfile
     ) {
         self.profileID = profileID
         self.jumpHost = jumpHost
+        self.endpoint = endpoint
+        self.signature = signature
         self.controlPath = controlPath
         self.readyPath = readyPath
+        self.manifestURL = manifestURL
+        self.lockURL = lockURL
         self.directory = directory
         self.command = command
         self.finalProfile = finalProfile
@@ -29,16 +41,20 @@ public struct JumpHostControlMaster: Equatable, Sendable {
 }
 
 public enum JumpHostControlMasterFactory {
-    public static func make(for profile: TunnelProfile, options: SSHLaunchOptions = .standard) throws -> JumpHostControlMaster {
-        let jumpHost = try normalizedJumpHost(for: profile)
-        let directory = controlDirectory(for: profile.id)
-        let controlPath = directory.appendingPathComponent("control").path
-        let readyPath = directory.appendingPathComponent("ready")
+    public static func make(
+        for profile: TunnelProfile,
+        options: SSHLaunchOptions = .standard,
+        layout: HopControlPathLayout? = nil
+    ) throws -> JumpHostControlMaster {
+        let endpoint = try HopEndpointKey(profile: profile)
+        let signature = HopSessionSignature(profile: profile, endpoint: endpoint)
+        let paths = try (layout ?? HopControlPathLayout.default()).paths(for: endpoint)
+        let jumpHost = endpoint.destination
 
         var masterArguments = [
             "-M",
             "-tt",
-            "-S", controlPath,
+            "-S", paths.controlPath,
             "-o", "ControlMaster=yes",
             "-o", "ControlPersist=no",
             "-o", "ServerAliveInterval=20",
@@ -69,21 +85,20 @@ public enum JumpHostControlMasterFactory {
         return JumpHostControlMaster(
             profileID: profile.id,
             jumpHost: jumpHost,
-            controlPath: controlPath,
-            readyPath: readyPath,
-            directory: directory,
+            endpoint: endpoint,
+            signature: signature,
+            controlPath: paths.controlPath,
+            readyPath: paths.readyURL,
+            manifestURL: paths.manifestURL,
+            lockURL: paths.lockURL,
+            directory: paths.directory,
             command: SSHCommand(arguments: masterArguments),
-            finalProfile: Self.profile(profile, through: jumpHost, controlPath: controlPath)
+            finalProfile: Self.profile(profile, through: jumpHost, controlPath: paths.controlPath)
         )
     }
 
     public static func profile(_ profile: TunnelProfile, through controlMaster: JumpHostControlMaster) -> TunnelProfile {
         self.profile(profile, through: controlMaster.jumpHost, controlPath: controlMaster.controlPath)
-    }
-
-    public static func controlDirectory(for profileID: UUID) -> URL {
-        URL(fileURLWithPath: "/tmp", isDirectory: true)
-            .appendingPathComponent("ssh-autotunnel-\(profileID.uuidString)", isDirectory: true)
     }
 
     public static func requiresReadyMarker(for jumpHost: String) -> Bool {
@@ -99,15 +114,7 @@ public enum JumpHostControlMasterFactory {
     }
 
     public static func hasJumpHost(_ profile: TunnelProfile) -> Bool {
-        (try? normalizedJumpHost(for: profile)) != nil
-    }
-
-    private static func normalizedJumpHost(for profile: TunnelProfile) throws -> String {
-        let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        guard !jumpHost.isEmpty else {
-            throw NSError(domain: "JumpHostControlMasterFactory", code: 1, userInfo: [NSLocalizedDescriptionKey: "Jump host is not configured"])
-        }
-        return jumpHost
+        (try? HopEndpointKey(profile: profile)) != nil
     }
 
     private static func profile(_ profile: TunnelProfile, through jumpHost: String, controlPath: String) -> TunnelProfile {

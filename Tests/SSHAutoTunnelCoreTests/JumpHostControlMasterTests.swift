@@ -22,7 +22,8 @@ final class JumpHostControlMasterTests: XCTestCase {
 
         XCTAssertEqual(controlMaster.profileID, profileID)
         XCTAssertEqual(controlMaster.jumpHost, "alice@hopx.psi.ch")
-        XCTAssertTrue(controlMaster.controlPath.hasSuffix("/ssh-autotunnel-\(profileID.uuidString)/control"))
+        XCTAssertTrue(controlMaster.controlPath.hasSuffix("/h-\(controlMaster.endpoint.stableHash)/c"))
+        XCTAssertEqual(controlMaster.endpoint.adapterHost, "ssh-autotunnel-hop-\(controlMaster.endpoint.stableHash)")
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-M", "-tt", "-S", controlMaster.controlPath]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "ControlMaster=yes"]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "ClearAllForwardings=yes"]))

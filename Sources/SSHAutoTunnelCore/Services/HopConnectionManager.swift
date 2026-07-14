@@ -7,6 +7,7 @@ public final class HopConnectionManager {
 
     private let keychain: GenericPasswordReading
     private let processLauncher: SSHProcessLaunching
+    private let ownershipManager: HopControlMasterOwnershipManaging
     private let healthCheck: (JumpHostControlMaster) -> Bool
     private let reconnectDelay: (Int) -> TimeInterval
     private let totpGenerator: (String) throws -> String
@@ -21,12 +22,14 @@ public final class HopConnectionManager {
     private var statuses: [UUID: HopRuntimeStatus] = [:]
     private var reconnectTokens: [UUID: UUID] = [:]
     private var reconnectAttempts: [UUID: Int] = [:]
+    private var pendingSharedProfiles: [UUID: [TunnelProfile]] = [:]
     private var healthTimer: DispatchSourceTimer?
 
     public convenience init(keychain: GenericPasswordReading = KeychainService()) {
         self.init(
             keychain: keychain,
             processLauncher: PTYSSHProcessLauncher(),
+            ownershipManager: FileHopControlMasterOwnershipManager(),
             healthCheck: { controlMaster in
                 (try? ShellRunner.run("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "check", controlMaster.jumpHost]).exitCode) == 0
             },
@@ -39,6 +42,7 @@ public final class HopConnectionManager {
     init(
         keychain: GenericPasswordReading = KeychainService(),
         processLauncher: SSHProcessLaunching,
+        ownershipManager: HopControlMasterOwnershipManaging = NoopHopControlMasterOwnershipManager(),
         healthCheck: @escaping (JumpHostControlMaster) -> Bool,
         reconnectDelay: @escaping (Int) -> TimeInterval = { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
@@ -51,6 +55,7 @@ public final class HopConnectionManager {
     ) {
         self.keychain = keychain
         self.processLauncher = processLauncher
+        self.ownershipManager = ownershipManager
         self.healthCheck = healthCheck
         self.reconnectDelay = reconnectDelay
         self.totpGenerator = totpGenerator
@@ -74,6 +79,7 @@ public final class HopConnectionManager {
                 managed.session.terminate()
                 managed.session.forceKill()
             }
+            ownershipManager.cleanup(managed.controlMaster, sessionPID: managed.session.processIdentifier)
         }
         processes.removeAll()
         terminatingProcesses.removeAll()
@@ -158,23 +164,17 @@ public final class HopConnectionManager {
         queue.sync {
             for managed in managedHops {
                 flushRedactedOutputLocked(managed)
-                if processes[managed.profile.id] === managed {
-                    processes[managed.profile.id] = nil
+                for id in managed.profiles.keys where processes[id] === managed {
+                    processes[id] = nil
                 }
                 if terminatingProcesses[managed.session.processIdentifier] === managed {
                     terminatingProcesses[managed.session.processIdentifier] = nil
                 }
-                try? FileManager.default.removeItem(at: managed.controlMaster.directory)
+                ownershipManager.cleanup(managed.controlMaster, sessionPID: managed.session.processIdentifier)
                 if managed.session.isRunning {
-                    updateStatusLocked(
-                        managed.profile.id,
-                        jumpHost: managed.controlMaster.jumpHost,
-                        .failed,
-                        "Could not stop SSH hop process before timeout",
-                        pid: managed.session.processIdentifier
-                    )
+                    updateManagedStatusLocked(managed, .failed, "Could not stop SSH hop process before timeout", pid: managed.session.processIdentifier)
                 } else {
-                    updateStatusLocked(managed.profile.id, jumpHost: managed.controlMaster.jumpHost, .stopped, "Stopped", pid: nil)
+                    updateManagedStatusLocked(managed, .stopped, "Stopped", pid: nil)
                 }
             }
         }
@@ -182,35 +182,140 @@ public final class HopConnectionManager {
     }
 
     private func allManagedHopsLocked() -> [ManagedHopConnection] {
-        var managedHops = Array(processes.values)
+        var seen: Set<ObjectIdentifier> = []
+        var managedHops = Array(processes.values.filter { seen.insert(ObjectIdentifier($0)).inserted })
         let activePIDs = Set(managedHops.map { $0.session.processIdentifier })
-        managedHops.append(contentsOf: terminatingProcesses.values.filter { !activePIDs.contains($0.session.processIdentifier) })
+        managedHops.append(contentsOf: terminatingProcesses.values.filter {
+            !activePIDs.contains($0.session.processIdentifier) && seen.insert(ObjectIdentifier($0)).inserted
+        })
         return managedHops
     }
 
     public func reconnect(profile: TunnelProfile, options: SSHLaunchOptions = .standard) {
         queue.async {
-            self.reconnectTokens[profile.id] = nil
-            self.reconnectAttempts[profile.id] = 0
-            self.stopLocked(profileID: profile.id, updateStatus: false, reason: .restart)
-            self.scheduleReconnectLocked(profile: profile, message: "Reconnecting hop", delay: 1.0, options: options)
+            guard let managed = self.processes[profile.id] else {
+                self.reconnectTokens[profile.id] = nil
+                self.reconnectAttempts[profile.id] = 0
+                self.scheduleReconnectLocked(profile: profile, message: "Reconnecting hop", delay: 1.0, options: options)
+                return
+            }
+            var sharedProfiles = managed.profiles
+            sharedProfiles[profile.id] = profile
+            let sharedValues = Array(sharedProfiles.values)
+            let primary = sharedValues.first(where: { $0.id == profile.id }) ?? profile
+            for shared in sharedValues {
+                self.reconnectTokens[shared.id] = nil
+                self.reconnectAttempts[shared.id] = 0
+            }
+            managed.pendingStart = .init(
+                profile: primary,
+                profiles: sharedValues,
+                message: "Reconnecting hop",
+                options: options,
+                delay: 1.0
+            )
+            self.stopManagedHopLocked(for: profile.id, updateStatus: false, reason: .restart)
         }
     }
 
     private func startLocked(profile: TunnelProfile, message: String, options: SSHLaunchOptions) {
-        stopLocked(profileID: profile.id, updateStatus: false, reason: .replacement)
         do {
             let controlMaster = try JumpHostControlMasterFactory.make(for: profile, options: options)
+            if let current = processes[profile.id],
+               current.controlMaster.endpoint == controlMaster.endpoint,
+               current.controlMaster.signature == controlMaster.signature,
+               current.session.isRunning {
+                if current.launchOptions != options {
+                    var sharedProfiles = current.profiles
+                    sharedProfiles[profile.id] = profile
+                    current.pendingStart = .init(
+                        profile: profile,
+                        profiles: Array(sharedProfiles.values),
+                        message: "Restarting hop with updated SSH diagnostics",
+                        options: options,
+                        delay: 0
+                    )
+                    stopManagedHopLocked(for: profile.id, updateStatus: false, reason: .replacement)
+                    return
+                }
+                current.profiles[profile.id] = profile
+                updateStatusLocked(
+                    profile.id,
+                    jumpHost: current.controlMaster.jumpHost,
+                    statuses[current.profile.id]?.health ?? .connecting,
+                    "Reusing shared hop ControlMaster",
+                    pid: current.session.processIdentifier,
+                    ownership: current.ownership
+                )
+                return
+            }
+
+            if let shared = processes.values.first(where: { $0.controlMaster.endpoint == controlMaster.endpoint && $0.session.isRunning }) {
+                guard shared.controlMaster.signature == controlMaster.signature else {
+                    throw HopControlMasterError.incompatibleConfiguration(endpoint: controlMaster.endpoint)
+                }
+                shared.profiles[profile.id] = profile
+                processes[profile.id] = shared
+                let sharedHealth = statuses[shared.profile.id]?.health ?? .connecting
+                updateStatusLocked(
+                    profile.id,
+                    jumpHost: shared.controlMaster.jumpHost,
+                    sharedHealth,
+                    "Sharing hop ControlMaster with \(shared.profile.name)",
+                    pid: shared.session.processIdentifier,
+                    ownership: shared.ownership
+                )
+                return
+            }
+
+            if processes[profile.id] != nil {
+                stopLocked(profileID: profile.id, updateStatus: false, reason: .replacement)
+            }
             updateStatusLocked(profile.id, jumpHost: controlMaster.jumpHost, .connecting, message, pid: nil)
-            try resetControlMaster(controlMaster)
-            let credentials = try credentials(for: profile)
-            try runKerberosSwitchIfNeeded(profile: profile)
-            let managed = try launch(profile: profile, controlMaster: controlMaster, credentials: credentials, options: options)
-            processes[profile.id] = managed
-            updateStatusLocked(profile.id, jumpHost: controlMaster.jumpHost, .connecting, "SSH hop process started", pid: managed.session.processIdentifier)
+            let preparation = try ownershipManager.prepare(controlMaster)
+            let managed: ManagedHopConnection
+            if let adoptedPID = preparation.adoptedPID {
+                managed = ManagedHopConnection(
+                    profile: profile,
+                    controlMaster: controlMaster,
+                    credentials: HopCredentials(password: nil, totp: nil),
+                    launchOptions: options,
+                    startedAt: now()
+                )
+                managed.session = AdoptedSSHProcessSession(pid: adoptedPID, controlMaster: controlMaster)
+            } else {
+                let credentials = try credentials(for: profile)
+                try runKerberosSwitchIfNeeded(profile: profile)
+                managed = try launch(profile: profile, controlMaster: controlMaster, credentials: credentials, options: options)
+                do {
+                    try ownershipManager.recordLaunch(controlMaster, sessionPID: managed.session.processIdentifier)
+                } catch {
+                    managed.session.terminate()
+                    ownershipManager.cleanup(controlMaster, sessionPID: managed.session.processIdentifier)
+                    throw error
+                }
+            }
+            managed.ownershipLease = preparation.lease
+            managed.ownership = preparation.ownership
+            attachPendingSharedProfiles(to: managed, primaryProfile: profile)
+            updateManagedStatusLocked(
+                managed,
+                .connecting,
+                preparation.adoptedPID == nil ? "SSH hop process started" : "Adopted existing SSH AutoTunnel hop master",
+                pid: managed.session.processIdentifier
+            )
         } catch {
             let jumpHost = profile.jumpHost?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            updateStatusLocked(profile.id, jumpHost: jumpHost, .failed, error.localizedDescription, pid: nil)
+            let issue = (error as? HopControlMasterError)?.issue
+            updateStatusLocked(profile.id, jumpHost: jumpHost, .failed, error.localizedDescription, pid: nil, issue: issue)
+        }
+    }
+
+    private func attachPendingSharedProfiles(to managed: ManagedHopConnection, primaryProfile: TunnelProfile) {
+        let sharedProfiles = pendingSharedProfiles.removeValue(forKey: primaryProfile.id) ?? [primaryProfile]
+        for shared in sharedProfiles {
+            managed.profiles[shared.id] = shared
+            processes[shared.id] = managed
         }
     }
 
@@ -241,15 +346,6 @@ public final class HopConnectionManager {
         }
         let principal = "\(profile.user ?? profile.keychain.account)@CERN.CH"
         _ = try? ShellRunner.run("/usr/bin/kswitch", ["-p", principal])
-    }
-
-    private func resetControlMaster(_ controlMaster: JumpHostControlMaster) throws {
-        if FileManager.default.fileExists(atPath: controlMaster.controlPath) {
-            _ = try? ShellRunner.run("/usr/bin/ssh", ["-S", controlMaster.controlPath, "-O", "exit", controlMaster.jumpHost])
-        }
-        try? FileManager.default.removeItem(at: controlMaster.directory)
-        try FileManager.default.createDirectory(at: controlMaster.directory, withIntermediateDirectories: true)
-        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: controlMaster.directory.path)
     }
 
     private func launch(profile: TunnelProfile, controlMaster: JumpHostControlMaster, credentials: HopCredentials, options: SSHLaunchOptions) throws -> ManagedHopConnection {
@@ -292,18 +388,27 @@ public final class HopConnectionManager {
         guard let transcriptText = String(data: hop.outputBuffer, encoding: .utf8)?.lowercased() else { return }
         if Self.matchesExistingSessionMessage(in: transcriptText) {
             hop.hasExistingSessionConflict = true
-            reconnectTokens[hop.profile.id] = nil
-            reconnectAttempts[hop.profile.id] = nil
+            for id in hop.profiles.keys {
+                reconnectTokens[id] = nil
+                reconnectAttempts[id] = nil
+            }
             logEventLocked("existing hop session detected; stopping auto-reconnect", profileID: hop.profile.id)
             let failureMessage = Self.existingSessionFailureMessage(for: hop.controlMaster.jumpHost)
-            updateStatusLocked(
-                hop.profile.id,
-                jumpHost: hop.controlMaster.jumpHost,
+            let issue = HopConnectionIssue(
+                code: .serverExistingSession,
+                summary: "The hop server rejected another session",
+                detail: failureMessage,
+                recoverySuggestion: "Close the independent hop session or reconnect it through SSH AutoTunnel's shared adapter.",
+                retryable: true
+            )
+            updateManagedStatusLocked(
+                hop,
                 .failed,
                 failureMessage,
-                pid: hop.session.processIdentifier
+                pid: hop.session.processIdentifier,
+                issue: issue
             )
-            stopLocked(profileID: hop.profile.id, updateStatus: false, reason: .user)
+            stopManagedHopLocked(for: hop.profile.id, updateStatus: false, reason: .user)
             return
         }
     }
@@ -339,14 +444,13 @@ public final class HopConnectionManager {
                 write("yes\n", to: hop)
             case .acceptNew, .strict:
                 logEventLocked("host key prompt blocked by \(hop.profile.hostKeyPolicy.displayName) policy", profileID: hop.profile.id)
-                updateStatusLocked(
-                    hop.profile.id,
-                    jumpHost: hop.controlMaster.jumpHost,
+                updateManagedStatusLocked(
+                    hop,
                     .failed,
                     "SSH host key prompt blocked by \(hop.profile.hostKeyPolicy.displayName) policy",
                     pid: hop.session.processIdentifier
                 )
-                stopLocked(profileID: hop.profile.id, updateStatus: false, reason: .user)
+                stopManagedHopLocked(for: hop.profile.id, updateStatus: false, reason: .user)
             }
         case .sendPassword:
             guard !hop.sentPassword else { return }
@@ -372,14 +476,13 @@ public final class HopConnectionManager {
                     write(totp + "\n", to: hop)
                 } catch {
                     logEventLocked("TOTP generation failed: \(error.localizedDescription)", profileID: hop.profile.id)
-                    updateStatusLocked(
-                        hop.profile.id,
-                        jumpHost: hop.controlMaster.jumpHost,
+                    updateManagedStatusLocked(
+                        hop,
                         .failed,
                         "Could not generate TOTP: \(error.localizedDescription)",
                         pid: hop.session.processIdentifier
                     )
-                    stopLocked(profileID: hop.profile.id, updateStatus: false, reason: .user)
+                    stopManagedHopLocked(for: hop.profile.id, updateStatus: false, reason: .user)
                 }
             }
         }
@@ -399,7 +502,7 @@ public final class HopConnectionManager {
     }
 
     private func stopLocked(profileID: UUID, updateStatus: Bool, reason: ManagedHopConnection.StopReason) {
-        guard let managed = processes.removeValue(forKey: profileID) else {
+        guard let managed = processes[profileID] else {
             if updateStatus {
                 if let stopping = terminatingProcesses.values.first(where: { $0.profile.id == profileID }) {
                     updateStatusLocked(
@@ -416,22 +519,52 @@ public final class HopConnectionManager {
             }
             return
         }
+        processes[profileID] = nil
+        if managed.profiles.count > 1 {
+            managed.profiles[profileID] = nil
+            if updateStatus {
+                updateStatusLocked(
+                    profileID,
+                    jumpHost: managed.controlMaster.jumpHost,
+                    .stopped,
+                    "Stopped using shared hop; ControlMaster remains active for other profiles",
+                    pid: nil
+                )
+            }
+            return
+        }
+        terminateManagedHopLocked(managed, updateStatus: updateStatus, reason: reason)
+    }
+
+    private func stopManagedHopLocked(for profileID: UUID, updateStatus: Bool, reason: ManagedHopConnection.StopReason) {
+        guard let managed = processes[profileID] else {
+            stopLocked(profileID: profileID, updateStatus: updateStatus, reason: reason)
+            return
+        }
+        for id in managed.profiles.keys {
+            processes[id] = nil
+        }
+        terminateManagedHopLocked(managed, updateStatus: updateStatus, reason: reason)
+    }
+
+    private func terminateManagedHopLocked(
+        _ managed: ManagedHopConnection,
+        updateStatus: Bool,
+        reason: ManagedHopConnection.StopReason
+    ) {
         flushRedactedOutputLocked(managed)
         managed.stopReason = reason
         managed.stopUpdatesStatus = updateStatus
         if managed.session.isRunning {
             terminatingProcesses[managed.session.processIdentifier] = managed
-            logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: profileID)
+            logEventLocked("termination requested; sending SIGTERM to pid \(managed.session.processIdentifier)", profileID: managed.profile.id)
             if updateStatus {
-                updateStatusLocked(
-                    profileID,
-                    jumpHost: managed.controlMaster.jumpHost,
-                    .stopping,
-                    "Stopping SSH hop process",
-                    pid: managed.session.processIdentifier
-                )
+                updateManagedStatusLocked(managed, .stopping, "Stopping SSH hop process", pid: managed.session.processIdentifier)
             }
             managed.session.terminate()
+            if !managed.session.isRunning {
+                observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
+            }
             queue.asyncAfter(deadline: .now() + stopForceKillDelay) { [weak self, managed] in
                 self?.forceKillIfStillStoppingLocked(managed)
             }
@@ -498,17 +631,27 @@ public final class HopConnectionManager {
 
         flushRedactedOutputLocked(managed)
         let wasTerminating = terminatingProcesses[managed.session.processIdentifier] === managed
-        if processes[managed.profile.id] === managed {
-            processes[managed.profile.id] = nil
+        for id in managed.profiles.keys where processes[id] === managed {
+            processes[id] = nil
         }
         if wasTerminating {
             terminatingProcesses[managed.session.processIdentifier] = nil
         }
-        try? FileManager.default.removeItem(at: managed.controlMaster.directory)
+        ownershipManager.cleanup(managed.controlMaster, sessionPID: managed.session.processIdentifier)
+        managed.ownershipLease = nil
 
         if wasTerminating {
             if managed.stopUpdatesStatus {
-                updateStatusLocked(managed.profile.id, jumpHost: managed.controlMaster.jumpHost, .stopped, "Stopped", pid: nil)
+                updateManagedStatusLocked(managed, .stopped, "Stopped", pid: nil)
+            }
+            if let pendingStart = managed.pendingStart {
+                pendingSharedProfiles[pendingStart.profile.id] = pendingStart.profiles
+                scheduleReconnectLocked(
+                    profile: pendingStart.profile,
+                    message: pendingStart.message,
+                    delay: pendingStart.delay,
+                    options: pendingStart.options
+                )
             }
             return
         }
@@ -519,13 +662,11 @@ public final class HopConnectionManager {
             : TunnelLifecyclePolicy.processExitDecision(
                 terminationStatus: terminationStatus,
                 wasIntentionalStop: managed.stopReason != nil,
-                autoReconnect: managed.profile.autoReconnect
+                autoReconnect: managed.profiles.values.contains(where: \.autoReconnect)
             )
         applyProcessExitDecisionLocked(
             decision,
-            profile: managed.profile,
-            controlMaster: managed.controlMaster,
-            options: managed.launchOptions,
+            managed: managed,
             terminationStatus: terminationStatus,
             exitDetail: managed.lastOutputLine,
             forcedFailureMessage: hasExistingSessionConflict
@@ -535,15 +676,13 @@ public final class HopConnectionManager {
     }
 
     private func isTrackedLocked(_ managed: ManagedHopConnection) -> Bool {
-        processes[managed.profile.id] === managed
+        processes.values.contains(where: { $0 === managed })
             || terminatingProcesses[managed.session.processIdentifier] === managed
     }
 
     private func applyProcessExitDecisionLocked(
         _ decision: TunnelLifecyclePolicy.ProcessExitDecision,
-        profile: TunnelProfile,
-        controlMaster: JumpHostControlMaster,
-        options: SSHLaunchOptions,
+        managed: ManagedHopConnection,
         terminationStatus: Int32,
         exitDetail: String?,
         forcedFailureMessage: String? = nil
@@ -552,23 +691,49 @@ public final class HopConnectionManager {
         case .ignore:
             return
         case .markStopped:
-            reconnectTokens[profile.id] = nil
-            reconnectAttempts[profile.id] = nil
-            updateStatusLocked(profile.id, jumpHost: controlMaster.jumpHost, .stopped, sshExitMessage(status: terminationStatus, detail: exitDetail), pid: nil)
+            for id in managed.profiles.keys {
+                reconnectTokens[id] = nil
+                reconnectAttempts[id] = nil
+            }
+            updateManagedStatusLocked(managed, .stopped, sshExitMessage(status: terminationStatus, detail: exitDetail), pid: nil)
         case .markFailed:
-            reconnectTokens[profile.id] = nil
-            updateStatusLocked(
-                profile.id,
-                jumpHost: controlMaster.jumpHost,
+            for id in managed.profiles.keys {
+                reconnectTokens[id] = nil
+            }
+            let issue: HopConnectionIssue? = forcedFailureMessage.map {
+                HopConnectionIssue(
+                    code: .serverExistingSession,
+                    summary: "The hop server rejected another session",
+                    detail: $0,
+                    recoverySuggestion: "Close the independent hop session or reconnect it through SSH AutoTunnel's shared adapter.",
+                    retryable: true
+                )
+            }
+            updateManagedStatusLocked(
+                managed,
                 .failed,
                 forcedFailureMessage ?? sshExitMessage(status: terminationStatus, detail: exitDetail),
-                pid: nil
+                pid: nil,
+                issue: issue
             )
         case .reconnect:
+            let profiles = Array(managed.profiles.values)
+            let profile = profiles.first(where: { $0.id == managed.profile.id }) ?? managed.profile
+            pendingSharedProfiles[profile.id] = profiles
+            for shared in profiles where shared.id != profile.id {
+                updateStatusLocked(
+                    shared.id,
+                    jumpHost: managed.controlMaster.jumpHost,
+                    .reconnecting,
+                    "\(sshExitMessage(status: terminationStatus, detail: exitDetail)); reconnecting shared hop",
+                    pid: nil,
+                    ownership: managed.ownership
+                )
+            }
             scheduleReconnectLocked(
                 profile: profile,
                 message: "\(sshExitMessage(status: terminationStatus, detail: exitDetail)); reconnecting hop",
-                options: options
+                options: managed.launchOptions
             )
         }
     }
@@ -605,11 +770,48 @@ public final class HopConnectionManager {
         }
     }
 
-    private func updateStatusLocked(_ profileID: UUID, jumpHost: String, _ health: TunnelHealth, _ message: String, pid: Int32?) {
+    private func updateManagedStatusLocked(
+        _ managed: ManagedHopConnection,
+        _ health: TunnelHealth,
+        _ message: String,
+        pid: Int32?,
+        issue: HopConnectionIssue? = nil
+    ) {
+        for profileID in managed.profiles.keys {
+            updateStatusLocked(
+                profileID,
+                jumpHost: managed.controlMaster.jumpHost,
+                health,
+                message,
+                pid: pid,
+                ownership: managed.ownership,
+                issue: issue
+            )
+        }
+    }
+
+    private func updateStatusLocked(
+        _ profileID: UUID,
+        jumpHost: String,
+        _ health: TunnelHealth,
+        _ message: String,
+        pid: Int32?,
+        ownership: HopMasterOwnership? = nil,
+        issue: HopConnectionIssue? = nil
+    ) {
         let previous = statuses[profileID]
-        let status = HopRuntimeStatus(profileID: profileID, jumpHost: jumpHost, health: health, message: message, pid: pid)
+        let status = HopRuntimeStatus(
+            profileID: profileID,
+            jumpHost: jumpHost,
+            health: health,
+            message: message,
+            pid: pid,
+            ownership: ownership,
+            issue: issue
+        )
         statuses[profileID] = status
-        if previous?.jumpHost != jumpHost || previous?.health != health || previous?.message != message || previous?.pid != pid {
+        if previous?.jumpHost != jumpHost || previous?.health != health || previous?.message != message
+            || previous?.pid != pid || previous?.ownership != ownership || previous?.issue != issue {
             var statusMessage = "status \(health.rawValue): \(message)"
             if !jumpHost.isEmpty {
                 statusMessage += " via \(jumpHost)"
@@ -647,23 +849,38 @@ public final class HopConnectionManager {
 
     private func checkHealthLocked() {
         finalizeExitedTerminatingProcessesLocked()
-        for (profileID, managed) in Array(processes) {
+        var seen: Set<ObjectIdentifier> = []
+        let managedHops = processes.values.filter { seen.insert(ObjectIdentifier($0)).inserted }
+        for managed in managedHops {
+            let profileID = managed.profile.id
             guard managed.session.isRunning else {
                 observeProcessTerminationLocked(managed, terminationStatus: managed.session.terminationStatus)
                 continue
             }
 
             if healthCheck(managed.controlMaster), isReady(managed.controlMaster) {
-                let current = statuses[profileID]?.health
-                if current != .healthy {
-                    updateStatusLocked(profileID, jumpHost: managed.controlMaster.jumpHost, .healthy, "Jump host ControlMaster is ready", pid: managed.session.processIdentifier)
+                if !managed.didRecordReadyOwnership {
+                    do {
+                        try ownershipManager.recordReady(managed.controlMaster, sessionPID: managed.session.processIdentifier)
+                        managed.didRecordReadyOwnership = true
+                    } catch {
+                        let issue = (error as? HopControlMasterError)?.issue
+                        updateManagedStatusLocked(managed, .failed, error.localizedDescription, pid: managed.session.processIdentifier, issue: issue)
+                        stopManagedHopLocked(for: profileID, updateStatus: false, reason: .user)
+                        continue
+                    }
                 }
-                reconnectAttempts[profileID] = 0
+                if managed.profiles.keys.contains(where: { statuses[$0]?.health != .healthy }) {
+                    updateManagedStatusLocked(managed, .healthy, "Jump host ControlMaster is ready", pid: managed.session.processIdentifier)
+                }
+                for id in managed.profiles.keys {
+                    reconnectAttempts[id] = 0
+                }
             } else {
                 let hasInitialReadinessGraceExpired = now().timeIntervalSince(managed.startedAt) >= initialReadinessGracePeriod
                 let decision = TunnelLifecyclePolicy.healthProbeFailureDecision(
                     previousHealth: statuses[profileID]?.health,
-                    autoReconnect: managed.profile.autoReconnect,
+                    autoReconnect: managed.profiles.values.contains(where: \.autoReconnect),
                     hasInitialReadinessGraceExpired: hasInitialReadinessGraceExpired
                 )
                 switch decision {
@@ -671,18 +888,24 @@ public final class HopConnectionManager {
                     let message = JumpHostControlMasterFactory.requiresReadyMarker(for: managed.controlMaster.jumpHost)
                         ? "Waiting for SSH authentication and jump host setup prompt"
                         : "Waiting for SSH authentication and ControlMaster"
-                    updateStatusLocked(
-                        profileID,
-                        jumpHost: managed.controlMaster.jumpHost,
+                    updateManagedStatusLocked(
+                        managed,
                         statuses[profileID]?.health == .reconnecting ? .reconnecting : .connecting,
                         message,
                         pid: managed.session.processIdentifier
                     )
                 case .markUnhealthy:
-                    updateStatusLocked(profileID, jumpHost: managed.controlMaster.jumpHost, .unhealthy, "Jump host ControlMaster check failed", pid: managed.session.processIdentifier)
+                    updateManagedStatusLocked(managed, .unhealthy, "Jump host ControlMaster check failed", pid: managed.session.processIdentifier)
                 case .reconnect:
-                    stopLocked(profileID: profileID, updateStatus: false, reason: .restart)
-                    scheduleReconnectLocked(profile: managed.profile, message: "Jump host ControlMaster check failed; reconnecting hop", options: managed.launchOptions)
+                    let sharedProfiles = Array(managed.profiles.values)
+                    managed.pendingStart = .init(
+                        profile: managed.profile,
+                        profiles: sharedProfiles,
+                        message: "Jump host ControlMaster check failed; reconnecting hop",
+                        options: managed.launchOptions,
+                        delay: 0
+                    )
+                    stopManagedHopLocked(for: profileID, updateStatus: false, reason: .restart)
                 }
             }
         }
@@ -719,6 +942,14 @@ private struct HopSecretReference {
 }
 
 private final class ManagedHopConnection {
+    struct PendingStart {
+        var profile: TunnelProfile
+        var profiles: [TunnelProfile]
+        var message: String
+        var options: SSHLaunchOptions
+        var delay: TimeInterval
+    }
+
     enum StopReason {
         case user
         case restart
@@ -726,12 +957,17 @@ private final class ManagedHopConnection {
     }
 
     let profile: TunnelProfile
+    var profiles: [UUID: TunnelProfile]
     let controlMaster: JumpHostControlMaster
     let credentials: HopCredentials
     let launchOptions: SSHLaunchOptions
     let startedAt: Date
     let readinessMarker: JumpHostReadinessMarker?
     var session: SSHProcessSession!
+    var ownershipLease: HopControlMasterLease?
+    var ownership: HopMasterOwnership = .appOwned
+    var pendingStart: PendingStart?
+    var didRecordReadyOwnership = false
     var outputBuffer = Data()
     var redactedSecrets: [String]
     var redactor: SSHTranscriptRedactor
@@ -766,6 +1002,7 @@ private final class ManagedHopConnection {
 
     init(profile: TunnelProfile, controlMaster: JumpHostControlMaster, credentials: HopCredentials, launchOptions: SSHLaunchOptions, startedAt: Date) {
         self.profile = profile
+        profiles = [profile.id: profile]
         self.controlMaster = controlMaster
         self.credentials = credentials
         self.launchOptions = launchOptions
