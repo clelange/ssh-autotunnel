@@ -35,7 +35,12 @@ final class JumpHostControlMasterTests: XCTestCase {
         XCTAssertNil(controlMaster.finalProfile.jumpHost)
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.contains("-o"))
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.contains { option in
-            option == "ProxyCommand=/usr/bin/ssh -o ControlMaster=auto -o BatchMode=yes -o ClearAllForwardings=yes -S \(controlMaster.controlPath) -W %h:%p alice@hopx.psi.ch"
+            option.contains("ProxyCommand=/usr/bin/ssh -F none")
+                && option.contains("HostName=hop-not-connected.start-ssh-autotunnel.invalid")
+                && option.contains("ControlMaster=no")
+                && option.contains("ControlPersist=no")
+                && option.contains("-S \(controlMaster.controlPath)")
+                && option.hasSuffix(controlMaster.endpoint.adapterHost)
         })
         XCTAssertTrue(controlMaster.finalProfile.extraSSHOptions.containsSubsequence(["-o", "LogLevel=DEBUG", "-o"]))
     }

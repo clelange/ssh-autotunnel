@@ -251,7 +251,7 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try runResult?.get(), 0)
         XCTAssertEqual(statusChecks.first.map { Array($0.suffix(2)) }, ["check", "alice@hopx.psi.ch"])
-        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("ControlMaster=auto") } == true)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("ControlMaster=no") } == true)
         XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("BatchMode=yes") } == true)
         XCTAssertFalse(launcher.commands.first?.arguments.contains("-J") == true)
         XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@login.psi.ch")
@@ -315,7 +315,7 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try runResult?.get(), 0)
-        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("ControlMaster=auto") } == true)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("ControlMaster=no") } == true)
         XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("BatchMode=yes") } == true)
         XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@t3ui07.psi.ch")
     }
@@ -364,7 +364,7 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(try runResult?.get(), 0)
-        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("ControlMaster=auto") } == true)
+        XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("ControlMaster=no") } == true)
         XCTAssertTrue(launcher.commands.first?.arguments.contains { $0.contains("BatchMode=yes") } == true)
         XCTAssertEqual(launcher.commands.first?.arguments.last, "alice@t3ui07.psi.ch")
     }

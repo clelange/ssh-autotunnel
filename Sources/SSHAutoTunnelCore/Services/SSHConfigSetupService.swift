@@ -4,6 +4,7 @@ public struct SSHConfigInstallResult: Equatable, Sendable {
     public var managedConfigURL: URL
     public var mainConfigURL: URL
     public var backupURL: URL?
+    public var managedConfigBackupURL: URL?
     public var wroteManagedConfig: Bool
     public var updatedMainConfig: Bool
     public var profileCount: Int
@@ -12,6 +13,7 @@ public struct SSHConfigInstallResult: Equatable, Sendable {
         managedConfigURL: URL,
         mainConfigURL: URL,
         backupURL: URL?,
+        managedConfigBackupURL: URL?,
         wroteManagedConfig: Bool,
         updatedMainConfig: Bool,
         profileCount: Int
@@ -19,6 +21,7 @@ public struct SSHConfigInstallResult: Equatable, Sendable {
         self.managedConfigURL = managedConfigURL
         self.mainConfigURL = mainConfigURL
         self.backupURL = backupURL
+        self.managedConfigBackupURL = managedConfigBackupURL
         self.wroteManagedConfig = wroteManagedConfig
         self.updatedMainConfig = updatedMainConfig
         self.profileCount = profileCount
@@ -40,59 +43,71 @@ public enum SSHConfigSetupError: LocalizedError, Equatable, Sendable {
 }
 
 public enum SSHConfigSetupService {
+    public static let managedConfigVersion = 2
     public static let managedIncludeStart = "# SSH AutoTunnel managed include"
     public static let managedIncludeEnd = "# End SSH AutoTunnel managed include"
     public static let managedConfigRelativePath = "config.d/ssh-autotunnel.conf"
 
-    public static func managedSnippet(for configuration: AppConfiguration) throws -> String {
+    public static func managedSnippet(
+        for configuration: AppConfiguration,
+        layout: HopControlPathLayout? = nil
+    ) throws -> String {
         let profiles = configuration.profiles
             .filter { normalizedJumpHost($0.jumpHost) != nil }
             .sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
         try validateManagedConfigFields(profiles)
         guard !profiles.isEmpty else {
             return [
-                "# SSH AutoTunnel managed SSH config",
+                "# SSH AutoTunnel managed SSH config v\(managedConfigVersion)",
                 "# No jump-host profiles are configured."
             ].joined(separator: "\n") + "\n"
         }
 
-        var jumpHosts: [String: JumpHostConfig] = [:]
+        let resolvedLayout = try layout ?? HopControlPathLayout.default()
+        var adapters: [HopEndpointKey: ManagedHopAdapterConfig] = [:]
         var finalHosts: [String: FinalHostConfig] = [:]
 
         for profile in profiles {
-            guard let jumpHost = normalizedJumpHost(profile.jumpHost) else { continue }
-            let jump = JumpHostConfig(jumpHost: jumpHost, fallbackUser: profile.user ?? profile.keychain.account)
-            jumpHosts[jump.host] = jumpHosts[jump.host] ?? jump
+            let endpoint = try HopEndpointKey(profile: profile)
+            let signature = HopSessionSignature(profile: profile, endpoint: endpoint)
+            if let existing = adapters[endpoint], existing.signature != signature {
+                throw HopControlMasterError.incompatibleConfiguration(endpoint: endpoint)
+            }
+            let paths = try resolvedLayout.paths(for: endpoint)
+            adapters[endpoint] = ManagedHopAdapterConfig(
+                endpoint: endpoint,
+                signature: signature,
+                controlPath: paths.controlPath
+            )
 
             for host in finalSSHHosts(for: profile) {
                 let finalHost = FinalHostConfig(
                     host: host,
                     user: normalizedValue(profile.user) ?? normalizedValue(profile.keychain.account),
-                    proxyJump: jump.proxyJumpTarget
+                    proxyJump: endpoint.adapterHost
                 )
                 finalHosts["\(finalHost.host)|\(finalHost.proxyJump)"] = finalHost
             }
         }
 
         var lines: [String] = [
-            "# SSH AutoTunnel managed SSH config",
+            "# SSH AutoTunnel managed SSH config v\(managedConfigVersion)",
             "# Safe to replace from SSH AutoTunnel.",
+            "# Internal hop adapters fail closed unless the app-owned ControlMaster is running.",
             ""
         ]
 
-        for jump in jumpHosts.values.sorted(by: { $0.host < $1.host }) {
+        for adapter in adapters.values.sorted(by: { $0.endpoint.adapterHost < $1.endpoint.adapterHost }) {
             lines += [
-                "Host \(jump.host)",
-                "  HostName \(jump.host)"
-            ]
-            if let user = jump.user {
-                lines.append("  User \(user)")
-            }
-            lines += [
+                "Host \(adapter.endpoint.adapterHost)",
+                "  HostName hop-not-connected.start-ssh-autotunnel.invalid",
+                "  User unused",
                 "  ProxyJump none",
-                "  ControlMaster auto",
-                "  ControlPath ~/.ssh/sockets/%C",
-                "  ControlPersist 600",
+                "  ControlMaster no",
+                "  ControlPersist no",
+                "  ControlPath \(adapter.controlPath)",
+                "  BatchMode yes",
+                "  ClearAllForwardings yes",
                 ""
             ]
         }
@@ -114,9 +129,10 @@ public enum SSHConfigSetupService {
     public static func installManagedConfig(
         for configuration: AppConfiguration,
         sshDirectory: URL = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".ssh", isDirectory: true),
-        now: Date = Date()
+        now: Date = Date(),
+        layout: HopControlPathLayout? = nil
     ) throws -> SSHConfigInstallResult {
-        let snippet = try managedSnippet(for: configuration)
+        let snippet = try managedSnippet(for: configuration, layout: layout)
         let profileCount = configuration.profiles.filter { normalizedJumpHost($0.jumpHost) != nil }.count
         guard profileCount > 0 else {
             throw SSHConfigSetupError.noJumpHostProfiles
@@ -132,9 +148,23 @@ public enum SSHConfigSetupService {
 
         let oldManagedContent = try? String(contentsOf: managedConfigURL, encoding: .utf8)
         let wroteManagedConfig = oldManagedContent != snippet
+        let managedConfigBackupURL: URL?
         if wroteManagedConfig {
+            if fileManager.fileExists(atPath: managedConfigURL.path) {
+                let backup = availableBackupURL(
+                    in: managedConfigURL.deletingLastPathComponent(),
+                    baseName: "ssh-autotunnel.conf.ssh-autotunnel-backup-\(timestamp(now))"
+                )
+                try fileManager.copyItem(at: managedConfigURL, to: backup)
+                try FileProtection.protectFile(backup)
+                managedConfigBackupURL = backup
+            } else {
+                managedConfigBackupURL = nil
+            }
             try snippet.write(to: managedConfigURL, atomically: true, encoding: .utf8)
             try FileProtection.protectFile(managedConfigURL)
+        } else {
+            managedConfigBackupURL = nil
         }
 
         let includeBlock = includeBlockText()
@@ -151,8 +181,10 @@ public enum SSHConfigSetupService {
             }
         } else {
             backupURL = fileManager.fileExists(atPath: mainConfigURL.path)
-                ? mainConfigURL.deletingLastPathComponent()
-                    .appendingPathComponent("config.ssh-autotunnel-backup-\(timestamp(now)).bak")
+                ? availableBackupURL(
+                    in: mainConfigURL.deletingLastPathComponent(),
+                    baseName: "config.ssh-autotunnel-backup-\(timestamp(now))"
+                )
                 : nil
             if let backupURL {
                 try fileManager.copyItem(at: mainConfigURL, to: backupURL)
@@ -168,6 +200,7 @@ public enum SSHConfigSetupService {
             managedConfigURL: managedConfigURL,
             mainConfigURL: mainConfigURL,
             backupURL: backupURL,
+            managedConfigBackupURL: managedConfigBackupURL,
             wroteManagedConfig: wroteManagedConfig,
             updatedMainConfig: updatedMainConfig,
             profileCount: profileCount
@@ -202,6 +235,17 @@ public enum SSHConfigSetupService {
         formatter.timeZone = TimeZone(secondsFromGMT: 0)
         formatter.dateFormat = "yyyyMMdd-HHmmss"
         return formatter.string(from: date)
+    }
+
+    private static func availableBackupURL(in directory: URL, baseName: String) -> URL {
+        let fileManager = FileManager.default
+        var suffix = 1
+        var candidate = directory.appendingPathComponent("\(baseName).bak")
+        while fileManager.fileExists(atPath: candidate.path) {
+            suffix += 1
+            candidate = directory.appendingPathComponent("\(baseName)-\(suffix).bak")
+        }
+        return candidate
     }
 
     private static func finalSSHHosts(for profile: TunnelProfile) -> [String] {
@@ -267,34 +311,14 @@ public enum SSHConfigSetupService {
     }
 }
 
-private struct JumpHostConfig: Equatable {
-    var host: String
-    var user: String?
-
-    init(jumpHost: String, fallbackUser: String?) {
-        let parts = jumpHost.split(separator: "@", maxSplits: 1).map(String.init)
-        if parts.count == 2 {
-            user = parts[0]
-            host = parts[1]
-        } else {
-            user = normalized(fallbackUser)
-            host = jumpHost
-        }
-    }
-
-    var proxyJumpTarget: String {
-        guard let user else { return host }
-        return "\(user)@\(host)"
-    }
+private struct ManagedHopAdapterConfig: Equatable {
+    var endpoint: HopEndpointKey
+    var signature: HopSessionSignature
+    var controlPath: String
 }
 
 private struct FinalHostConfig: Equatable {
     var host: String
     var user: String?
     var proxyJump: String
-}
-
-private func normalized(_ value: String?) -> String? {
-    let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-    return trimmed.isEmpty ? nil : trimmed
 }

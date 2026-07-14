@@ -93,12 +93,12 @@ public enum JumpHostControlMasterFactory {
             lockURL: paths.lockURL,
             directory: paths.directory,
             command: SSHCommand(arguments: masterArguments),
-            finalProfile: Self.profile(profile, through: jumpHost, controlPath: paths.controlPath)
+            finalProfile: Self.profile(profile, through: endpoint, controlPath: paths.controlPath)
         )
     }
 
     public static func profile(_ profile: TunnelProfile, through controlMaster: JumpHostControlMaster) -> TunnelProfile {
-        self.profile(profile, through: controlMaster.jumpHost, controlPath: controlMaster.controlPath)
+        self.profile(profile, through: controlMaster.endpoint, controlPath: controlMaster.controlPath)
     }
 
     public static func requiresReadyMarker(for jumpHost: String) -> Bool {
@@ -117,17 +117,22 @@ public enum JumpHostControlMasterFactory {
         (try? HopEndpointKey(profile: profile)) != nil
     }
 
-    private static func profile(_ profile: TunnelProfile, through jumpHost: String, controlPath: String) -> TunnelProfile {
+    private static func profile(_ profile: TunnelProfile, through endpoint: HopEndpointKey, controlPath: String) -> TunnelProfile {
         var finalProfile = profile
         finalProfile.jumpHost = nil
         let proxyCommand = [
             "/usr/bin/ssh",
-            "-o", "ControlMaster=auto",
+            "-F", "none",
+            "-o", "HostName=hop-not-connected.start-ssh-autotunnel.invalid",
+            "-o", "User=unused",
+            "-o", "ProxyJump=none",
+            "-o", "ControlMaster=no",
+            "-o", "ControlPersist=no",
             "-o", "BatchMode=yes",
             "-o", "ClearAllForwardings=yes",
             "-S", SSHCommand.shellQuoted(controlPath),
             "-W", "%h:%p",
-            SSHCommand.shellQuoted(jumpHost)
+            SSHCommand.shellQuoted(endpoint.adapterHost)
         ].joined(separator: " ")
         finalProfile.extraSSHOptions += ["-o", "ProxyCommand=\(proxyCommand)"]
         return finalProfile
