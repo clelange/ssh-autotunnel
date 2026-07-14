@@ -137,6 +137,45 @@ final class SSHConfigAuditServiceTests: XCTestCase {
         XCTAssertTrue(report.information.contains { $0.code == .unrelatedProxyJump })
     }
 
+    func testNearMatchingHopWithoutConfiguredUserRequiresManualReview() throws {
+        let sshDirectory = try temporarySSHDirectory()
+        try write("""
+        Host psi-main-gateway
+          HostName hopx.psi.ch
+
+        Match host *.psi.ch
+          ProxyJump psi-main-gateway
+        """ + "\n", to: sshDirectory.appendingPathComponent("config"))
+
+        let report = SSHConfigAuditService(sshDirectory: sshDirectory).check(
+            configuration: AppConfiguration(profiles: [appProfile()])
+        )
+
+        XCTAssertTrue(report.safeReplacements.isEmpty)
+        let recommendation = try XCTUnwrap(
+            report.manualRecommendations.first { $0.code == .similarProxyJumpEndpoint }
+        )
+        let adapterHost = try HopEndpointKey(profile: appProfile()).adapterHost
+        XCTAssertTrue(recommendation.reasoning.contains("no explicit username"))
+        XCTAssertTrue(recommendation.afterText?.contains(adapterHost) == true)
+        XCTAssertFalse(recommendation.canApply)
+    }
+
+    func testCanonicalHostNameRecommendationSkipsMixedLiteralAndWildcardScope() throws {
+        let sshDirectory = try temporarySSHDirectory()
+        try write("""
+        Host cdct01 cdct01.psi.ch coldbox*
+          User pi
+        """ + "\n", to: sshDirectory.appendingPathComponent("config"))
+
+        let report = SSHConfigAuditService(sshDirectory: sshDirectory).check(
+            configuration: AppConfiguration(profiles: [appProfile()])
+        )
+
+        XCTAssertFalse(report.manualRecommendations.contains { $0.code == .missingCanonicalHostName })
+        XCTAssertTrue(report.information.contains { $0.code == .wildcardScope })
+    }
+
     func testConfiguredLiteralDestinationWithoutRouteIsManualOnly() throws {
         let sshDirectory = try temporarySSHDirectory()
         try write("""

@@ -19,6 +19,7 @@ public enum SSHConfigAuditFindingCode: String, Codable, Sendable {
     case dynamicMatch = "dynamic_match"
     case wildcardScope = "wildcard_scope"
     case unrelatedProxyJump = "unrelated_proxy_jump"
+    case similarProxyJumpEndpoint = "similar_proxy_jump_endpoint"
     case managedAdapterAlreadyUsed = "managed_adapter_already_used"
     case unsupportedSyntax = "unsupported_syntax"
 }
@@ -833,6 +834,19 @@ private struct SSHConfigAuditAnalyzer {
             )]
         }
         guard let resolved = resolveProxyJump(value, evaluator: evaluator), let endpoint = endpoints[resolved] else {
+            if let similarEndpoint = similarEndpoint(for: value, evaluator: evaluator) {
+                let resolvedUser = resolvedJumpComponents(value, evaluator: evaluator)?.user
+                let userDetail = resolvedUser.map { "username \($0)" } ?? "no explicit username"
+                return [makeFinding(
+                    category: .manualRecommendation,
+                    code: .similarProxyJumpEndpoint,
+                    line: directive.line,
+                    title: "Review a near-matching hop route",
+                    reasoning: "The jump target resolves to \(similarEndpoint.host):\(similarEndpoint.port) with \(userDetail), while SSH AutoTunnel owns that endpoint as \(similarEndpoint.destination). Replacing it could change the login identity, so it requires manual review.",
+                    context: block.kind.description,
+                    afterText: SSHConfigAuditParser.replacingValue(in: directive.line.text, with: similarEndpoint.adapterHost)
+                )]
+            }
             return [makeFinding(
                 category: .information,
                 code: .unrelatedProxyJump,
@@ -872,6 +886,8 @@ private struct SSHConfigAuditAnalyzer {
         evaluator: SSHConfigStaticEvaluator
     ) -> [SSHConfigAuditFinding] {
         guard case .host(let patterns) = block.kind, let header = block.header else { return [] }
+        guard patterns.count == 2,
+              patterns.allSatisfy({ !$0.hasPrefix("!") && !containsWildcard($0) }) else { return [] }
         let positive = patterns.filter { !$0.hasPrefix("!") && !containsWildcard($0) }
         let fqdn = positive.filter { $0.contains(".") }
         let short = positive.filter { !$0.contains(".") }
@@ -934,14 +950,35 @@ private struct SSHConfigAuditAnalyzer {
     }
 
     private func resolveProxyJump(_ value: String, evaluator: SSHConfigStaticEvaluator) -> HopEndpointKey? {
+        guard let components = resolvedJumpComponents(value, evaluator: evaluator),
+              let user = components.user,
+              !user.isEmpty else { return nil }
+        return HopEndpointKey(user: user, host: components.host, port: components.port)
+    }
+
+    private func similarEndpoint(
+        for value: String,
+        evaluator: SSHConfigStaticEvaluator
+    ) -> HopEndpointKey? {
+        guard let components = resolvedJumpComponents(value, evaluator: evaluator) else { return nil }
+        let matches = endpoints.keys.filter {
+            $0.host == components.host && $0.port == components.port && $0.user != components.user
+        }
+        return matches.count == 1 ? matches[0] : nil
+    }
+
+    private func resolvedJumpComponents(
+        _ value: String,
+        evaluator: SSHConfigStaticEvaluator
+    ) -> (user: String?, host: String, port: Int)? {
         guard let parsed = parseJumpTarget(value) else { return nil }
         let aliasSettings = evaluator.settings(for: parsed.host)
         let host = (aliasSettings.hostName ?? parsed.host).lowercased()
         guard !host.contains("%"), !host.isEmpty else { return nil }
-        guard let user = parsed.user ?? aliasSettings.user, !user.isEmpty else { return nil }
+        let user = parsed.user ?? aliasSettings.user
         let port = parsed.port ?? aliasSettings.port ?? 22
         guard (1...65_535).contains(port) else { return nil }
-        return HopEndpointKey(user: user, host: host, port: port)
+        return (user, host, port)
     }
 
     private func parseJumpTarget(_ value: String) -> (user: String?, host: String, port: Int?)? {
