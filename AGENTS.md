@@ -55,6 +55,7 @@
 - Extracted SSH tunnel command construction into a tested builder.
 - Replaced local port-only health checks with a tested SOCKS5 handshake probe.
 - Added tested tunnel lifecycle policy for intentional stops, unexpected SSH exits, repeated health failures, and automatic reconnect backoff.
+- Replaced unlimited reconnect loops with a shared, network-aware three-attempt policy, endpoint launch ledger, five-minute healthy reset, pooled-hop dependency coordination, and terminal Try Again notifications.
 - Added an injectable SSH process launcher with manager-level tests for manual stops, unexpected exits, and health-failure restarts.
 - Hardened PTY SSH process launcher descriptor ownership and duplicate-file-descriptor error handling.
 - Added a local blocking proxy for fail-closed PAC routes, including HTTP status pages and clean HTTPS `CONNECT` failures.
@@ -141,6 +142,16 @@ swift test
 ```
 
 Both passed on `feat/shared-hop-ssh-audit` after shared hop ownership/pooling, fail-closed adapters, recursive SSH config audit and safe-fix services, and Settings/API/CLI reporting. The core test suite has 378 XCTest cases.
+
+Latest safe reconnect validation:
+
+```sh
+swift build
+swift test
+./script/build_and_run.sh --verify
+```
+
+All passed on `feat/safe-reconnect-policy`. `swift test` executed 421 XCTest cases covering bounded jittered delays, endpoint limits, offline pausing and exact-once resume, terminal failure ordering, pooled hop recovery, configuration migration, OpenSSH command limits, and notification deduplication.
 
 Latest shared-hop live validation:
 

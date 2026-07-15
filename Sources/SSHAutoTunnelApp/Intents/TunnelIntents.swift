@@ -308,7 +308,7 @@ struct CreateProfileIntent: AppIntent {
         certificateFiles = ""
         forwardAgent = .systemDefault
         proxyCommand = ""
-        maxReconnectAttempts = -1
+        maxReconnectAttempts = TunnelLifecyclePolicy.maximumReconnectAttempts
     }
 
     init(
@@ -332,7 +332,7 @@ struct CreateProfileIntent: AppIntent {
         certificateFiles: String = "",
         forwardAgent: ShortcutSSHOptionToggle = .systemDefault,
         proxyCommand: String = "",
-        maxReconnectAttempts: Int = -1
+        maxReconnectAttempts: Int = TunnelLifecyclePolicy.maximumReconnectAttempts
     ) {
         self.name = name
         self.host = host
@@ -476,7 +476,7 @@ struct UpdateProfileIntent: AppIntent {
         certificateFiles = ""
         forwardAgent = .systemDefault
         proxyCommand = ""
-        maxReconnectAttempts = -1
+        maxReconnectAttempts = TunnelLifecyclePolicy.maximumReconnectAttempts
     }
 
     init(
@@ -500,7 +500,7 @@ struct UpdateProfileIntent: AppIntent {
         certificateFiles: String = "",
         forwardAgent: ShortcutSSHOptionToggle = .systemDefault,
         proxyCommand: String = "",
-        maxReconnectAttempts: Int = -1
+        maxReconnectAttempts: Int = TunnelLifecyclePolicy.maximumReconnectAttempts
     ) {
         self.profileName = profileName
         self.host = host
@@ -1235,7 +1235,7 @@ private func separatedList(_ value: String) -> [String] {
 }
 
 private func reconnectAttemptLimit(_ value: Int) -> Int? {
-    value < 0 ? nil : value
+    value == -1 ? TunnelLifecyclePolicy.maximumReconnectAttempts : value
 }
 
 private func parseLocalPortForwardings(_ value: String) throws -> [LocalPortForward] {

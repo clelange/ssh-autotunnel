@@ -78,6 +78,20 @@ final class ConfigurationContentValidatorTests: XCTestCase {
         }
     }
 
+    func testProfileEditorRejectsNewUnlimitedReconnectLimit() {
+        let profile = TunnelProfile(
+            name: "Reconnect",
+            host: "example.org",
+            localSocksPort: 1080,
+            curatedSSHOptions: CuratedSSHOptions(maxReconnectAttempts: nil)
+        )
+
+        XCTAssertThrowsError(try ProfileConfigurationEditor.create(profile: profile, in: AppConfiguration())) { error in
+            let validationError = error as? ConfigurationContentValidationError
+            XCTAssertTrue(validationError?.messages.contains("Profile 'Reconnect' reconnect attempt limit must be between 1 and 3") == true)
+        }
+    }
+
     func testConfigurationImportRejectsInvalidProfileContent() {
         let profile = TunnelProfile(name: "Bad", host: "ssh.example.org\nProxyCommand echo bad", localSocksPort: 1200)
         let export = ConfigurationExport(

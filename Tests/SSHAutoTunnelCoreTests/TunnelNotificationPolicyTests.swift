@@ -3,9 +3,27 @@ import XCTest
 
 final class TunnelNotificationPolicyTests: XCTestCase {
     func testNotifiesOnFailureStates() {
-        XCTAssertEqual(TunnelNotificationPolicy.event(previous: .healthy, current: .unhealthy), .tunnelFailed)
+        XCTAssertEqual(TunnelNotificationPolicy.event(previous: .healthy, current: .unhealthy), .tunnelInterrupted)
         XCTAssertEqual(TunnelNotificationPolicy.event(previous: .connecting, current: .failed), .tunnelFailed)
         XCTAssertEqual(TunnelNotificationPolicy.event(previous: .healthy, current: .failed, kind: .hop), .hopFailed)
+    }
+
+    func testReconnectCampaignNotificationsAreDeduplicated() {
+        XCTAssertEqual(TunnelNotificationPolicy.event(previous: .healthy, current: .reconnecting), .tunnelInterrupted)
+        XCTAssertNil(TunnelNotificationPolicy.event(previous: .unhealthy, current: .reconnecting))
+        XCTAssertNil(TunnelNotificationPolicy.event(previous: .reconnecting, current: .reconnecting))
+        XCTAssertEqual(TunnelNotificationPolicy.event(previous: .reconnecting, current: .failed), .tunnelReconnectStopped)
+        XCTAssertEqual(
+            TunnelNotificationPolicy.event(previous: .reconnecting, current: .failed, kind: .hop),
+            .hopReconnectStopped
+        )
+    }
+
+    func testOnlyTerminalEventsOfferTryAgain() {
+        XCTAssertFalse(TunnelNotificationEvent.tunnelInterrupted.offersTryAgainAction)
+        XCTAssertFalse(TunnelNotificationEvent.hopRecovered.offersTryAgainAction)
+        XCTAssertTrue(TunnelNotificationEvent.tunnelReconnectStopped.offersTryAgainAction)
+        XCTAssertTrue(TunnelNotificationEvent.hopFailed.offersTryAgainAction)
     }
 
     func testNotifiesOnRecoveryFromProblemStates() {

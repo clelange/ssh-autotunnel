@@ -41,6 +41,8 @@ final class JumpHostControlMasterTests: XCTestCase {
                 && option.contains("HostName=hop-not-connected.start-ssh-autotunnel.invalid")
                 && option.contains("ControlMaster=no")
                 && option.contains("ControlPersist=no")
+                && option.contains("ConnectionAttempts=1")
+                && option.contains("ConnectTimeout=20")
                 && option.contains("-S \(controlMaster.controlPath)")
                 && option.hasSuffix(controlMaster.endpoint.adapterHost)
         })

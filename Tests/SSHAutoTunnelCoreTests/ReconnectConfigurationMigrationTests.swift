@@ -11,13 +11,15 @@ final class ReconnectConfigurationMigrationTests: XCTestCase {
         disabled.curatedSSHOptions.maxReconnectAttempts = 0
         var preserved = TunnelProfile(name: "Preserved", host: "four.example.org", localSocksPort: 1084)
         preserved.curatedSSHOptions.maxReconnectAttempts = 2
+        var shortcutSentinel = TunnelProfile(name: "Shortcut Sentinel", host: "five.example.org", localSocksPort: 1085)
+        shortcutSentinel.curatedSSHOptions.maxReconnectAttempts = -1
 
         let result = ReconnectConfigurationMigration.migrate(
-            AppConfiguration(profiles: [unlimited, oversized, disabled, preserved])
+            AppConfiguration(profiles: [unlimited, oversized, disabled, preserved, shortcutSentinel])
         )
 
         XCTAssertTrue(result.didUpdate)
-        XCTAssertEqual(result.configuration.profiles.map { $0.curatedSSHOptions.maxReconnectAttempts }, [3, 3, 3, 2])
-        XCTAssertEqual(result.configuration.profiles.map(\.autoReconnect), [true, true, false, true])
+        XCTAssertEqual(result.configuration.profiles.map { $0.curatedSSHOptions.maxReconnectAttempts }, [3, 3, 3, 2, 3])
+        XCTAssertEqual(result.configuration.profiles.map(\.autoReconnect), [true, true, false, true, true])
     }
 }

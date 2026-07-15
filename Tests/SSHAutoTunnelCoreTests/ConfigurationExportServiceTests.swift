@@ -73,6 +73,22 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertEqual(imported.interactiveTerminal, source.interactiveTerminal)
     }
 
+    func testImportMigratesLegacyReconnectLimits() throws {
+        var source = sampleConfiguration()
+        source.profiles[0].curatedSSHOptions.maxReconnectAttempts = 99
+        let export = ConfigurationExportService.makeExport(from: source, appIdentifier: "test.app")
+
+        let imported = try ConfigurationExportService.importConfiguration(
+            from: export,
+            preservingLocalValuesFrom: AppConfiguration(apiToken: "local-token")
+        )
+
+        XCTAssertEqual(
+            imported.profiles[0].curatedSSHOptions.maxReconnectAttempts,
+            TunnelLifecyclePolicy.maximumReconnectAttempts
+        )
+    }
+
     func testDecodesLegacyExportWithoutPACAppendSource() throws {
         let json = Data("""
         {

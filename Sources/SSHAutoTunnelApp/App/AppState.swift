@@ -33,10 +33,18 @@ final class AppState: ObservableObject {
     @Published var pacAppendSourceMessage = "Existing PAC appending disabled"
     @Published var diagnosticsSelectedProfileID: UUID?
     @Published var interactiveTerminalInstallations: [InteractiveTerminalInstallation] = []
+    @Published private(set) var sshNetworkPathState: SSHNetworkPathState = .unknown
 
     private let configurationStore: ConfigurationStore
-    private let tunnelManager = TunnelManager()
-    private let hopManager = HopConnectionManager()
+    private let sshConnectionAttemptLedger = SSHConnectionAttemptLedger()
+    private lazy var tunnelManager = TunnelManager(
+        attemptLedger: sshConnectionAttemptLedger,
+        initialNetworkPathState: .unknown
+    )
+    private lazy var hopManager = HopConnectionManager(
+        attemptLedger: sshConnectionAttemptLedger,
+        initialNetworkPathState: .unknown
+    )
     private let keychain = KeychainService()
     private let networkIdentity = NetworkIdentityService()
     private let proxyManager = SystemProxyManager()
@@ -48,9 +56,13 @@ final class AppState: ObservableObject {
     private let terminalDiscovery = InteractiveTerminalDiscovery()
     private var pathMonitor: NWPathMonitor?
     private var pendingNetworkRefreshTask: Task<Void, Never>?
+    private var pendingNetworkStabilizationTask: Task<Void, Never>?
     private var pendingConfigurationSaveTask: Task<Void, Never>?
     private var pendingPACAppendSourceTask: Task<Void, Never>?
     private var pendingTunnelStartTokens: [UUID: UUID] = [:]
+    private var networkDeferredTunnelProfileIDs: Set<UUID> = []
+    private var networkDeferredHopProfileIDs: Set<UUID> = []
+    private var networkPathIsStable = false
     private var connectionIntent = DirectAccessConnectionIntent()
     private var loadedPACAppendSource: PACAppendSource?
     private var appendedPACContent: String?
@@ -182,6 +194,10 @@ final class AppState: ObservableObject {
 
     @discardableResult
     func connect(_ profile: TunnelProfile) -> Bool {
+        guard networkPathIsStable else {
+            rejectTunnelLaunchWithoutNetwork(profile)
+            return false
+        }
         guard connectionIntent.requestTunnel(profile.id) else {
             lastProxyMessage = directAccessBlockedMessage(for: profile)
             return false
@@ -203,6 +219,7 @@ final class AppState: ObservableObject {
 
     func disconnect(_ profile: TunnelProfile) {
         connectionIntent.cancelTunnel(profile.id)
+        networkDeferredTunnelProfileIDs.remove(profile.id)
         pendingTunnelStartTokens[profile.id] = nil
         lastProxyMessage = "\(profile.name): Disconnect requested"
         tunnelManager.stop(profileID: profile.id)
@@ -210,6 +227,10 @@ final class AppState: ObservableObject {
 
     @discardableResult
     func reconnect(_ profile: TunnelProfile) -> Bool {
+        guard networkPathIsStable else {
+            rejectTunnelLaunchWithoutNetwork(profile)
+            return false
+        }
         guard connectionIntent.requestTunnel(profile.id) else {
             lastProxyMessage = directAccessBlockedMessage(for: profile)
             return false
@@ -240,6 +261,8 @@ final class AppState: ObservableObject {
 
     func disconnectAll() {
         pendingTunnelStartTokens.removeAll()
+        networkDeferredTunnelProfileIDs.removeAll()
+        networkDeferredHopProfileIDs.removeAll()
         for profile in configuration.profiles {
             connectionIntent.cancelTunnel(profile.id)
             connectionIntent.cancelStandaloneHop(profile.id)
@@ -257,6 +280,10 @@ final class AppState: ObservableObject {
             lastProxyMessage = "\(profile.name): No jump host configured"
             return false
         }
+        guard networkPathIsStable else {
+            rejectHopLaunchWithoutNetwork(profile)
+            return false
+        }
         guard connectionIntent.requestStandaloneHop(profile.id) else {
             lastProxyMessage = directAccessBlockedMessage(for: profile)
             return false
@@ -267,6 +294,7 @@ final class AppState: ObservableObject {
 
     func disconnectHop(_ profile: TunnelProfile) {
         connectionIntent.cancelStandaloneHop(profile.id)
+        networkDeferredHopProfileIDs.remove(profile.id)
         pendingTunnelStartTokens[profile.id] = nil
         lastProxyMessage = "\(profile.name): Hop disconnect requested; terminal sessions sharing this master may close"
         hopManager.stop(profileID: profile.id)
@@ -276,6 +304,10 @@ final class AppState: ObservableObject {
     func reconnectHop(_ profile: TunnelProfile) -> Bool {
         guard hasJumpHost(profile) else {
             lastProxyMessage = "\(profile.name): No jump host configured"
+            return false
+        }
+        guard networkPathIsStable else {
+            rejectHopLaunchWithoutNetwork(profile)
             return false
         }
         guard connectionIntent.requestStandaloneHop(profile.id) else {
@@ -295,11 +327,16 @@ final class AppState: ObservableObject {
     }
 
     func connectInteractiveSSH(_ profile: TunnelProfile) {
+        guard networkPathIsStable else {
+            lastProxyMessage = "\(profile.name): No network connection; no SSH attempt was made."
+            return
+        }
         do {
             let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
             if isDirectAccessActive(for: profile.id) {
                 let command = try interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-direct")
                 try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
+                recordInteractiveSSHAttempt(for: interactiveProfile)
                 lastProxyMessage = "\(profile.name): Opened direct interactive SSH in \(configuration.interactiveTerminal.app.displayName)"
                 return
             }
@@ -311,6 +348,7 @@ final class AppState: ObservableObject {
             } else {
                 let command = try interactiveSSHHelperCommand(for: profile)
                 try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
+                recordInteractiveSSHAttempt(for: interactiveProfile)
                 lastProxyMessage = "\(profile.name): Opened interactive SSH in \(configuration.interactiveTerminal.app.displayName)"
             }
         } catch {
@@ -347,17 +385,68 @@ final class AppState: ObservableObject {
 
     private func connectLaunchProfiles() {
         for profile in configuration.profiles where profile.connectOnLaunch {
+            connectionIntent.deferTunnelUntilDirectAccessEnds(profile.id)
             if isDirectAccessActive(for: profile.id) {
-                connectionIntent.deferTunnelUntilDirectAccessEnds(profile.id)
                 statuses[profile.id] = TunnelRuntimeStatus(
                     profileID: profile.id,
                     health: .stopped,
                     message: directAccessPausedMessage(for: profile)
                 )
+            } else if !networkPathIsStable {
+                networkDeferredTunnelProfileIDs.insert(profile.id)
+                statuses[profile.id] = TunnelRuntimeStatus(
+                    profileID: profile.id,
+                    health: .connecting,
+                    message: "Waiting for network; no SSH attempt will be made."
+                )
             } else {
                 connect(profile)
             }
         }
+    }
+
+    private func rejectTunnelLaunchWithoutNetwork(_ profile: TunnelProfile) {
+        let message = "No network connection; no SSH attempt was made."
+        let previous = statuses[profile.id]
+        let status = TunnelRuntimeStatus(
+            profileID: profile.id,
+            health: previous?.pid == nil ? .failed : (previous?.health ?? .failed),
+            message: message,
+            pid: previous?.pid,
+            effectiveLocalSocksPort: previous?.effectiveLocalSocksPort
+        )
+        statuses[profile.id] = status
+        lastProxyMessage = "\(profile.name): \(message)"
+        deliverConnectionNotification(
+            profile: profile,
+            previous: previous?.health,
+            current: status.health,
+            kind: .tunnel,
+            message: message
+        )
+    }
+
+    private func rejectHopLaunchWithoutNetwork(_ profile: TunnelProfile) {
+        let message = "No network connection; no SSH attempt was made."
+        let previous = hopStatuses[profile.id]
+        let status = HopRuntimeStatus(
+            profileID: profile.id,
+            jumpHost: normalizedJumpHost(for: profile) ?? "",
+            health: previous?.pid == nil ? .failed : (previous?.health ?? .failed),
+            message: message,
+            pid: previous?.pid,
+            ownership: previous?.ownership,
+            issue: previous?.issue
+        )
+        hopStatuses[profile.id] = status
+        lastProxyMessage = "\(profile.name) hop: \(message)"
+        deliverConnectionNotification(
+            profile: profile,
+            previous: previous?.health,
+            current: status.health,
+            kind: .hop,
+            message: message
+        )
     }
 
     private func startTunnel(_ profile: TunnelProfile, message: String, options: SSHLaunchOptions) {
@@ -407,6 +496,7 @@ final class AppState: ObservableObject {
                     preference: configuration.interactiveTerminal,
                     activeSessionMarkerURL: markerURL
                 )
+                recordInteractiveSSHAttempt(for: interactiveProfile)
             } catch {
                 interactiveSessionRegistry.removeMarker(at: markerURL)
                 throw error
@@ -454,6 +544,10 @@ final class AppState: ObservableObject {
 
     func connectWithVerboseSSHLogging(profileID: UUID) {
         guard let profile = configuration.profiles.first(where: { $0.id == profileID }) else { return }
+        guard networkPathIsStable else {
+            rejectTunnelLaunchWithoutNetwork(profile)
+            return
+        }
         guard connectionIntent.requestTunnel(profile.id) else {
             lastProxyMessage = directAccessBlockedMessage(for: profile)
             return
@@ -476,6 +570,10 @@ final class AppState: ObservableObject {
 
     func connectHopWithVerboseSSHLogging(profileID: UUID) {
         guard let profile = configuration.profiles.first(where: { $0.id == profileID }) else { return }
+        guard networkPathIsStable else {
+            rejectHopLaunchWithoutNetwork(profile)
+            return
+        }
         guard connectionIntent.requestStandaloneHop(profile.id) else {
             lastProxyMessage = directAccessBlockedMessage(for: profile)
             return
@@ -518,6 +616,7 @@ final class AppState: ObservableObject {
 
     func prepareForTermination() {
         pendingNetworkRefreshTask?.cancel()
+        pendingNetworkStabilizationTask?.cancel()
         pendingConfigurationSaveTask?.cancel()
         pendingPACAppendSourceTask?.cancel()
         pendingTunnelStartTokens.removeAll()
@@ -530,6 +629,12 @@ final class AppState: ObservableObject {
 
     private func interactiveSSHHelperCommand(for profile: TunnelProfile) throws -> SSHCommand {
         try interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh")
+    }
+
+    private func recordInteractiveSSHAttempt(for profile: TunnelProfile) {
+        sshConnectionAttemptLedger.recordUserInitiatedAttempt(
+            to: SSHConnectionEndpoint(host: profile.resolvedInteractiveHost, port: profile.sshPort)
+        )
     }
 
     private func interactiveSSHHelperCommand(for profile: TunnelProfile, helperCommand: String) throws -> SSHCommand {
@@ -1051,6 +1156,7 @@ final class AppState: ObservableObject {
         }
         return AppStatusSnapshot(
             pacURL: pacURL,
+            sshNetworkPathState: sshNetworkPathState,
             systemPACStatus: systemPACStatus,
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
             matchedNetworkRule: networkDecision.matchedRule?.name,
@@ -1071,6 +1177,7 @@ final class AppState: ObservableObject {
             appIdentifier: AppPaths.appIdentifier,
             pacURL: pacURL,
             statusURL: statusURL,
+            sshNetworkPathState: sshNetworkPathState,
             proxyApplyMode: configuration.proxyApplyMode,
             systemPACStatus: systemPACStatus,
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
@@ -1190,6 +1297,7 @@ final class AppState: ObservableObject {
             let previous = self.hopStatuses[status.profileID]
             self.hopStatuses[status.profileID] = status
             if let profile = self.configuration.profiles.first(where: { $0.id == status.profileID }) {
+                self.reconcileDependentTunnel(with: status, profile: profile)
                 self.lastProxyMessage = "\(profile.name) hop: \(status.message)"
                 self.deliverConnectionNotification(
                     profile: profile,
@@ -1204,6 +1312,34 @@ final class AppState: ObservableObject {
             DispatchQueue.main.async {
                 self?.appendSSHLog(text, profileID: profileID)
             }
+        }
+    }
+
+    private func reconcileDependentTunnel(with hopStatus: HopRuntimeStatus, profile: TunnelProfile) {
+        guard hasJumpHost(profile), connectionIntent.shouldResumeTunnel(profile.id) else { return }
+
+        switch hopStatus.health {
+        case .healthy:
+            tunnelManager.updateReconnectPrerequisite(profileID: profile.id, available: true)
+        case .failed:
+            guard !isDirectAccessActive(for: profile.id) else { return }
+            tunnelManager.updateReconnectPrerequisite(
+                profileID: profile.id,
+                available: false,
+                terminalReason: "Hop recovery stopped; the dependent tunnel was stopped and no further automatic attempts will occur. Use Try Again after resolving the hop problem."
+            )
+        case .stopped:
+            guard !isDirectAccessActive(for: profile.id),
+                  pendingTunnelStartTokens[profile.id] != nil || isActive(status(for: profile).health) else {
+                return
+            }
+            tunnelManager.updateReconnectPrerequisite(
+                profileID: profile.id,
+                available: false,
+                terminalReason: "Hop connection stopped; the dependent tunnel was stopped and no further automatic attempts will occur."
+            )
+        case .connecting, .reconnecting, .unhealthy, .degraded, .stopping:
+            tunnelManager.updateReconnectPrerequisite(profileID: profile.id, available: false)
         }
     }
 
@@ -1481,14 +1617,82 @@ final class AppState: ObservableObject {
 
     private func startNetworkMonitoring() {
         let monitor = NWPathMonitor()
-        monitor.pathUpdateHandler = { [weak self] _ in
+        monitor.pathUpdateHandler = { [weak self] path in
+            let state = Self.sshNetworkPathState(for: path.status)
             DispatchQueue.main.async {
                 guard let self else { return }
+                self.handleNetworkPathState(state)
                 self.scheduleNetworkRefresh()
             }
         }
         monitor.start(queue: DispatchQueue(label: "dev.clange.ssh-autotunnel.network"))
         pathMonitor = monitor
+    }
+
+    private nonisolated static func sshNetworkPathState(for status: NWPath.Status) -> SSHNetworkPathState {
+        switch status {
+        case .satisfied:
+            .satisfied
+        case .unsatisfied:
+            .unsatisfied
+        case .requiresConnection:
+            .requiresConnection
+        @unknown default:
+            .unknown
+        }
+    }
+
+    private func handleNetworkPathState(_ state: SSHNetworkPathState) {
+        let wasSatisfied = sshNetworkPathState == .satisfied
+        sshNetworkPathState = state
+
+        guard state == .satisfied else {
+            pendingNetworkStabilizationTask?.cancel()
+            pendingNetworkStabilizationTask = nil
+            networkPathIsStable = false
+            tunnelManager.updateNetworkPathState(state)
+            hopManager.updateNetworkPathState(state)
+            return
+        }
+
+        if networkPathIsStable || (wasSatisfied && pendingNetworkStabilizationTask != nil) {
+            return
+        }
+
+        pendingNetworkStabilizationTask = Task { [weak self] in
+            let nanoseconds = UInt64(SSHNetworkLaunchPolicy.stabilizationInterval * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled, let self, self.sshNetworkPathState == .satisfied else { return }
+            self.pendingNetworkStabilizationTask = nil
+            self.networkPathIsStable = true
+            self.tunnelManager.updateNetworkPathState(.satisfied)
+            self.hopManager.updateNetworkPathState(.satisfied)
+            self.resumeNetworkDeferredConnections()
+        }
+    }
+
+    private func resumeNetworkDeferredConnections() {
+        let tunnelProfileIDs = networkDeferredTunnelProfileIDs
+        networkDeferredTunnelProfileIDs.removeAll()
+        for profileID in tunnelProfileIDs {
+            guard let profile = configuration.profiles.first(where: { $0.id == profileID }),
+                  connectionIntent.shouldResumeTunnel(profileID),
+                  !isDirectAccessActive(for: profileID) else {
+                continue
+            }
+            connect(profile)
+        }
+
+        let hopProfileIDs = networkDeferredHopProfileIDs
+        networkDeferredHopProfileIDs.removeAll()
+        for profileID in hopProfileIDs {
+            guard let profile = configuration.profiles.first(where: { $0.id == profileID }),
+                  !connectionIntent.shouldResumeTunnel(profileID),
+                  !isDirectAccessActive(for: profileID) else {
+                continue
+            }
+            connectHop(profile)
+        }
     }
 
     private func scheduleNetworkRefresh(delaySeconds: TimeInterval = 0.75) {
@@ -1519,12 +1723,31 @@ final class AppState: ObservableObject {
 
         for profileID in transition.tunnelProfileIDsToResume {
             guard let profile = configuration.profiles.first(where: { $0.id == profileID }) else { continue }
-            connect(profile)
+            if networkPathIsStable {
+                connect(profile)
+            } else {
+                networkDeferredTunnelProfileIDs.insert(profileID)
+                statuses[profileID] = TunnelRuntimeStatus(
+                    profileID: profileID,
+                    health: .connecting,
+                    message: "Waiting for network; no SSH attempt will be made."
+                )
+            }
         }
 
         for profileID in transition.standaloneHopProfileIDsToResume {
             guard let profile = configuration.profiles.first(where: { $0.id == profileID }) else { continue }
-            connectHop(profile)
+            if networkPathIsStable {
+                connectHop(profile)
+            } else {
+                networkDeferredHopProfileIDs.insert(profileID)
+                hopStatuses[profileID] = HopRuntimeStatus(
+                    profileID: profileID,
+                    jumpHost: normalizedJumpHost(for: profile) ?? "",
+                    health: .connecting,
+                    message: "Waiting for network; no SSH attempt will be made."
+                )
+            }
         }
     }
 

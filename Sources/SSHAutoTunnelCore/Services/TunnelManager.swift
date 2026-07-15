@@ -27,11 +27,15 @@ public final class TunnelManager {
     private var statuses: [UUID: TunnelRuntimeStatus] = [:]
     private var reconnectTokens: [UUID: UUID] = [:]
     private var reconnectAttempts: [UUID: Int] = [:]
+    private var pendingReconnects: [UUID: PendingTunnelReconnect] = [:]
+    private var reconnectPrerequisiteMessages: [UUID: String] = [:]
+    private var networkPathState: SSHNetworkPathState
     private var healthTimer: DispatchSourceTimer?
 
     public convenience init(
         keychain: GenericPasswordReading = KeychainService(),
-        attemptLedger: SSHConnectionAttemptLedger = SSHConnectionAttemptLedger()
+        attemptLedger: SSHConnectionAttemptLedger = SSHConnectionAttemptLedger(),
+        initialNetworkPathState: SSHNetworkPathState = .satisfied
     ) {
         let tunnelProcessRegistry = TunnelProcessRegistry()
         self.init(
@@ -42,6 +46,7 @@ public final class TunnelManager {
             tunnelProcessRegistry: tunnelProcessRegistry,
             tunnelProcessReclaimer: TunnelProcessReclaimer(registry: tunnelProcessRegistry),
             attemptLedger: attemptLedger,
+            initialNetworkPathState: initialNetworkPathState,
             reconnectDelay: {
                 TunnelLifecyclePolicy.reconnectDelay(
                     forAttempt: $0,
@@ -64,6 +69,7 @@ public final class TunnelManager {
         tunnelProcessRegistry: TunnelProcessRecording = NoopTunnelProcessRegistry(),
         tunnelProcessReclaimer: TunnelProcessReclaiming = NoopTunnelProcessReclaimer(),
         attemptLedger: SSHConnectionAttemptLedger = SSHConnectionAttemptLedger(),
+        initialNetworkPathState: SSHNetworkPathState = .satisfied,
         reconnectDelay: @escaping (Int) -> TimeInterval = { TunnelLifecyclePolicy.reconnectDelay(forAttempt: $0) },
         totpGenerator: @escaping (String) throws -> String = { try TOTPGenerator.generate(secretBase32: $0) },
         initialReadinessGracePeriod: TimeInterval = 60,
@@ -82,6 +88,7 @@ public final class TunnelManager {
         self.tunnelProcessRegistry = tunnelProcessRegistry
         self.tunnelProcessReclaimer = tunnelProcessReclaimer
         self.attemptLedger = attemptLedger
+        self.networkPathState = initialNetworkPathState
         self.reconnectDelay = reconnectDelay
         self.totpGenerator = totpGenerator
         self.initialReadinessGracePeriod = initialReadinessGracePeriod
@@ -100,6 +107,7 @@ public final class TunnelManager {
         healthTimer?.cancel()
         reconnectTokens.removeAll()
         reconnectAttempts.removeAll()
+        pendingReconnects.removeAll()
         for managed in allManagedTunnelsLocked() {
             managed.stopReason = .user
             if managed.session?.isRunning == true {
@@ -121,10 +129,50 @@ public final class TunnelManager {
         queue.sync { statuses }
     }
 
+    public func updateNetworkPathState(_ state: SSHNetworkPathState) {
+        queue.async {
+            self.networkPathState = state
+            if state.permitsSSHLaunch {
+                self.resumePendingReconnectsLocked()
+            } else {
+                self.pausePendingReconnectsLocked()
+            }
+        }
+    }
+
+    public func updateReconnectPrerequisite(
+        profileID: UUID,
+        available: Bool,
+        terminalReason: String? = nil
+    ) {
+        queue.async {
+            if available {
+                self.reconnectPrerequisiteMessages[profileID] = nil
+                self.armPendingReconnectLocked(profileID: profileID)
+                return
+            }
+
+            let message = terminalReason ?? "Waiting for hop connection; no SSH attempt will be made."
+            self.reconnectPrerequisiteMessages[profileID] = message
+            self.reconnectTokens[profileID] = nil
+            if let terminalReason {
+                self.pendingReconnects[profileID] = nil
+                self.reconnectAttempts[profileID] = nil
+                self.stopLocked(profileID: profileID, updateStatus: false, reason: .user)
+                self.updateStatusLocked(profileID, .failed, terminalReason, pid: nil)
+            } else if self.pendingReconnects[profileID] != nil {
+                self.updateStatusLocked(profileID, .reconnecting, message, pid: nil)
+                self.logEventLocked("automatic reconnect paused while waiting for the hop", profileID: profileID)
+            }
+        }
+    }
+
     public func start(profile: TunnelProfile, options: SSHLaunchOptions = .standard, reservedSocksPorts: Set<Int> = []) {
         queue.async {
             self.reconnectTokens[profile.id] = nil
             self.reconnectAttempts[profile.id] = 0
+            self.pendingReconnects[profile.id] = nil
+            self.reconnectPrerequisiteMessages[profile.id] = nil
             self.startLocked(
                 profile: profile,
                 message: "Starting tunnel",
@@ -139,6 +187,8 @@ public final class TunnelManager {
         queue.async {
             self.reconnectTokens[profileID] = nil
             self.reconnectAttempts[profileID] = nil
+            self.pendingReconnects[profileID] = nil
+            self.reconnectPrerequisiteMessages[profileID] = nil
             self.stopLocked(profileID: profileID, updateStatus: true, reason: .user)
         }
     }
@@ -147,6 +197,8 @@ public final class TunnelManager {
         queue.sync {
             reconnectTokens.removeAll()
             reconnectAttempts.removeAll()
+            pendingReconnects.removeAll()
+            reconnectPrerequisiteMessages.removeAll()
             let profileIDs = Set(processes.keys).union(terminatingProcesses.values.map { $0.profile.id })
             for profileID in profileIDs {
                 stopLocked(profileID: profileID, updateStatus: true, reason: .user)
@@ -159,6 +211,8 @@ public final class TunnelManager {
         let managedTunnels = queue.sync {
             reconnectTokens.removeAll()
             reconnectAttempts.removeAll()
+            pendingReconnects.removeAll()
+            reconnectPrerequisiteMessages.removeAll()
             let managedTunnels = allManagedTunnelsLocked()
             for managed in managedTunnels {
                 managed.stopReason = .user
@@ -222,6 +276,8 @@ public final class TunnelManager {
         queue.async {
             self.reconnectTokens[profile.id] = nil
             self.reconnectAttempts[profile.id] = 0
+            self.pendingReconnects[profile.id] = nil
+            self.reconnectPrerequisiteMessages[profile.id] = nil
             self.stopLocked(profileID: profile.id, updateStatus: false, reason: .restart)
             let token = UUID()
             self.reconnectTokens[profile.id] = token
@@ -249,8 +305,22 @@ public final class TunnelManager {
         hasRetriedAppForwardingFailure: Bool = false,
         origin: SSHConnectionLaunchOrigin
     ) {
+        guard networkPathState.permitsSSHLaunch else {
+            reconnectTokens[profile.id] = nil
+            if origin == .userInitiated {
+                reconnectAttempts[profile.id] = nil
+                updateStatusLocked(
+                    profile.id,
+                    .failed,
+                    "No network connection; no SSH attempt was made.",
+                    pid: nil
+                )
+            }
+            return
+        }
         stopLocked(profileID: profile.id, updateStatus: false, reason: .replacement)
-        updateStatusLocked(profile.id, .connecting, message, pid: nil)
+        let launchHealth: TunnelHealth = origin == .automatic ? .reconnecting : .connecting
+        updateStatusLocked(profile.id, launchHealth, message, pid: nil)
         do {
             try reclaimConfiguredPortIfNeeded(
                 profile: profile,
@@ -288,17 +358,29 @@ public final class TunnelManager {
                 attemptLedger.recordUserInitiatedAttempt(to: endpoint, at: now())
             }
             processes[profile.id] = managed
+            let startedMessage: String
+            if origin == .automatic {
+                let attempt = reconnectAttempts[profile.id] ?? 1
+                let limit = TunnelLifecyclePolicy.effectiveReconnectAttemptLimit(profile.curatedSSHOptions.maxReconnectAttempts)
+                startedMessage = "Automatic reconnect attempt \(attempt) of \(limit) started"
+            } else {
+                startedMessage = "SSH process started"
+            }
             updateStatusLocked(
                 profile.id,
-                .connecting,
-                "SSH process started",
+                launchHealth,
+                startedMessage,
                 pid: managed.session.processIdentifier,
                 effectiveLocalSocksPort: runtimeProfile.localSocksPort
             )
         } catch {
             reconnectTokens[profile.id] = nil
             reconnectAttempts[profile.id] = nil
-            updateStatusLocked(profile.id, .failed, error.localizedDescription, pid: nil)
+            pendingReconnects[profile.id] = nil
+            let message = origin == .automatic
+                ? "\(error.localizedDescription) Automatic reconnect stopped; no further automatic attempts will occur."
+                : "\(error.localizedDescription) No automatic retry will be attempted."
+            updateStatusLocked(profile.id, .failed, message, pid: nil)
         }
     }
 
@@ -473,7 +555,7 @@ public final class TunnelManager {
                 updateStatusLocked(
                     tunnel.profile.id,
                     .failed,
-                    "SSH host key prompt blocked by \(tunnel.profile.hostKeyPolicy.displayName) policy",
+                    "SSH host key prompt blocked by \(tunnel.profile.hostKeyPolicy.displayName) policy. No further automatic attempts will occur.",
                     pid: tunnel.session.processIdentifier
                 )
                 stopLocked(profileID: tunnel.profile.id, updateStatus: false, reason: .user)
@@ -505,7 +587,7 @@ public final class TunnelManager {
                     updateStatusLocked(
                         tunnel.profile.id,
                         .failed,
-                        "Could not generate TOTP: \(error.localizedDescription)",
+                        "Could not generate TOTP: \(error.localizedDescription). No further automatic attempts will occur.",
                         pid: tunnel.session.processIdentifier
                     )
                     stopLocked(profileID: tunnel.profile.id, updateStatus: false, reason: .user)
@@ -613,10 +695,12 @@ public final class TunnelManager {
         case .markStopped:
             reconnectTokens[profile.id] = nil
             reconnectAttempts[profile.id] = nil
+            pendingReconnects[profile.id] = nil
             updateStatusLocked(profile.id, .stopped, sshExitMessage(status: terminationStatus, detail: exitDetail), pid: nil)
         case .markFailed:
             reconnectTokens[profile.id] = nil
             reconnectAttempts[profile.id] = nil
+            pendingReconnects[profile.id] = nil
             updateStatusLocked(profile.id, .failed, sshExitMessage(status: terminationStatus, detail: exitDetail), pid: nil)
         case .reconnect:
             scheduleReconnectLocked(
@@ -710,6 +794,9 @@ public final class TunnelManager {
         } else if !managed.reachedHealthy, !campaignIsActive, managed.stopReason == nil, managed.profile.autoReconnect {
             let detail = exitDetail.map { "\($0); " } ?? ""
             exitDetail = "\(detail)automatic reconnect was not started because this connection never became healthy"
+        } else if decision == .markFailed, managed.stopReason == nil {
+            let detail = exitDetail.map { "\($0); " } ?? ""
+            exitDetail = "\(detail)automatic reconnect is disabled or this failure is not retryable; no further automatic attempts will occur"
         }
 
         applyProcessExitDecisionLocked(
@@ -757,6 +844,7 @@ public final class TunnelManager {
         if attempt > limit {
             reconnectTokens[profile.id] = nil
             reconnectAttempts[profile.id] = nil
+            pendingReconnects[profile.id] = nil
             updateStatusLocked(
                 profile.id,
                 .failed,
@@ -768,27 +856,85 @@ public final class TunnelManager {
         }
         reconnectAttempts[profile.id] = attempt
         let delay = explicitDelay ?? reconnectDelay(attempt)
-        let token = UUID()
-        reconnectTokens[profile.id] = token
-        let delayDescription = Self.retryDelayDescription(delay)
-        updateStatusLocked(
-            profile.id,
-            .reconnecting,
-            "\(message); retry \(attempt) of \(limit) in \(delayDescription)",
-            pid: nil
+        pendingReconnects[profile.id] = PendingTunnelReconnect(
+            profile: profile,
+            message: message,
+            options: options,
+            reservedSocksPorts: reservedSocksPorts,
+            excludedSocksPorts: excludedSocksPorts,
+            hasRetriedAppForwardingFailure: hasRetriedAppForwardingFailure,
+            attempt: attempt,
+            limit: limit,
+            eligibleAt: now().addingTimeInterval(delay)
         )
         logEventLocked("reconnect attempt \(attempt) scheduled in \(String(format: "%.1f", delay))s", profileID: profile.id)
+        armPendingReconnectLocked(profileID: profile.id)
+    }
 
-        queue.asyncAfter(deadline: .now() + delay) { [weak self] in
-            guard let self, self.reconnectTokens[profile.id] == token else { return }
-            self.reconnectTokens[profile.id] = nil
+    private func pausePendingReconnectsLocked() {
+        for profileID in pendingReconnects.keys {
+            reconnectTokens[profileID] = nil
+            updateStatusLocked(
+                profileID,
+                .reconnecting,
+                "Waiting for network; no SSH attempt will be made.",
+                pid: nil
+            )
+            logEventLocked("automatic reconnect paused while waiting for a usable network path", profileID: profileID)
+        }
+    }
+
+    private func resumePendingReconnectsLocked() {
+        for profileID in pendingReconnects.keys {
+            armPendingReconnectLocked(profileID: profileID)
+        }
+    }
+
+    private func armPendingReconnectLocked(profileID: UUID) {
+        guard let pending = pendingReconnects[profileID] else { return }
+        guard networkPathState.permitsSSHLaunch else {
+            reconnectTokens[profileID] = nil
+            updateStatusLocked(
+                profileID,
+                .reconnecting,
+                "Waiting for network; no SSH attempt will be made.",
+                pid: nil
+            )
+            return
+        }
+        if let prerequisiteMessage = reconnectPrerequisiteMessages[profileID] {
+            reconnectTokens[profileID] = nil
+            updateStatusLocked(profileID, .reconnecting, prerequisiteMessage, pid: nil)
+            return
+        }
+
+        let remainingDelay = max(0, pending.eligibleAt.timeIntervalSince(now()))
+        let token = UUID()
+        reconnectTokens[profileID] = token
+        updateStatusLocked(
+            profileID,
+            .reconnecting,
+            "\(pending.message); retry \(pending.attempt) of \(pending.limit) in \(Self.retryDelayDescription(remainingDelay))",
+            pid: nil
+        )
+
+        queue.asyncAfter(deadline: .now() + remainingDelay) { [weak self] in
+            guard let self,
+                  self.reconnectTokens[profileID] == token,
+                  let pending = self.pendingReconnects[profileID],
+                  self.networkPathState.permitsSSHLaunch,
+                  self.reconnectPrerequisiteMessages[profileID] == nil else {
+                return
+            }
+            self.reconnectTokens[profileID] = nil
+            self.pendingReconnects[profileID] = nil
             self.startLocked(
-                profile: profile,
+                profile: pending.profile,
                 message: "Reconnecting",
-                options: options,
-                reservedSocksPorts: reservedSocksPorts,
-                excludedSocksPorts: excludedSocksPorts,
-                hasRetriedAppForwardingFailure: hasRetriedAppForwardingFailure,
+                options: pending.options,
+                reservedSocksPorts: pending.reservedSocksPorts,
+                excludedSocksPorts: pending.excludedSocksPorts,
+                hasRetriedAppForwardingFailure: pending.hasRetriedAppForwardingFailure,
                 origin: .automatic
             )
         }
@@ -947,6 +1093,18 @@ public final class TunnelManager {
             checkHealthLocked()
         }
     }
+}
+
+private struct PendingTunnelReconnect {
+    var profile: TunnelProfile
+    var message: String
+    var options: SSHLaunchOptions
+    var reservedSocksPorts: Set<Int>
+    var excludedSocksPorts: Set<Int>
+    var hasRetriedAppForwardingFailure: Bool
+    var attempt: Int
+    var limit: Int
+    var eligibleAt: Date
 }
 
 private struct TunnelCredentials {

@@ -94,8 +94,9 @@ public enum ConfigurationContentValidator {
         if hasProxyJump(profile), hasProxyCommand(profile) {
             messages.append("Profile '\(profile.name)' cannot define both ProxyJump and ProxyCommand")
         }
-        if let maxReconnectAttempts = profile.curatedSSHOptions.maxReconnectAttempts,
-           !(1...TunnelLifecyclePolicy.maximumReconnectAttempts).contains(maxReconnectAttempts) {
+        if profile.curatedSSHOptions.maxReconnectAttempts.map({
+            !(1...TunnelLifecyclePolicy.maximumReconnectAttempts).contains($0)
+        }) ?? true {
             messages.append(
                 "Profile '\(profile.name)' reconnect attempt limit must be between 1 and \(TunnelLifecyclePolicy.maximumReconnectAttempts)"
             )

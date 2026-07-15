@@ -210,7 +210,8 @@ final class TunnelManagerProcessTests: XCTestCase {
         let secondStart = expectation(description: "second start")
         var startCount = 0
         manager.onStatusChange = { status in
-            guard status.profileID == profile.id, status.message == "SSH process started" else { return }
+            guard status.profileID == profile.id,
+                  status.message == "SSH process started" || status.message.contains("Automatic reconnect attempt") else { return }
             startCount += 1
             if startCount == 1 {
                 firstStart.fulfill()
@@ -227,7 +228,90 @@ final class TunnelManagerProcessTests: XCTestCase {
         wait(for: [secondStart], timeout: 1)
 
         XCTAssertEqual(launcher.sessions.count, 2)
-        XCTAssertEqual(manager.status(for: profile.id).health, .connecting)
+        XCTAssertEqual(manager.status(for: profile.id).health, .reconnecting)
+    }
+
+    func testOfflineReconnectWaitsWithoutLaunchingAndResumesExactlyOnce() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socks5Probe: { _ in true },
+            reconnectDelay: { _ in 0.02 },
+            processExitOutputSettleDelay: 0,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("initial tunnel starts") { launcher.sessions.count == 1 }
+        manager.runHealthCheckForTesting()
+        manager.updateNetworkPathState(.unsatisfied)
+        launcher.sessions[0].exit(status: 255)
+        waitUntil("offline reconnect is paused") {
+            manager.status(for: profile.id).message.contains("Waiting for network")
+        }
+        Thread.sleep(forTimeInterval: 0.08)
+        XCTAssertEqual(launcher.sessions.count, 1)
+
+        manager.updateNetworkPathState(.satisfied)
+        manager.updateNetworkPathState(.satisfied)
+        waitUntil("offline reconnect resumes") { launcher.sessions.count == 2 }
+        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertEqual(launcher.sessions.count, 2)
+    }
+
+    func testUnknownNetworkRejectsManualStartWithoutLaunching() {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            initialNetworkPathState: .unknown,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("offline start is rejected") {
+            manager.status(for: profile.id).message.contains("no SSH attempt was made")
+        }
+
+        XCTAssertTrue(launcher.sessions.isEmpty)
+        XCTAssertEqual(manager.status(for: profile.id).health, .failed)
+    }
+
+    func testUnavailableHopPausesDependentReconnectAndTerminalHopFailureStopsIt() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socks5Probe: { _ in true },
+            reconnectDelay: { _ in 0.02 },
+            processExitOutputSettleDelay: 0,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("initial tunnel starts") { launcher.sessions.count == 1 }
+        manager.runHealthCheckForTesting()
+        manager.updateReconnectPrerequisite(profileID: profile.id, available: false)
+        launcher.sessions[0].exit(status: 255)
+        waitUntil("dependent reconnect waits for hop") {
+            manager.status(for: profile.id).message.contains("Waiting for hop")
+        }
+        Thread.sleep(forTimeInterval: 0.08)
+        XCTAssertEqual(launcher.sessions.count, 1)
+
+        manager.updateReconnectPrerequisite(
+            profileID: profile.id,
+            available: false,
+            terminalReason: "Hop recovery stopped; no further tunnel attempts will occur."
+        )
+        waitUntil("terminal hop failure stops dependent reconnect") {
+            manager.status(for: profile.id).health == .failed
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("no further tunnel attempts"))
     }
 
     func testReconnectAttemptLimitStopsUnexpectedExitReconnects() throws {
@@ -613,7 +697,8 @@ final class TunnelManagerProcessTests: XCTestCase {
         let secondStart = expectation(description: "second start")
         var starts = 0
         manager.onStatusChange = { status in
-            guard status.profileID == profile.id, status.message == "SSH process started" else { return }
+            guard status.profileID == profile.id,
+                  status.message == "SSH process started" || status.message.contains("Automatic reconnect attempt") else { return }
             starts += 1
             if starts == 1 {
                 firstStart.fulfill()
@@ -630,7 +715,7 @@ final class TunnelManagerProcessTests: XCTestCase {
         wait(for: [secondStart], timeout: 1)
 
         XCTAssertEqual(launcher.commands.map(\.dynamicForwardPort), [1099, 1100])
-        XCTAssertEqual(manager.status(for: profile.id).health, .connecting)
+        XCTAssertEqual(manager.status(for: profile.id).health, .reconnecting)
         XCTAssertEqual(manager.status(for: profile.id).effectiveLocalSocksPort, 1100)
     }
 
@@ -654,7 +739,8 @@ final class TunnelManagerProcessTests: XCTestCase {
         let secondStart = expectation(description: "second start")
         var starts = 0
         manager.onStatusChange = { status in
-            guard status.profileID == profile.id, status.message == "SSH process started" else { return }
+            guard status.profileID == profile.id,
+                  status.message == "SSH process started" || status.message.contains("Automatic reconnect attempt") else { return }
             starts += 1
             if starts == 1 {
                 firstStart.fulfill()
@@ -781,7 +867,8 @@ final class TunnelManagerProcessTests: XCTestCase {
         let secondStart = expectation(description: "second start")
         var startCount = 0
         manager.onStatusChange = { status in
-            guard status.profileID == profile.id, status.message == "SSH process started" else { return }
+            guard status.profileID == profile.id,
+                  status.message == "SSH process started" || status.message.contains("Automatic reconnect attempt") else { return }
             startCount += 1
             if startCount == 1 {
                 firstStart.fulfill()
@@ -893,6 +980,7 @@ final class TunnelManagerProcessTests: XCTestCase {
         )
         let manager = TunnelManager(
             processLauncher: launcher,
+            reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
         let started = expectation(description: "started")
@@ -914,6 +1002,8 @@ final class TunnelManagerProcessTests: XCTestCase {
         XCTAssertTrue(manager.status(for: profile.id).message.contains("host key prompt blocked"))
         XCTAssertTrue(session.writes.isEmpty)
         XCTAssertEqual(session.terminateCallCount, 1)
+        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertEqual(launcher.sessions.count, 1)
     }
 
     func testLogsRedactedPromptAnnotationsAndOutput() throws {

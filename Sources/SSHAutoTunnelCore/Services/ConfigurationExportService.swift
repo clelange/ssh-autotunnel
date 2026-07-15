@@ -87,9 +87,10 @@ public enum ConfigurationExportService {
             pacAppendSource: export.pacAppendSource,
             interactiveTerminal: export.interactiveTerminal
         )
-        try ConfigurationContentValidator.validate(imported)
-        try PortConfigurationValidator.validate(imported)
-        return imported
+        let migrated = ReconnectConfigurationMigration.migrate(imported).configuration
+        try ConfigurationContentValidator.validate(migrated)
+        try PortConfigurationValidator.validate(migrated)
+        return migrated
     }
 
     public static func validationReport(

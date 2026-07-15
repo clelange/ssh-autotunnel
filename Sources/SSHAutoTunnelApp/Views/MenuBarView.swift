@@ -138,6 +138,10 @@ struct MenuBarView: View {
 
             Divider()
 
+            Text("SSH network: \(appState.sshNetworkPathState.displayName)")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             Text(appState.lastProxyMessage)
                 .font(.caption)
                 .foregroundStyle(.secondary)

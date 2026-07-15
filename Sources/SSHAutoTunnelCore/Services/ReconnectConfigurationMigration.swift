@@ -14,11 +14,10 @@ public enum ReconnectConfigurationMigration {
                     didUpdate = true
                 }
                 normalized = TunnelLifecyclePolicy.maximumReconnectAttempts
+            } else if let configured, (1...TunnelLifecyclePolicy.maximumReconnectAttempts).contains(configured) {
+                normalized = configured
             } else {
-                normalized = min(
-                    max(configured ?? TunnelLifecyclePolicy.maximumReconnectAttempts, 1),
-                    TunnelLifecyclePolicy.maximumReconnectAttempts
-                )
+                normalized = TunnelLifecyclePolicy.maximumReconnectAttempts
             }
             if configured != normalized {
                 updated.profiles[index].curatedSSHOptions.maxReconnectAttempts = normalized

@@ -276,6 +276,16 @@ struct ProfileEditorView: View {
 
         Section("Behavior") {
             Toggle("Automatically reconnect", isOn: binding(\.autoReconnect, fallback: profile.autoReconnect))
+            if profile.autoReconnect {
+                Picker("Automatic retry attempts", selection: reconnectLimitValueBinding()) {
+                    ForEach(1...TunnelLifecyclePolicy.maximumReconnectAttempts, id: \.self) { attemptCount in
+                        Text("\(attemptCount)").tag(attemptCount)
+                    }
+                }
+                Text("Retries use the cautious 5s → 30s → 2m schedule and stop after the selected limit.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
             Toggle("Connect on launch", isOn: binding(\.connectOnLaunch, fallback: profile.connectOnLaunch))
             Picker("Notifications", selection: binding(\.notificationPolicy, fallback: profile.notificationPolicy)) {
                 ForEach(ProfileNotificationPolicy.allCases) { policy in
@@ -397,17 +407,6 @@ struct ProfileEditorView: View {
                 }
             }
             TextField("ProxyCommand", text: curatedOptionalBinding(\.proxyCommand, fallback: profile.curatedSSHOptions.proxyCommand ?? ""))
-            Toggle("Unlimited reconnect attempts", isOn: reconnectLimitUnlimitedBinding())
-            if profile.curatedSSHOptions.maxReconnectAttempts != nil {
-                HStack {
-                    TextField("Reconnect attempt limit", value: reconnectLimitValueBinding(), format: .number)
-                        .frame(width: 90)
-                    Stepper("attempts", value: reconnectLimitValueBinding(), in: 0...999)
-                }
-                Text("Set 0 to stop after the first failed attempt.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
 
         Section("SSH Files") {
@@ -539,23 +538,16 @@ struct ProfileEditorView: View {
         }
     }
 
-    private func reconnectLimitUnlimitedBinding() -> Binding<Bool> {
-        Binding {
-            guard let index = currentProfileIndex else { return true }
-            return appState.configuration.profiles[index].curatedSSHOptions.maxReconnectAttempts == nil
-        } set: { isUnlimited in
-            guard let index = currentProfileIndex else { return }
-            appState.configuration.profiles[index].curatedSSHOptions.maxReconnectAttempts = isUnlimited ? nil : 3
-        }
-    }
-
     private func reconnectLimitValueBinding() -> Binding<Int> {
         Binding {
             guard let index = currentProfileIndex else { return 3 }
             return appState.configuration.profiles[index].curatedSSHOptions.maxReconnectAttempts ?? 3
         } set: { value in
             guard let index = currentProfileIndex else { return }
-            appState.configuration.profiles[index].curatedSSHOptions.maxReconnectAttempts = max(0, value)
+            appState.configuration.profiles[index].curatedSSHOptions.maxReconnectAttempts = min(
+                max(value, 1),
+                TunnelLifecyclePolicy.maximumReconnectAttempts
+            )
         }
     }
 

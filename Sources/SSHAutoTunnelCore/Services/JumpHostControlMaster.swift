@@ -131,6 +131,8 @@ public enum JumpHostControlMasterFactory {
             "-o", "ControlMaster=no",
             "-o", "ControlPersist=no",
             "-o", "BatchMode=yes",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ConnectTimeout=20",
             "-o", "ClearAllForwardings=yes",
             "-S", SSHCommand.shellQuoted(controlPath),
             "-W", "%h:%p",

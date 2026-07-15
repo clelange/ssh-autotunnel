@@ -63,6 +63,8 @@ final class SSHCommandBuilderTests: XCTestCase {
         XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ControlPath=none"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ControlPersist=no"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ClearAllForwardings=yes"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ConnectionAttempts=1"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ConnectTimeout=20"]))
         XCTAssertFalse(command.arguments.contains("ForkAfterAuthentication=no"))
         XCTAssertTrue(command.arguments.containsSubsequence(["-p", "2222"]))
         XCTAssertTrue(command.arguments.containsSubsequence(["-J", "alice@bastion.example.org"]))

@@ -28,6 +28,7 @@ final class DiagnosticsSnapshotTests: XCTestCase {
             appIdentifier: "dev.clange.ssh-autotunnel",
             pacURL: "http://127.0.0.1:18483/proxy.pac",
             statusURL: "http://127.0.0.1:18483/status",
+            sshNetworkPathState: .satisfied,
             proxyApplyMode: .activeNetworkServicePAC,
             systemPACStatus: SystemPACStatus(
                 serviceName: "Wi-Fi",
@@ -64,11 +65,13 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         XCTAssertEqual(decoded.profiles.first?.hop?.issue, hopIssue)
         XCTAssertEqual(decoded.directAccessProfileIDs, [profileID])
         XCTAssertEqual(decoded.matchedDirectAccessRules, ["PSI internal"])
+        XCTAssertEqual(decoded.sshNetworkPathState, .satisfied)
     }
 
     func testAppStatusSnapshotCarriesSystemPACStatus() throws {
         let snapshot = AppStatusSnapshot(
             pacURL: "http://127.0.0.1:18483/proxy.pac",
+            sshNetworkPathState: .requiresConnection,
             systemPACStatus: SystemPACStatus(
                 serviceName: "Wi-Fi",
                 expectedPACURL: "http://127.0.0.1:18483/proxy.pac",
@@ -86,6 +89,7 @@ final class DiagnosticsSnapshotTests: XCTestCase {
 
         XCTAssertEqual(decoded, snapshot)
         XCTAssertEqual(decoded.systemPACStatus?.state, .notConfigured)
+        XCTAssertEqual(decoded.sshNetworkPathState, .requiresConnection)
     }
 
     func testProfileStatusSnapshotCarriesEffectiveRuntimeSocksPort() throws {

@@ -24,14 +24,14 @@ final class AppNotificationService: NSObject, UNUserNotificationCenterDelegate {
             UNNotificationCategory(
                 identifier: Category.tunnelFailure,
                 actions: [
-                    UNNotificationAction(identifier: Action.reconnectTunnel, title: "Reconnect", options: [.foreground])
+                    UNNotificationAction(identifier: Action.reconnectTunnel, title: "Try Again", options: [.foreground])
                 ],
                 intentIdentifiers: []
             ),
             UNNotificationCategory(
                 identifier: Category.hopFailure,
                 actions: [
-                    UNNotificationAction(identifier: Action.reconnectHop, title: "Reconnect", options: [.foreground])
+                    UNNotificationAction(identifier: Action.reconnectHop, title: "Try Again", options: [.foreground])
                 ],
                 intentIdentifiers: []
             )
@@ -48,7 +48,7 @@ final class AppNotificationService: NSObject, UNUserNotificationCenterDelegate {
             "profileID": profileID.uuidString,
             "kind": event.kind.rawValue
         ]
-        if event.isFailure {
+        if event.offersTryAgainAction {
             switch event.kind {
             case .tunnel:
                 content.categoryIdentifier = Category.tunnelFailure
