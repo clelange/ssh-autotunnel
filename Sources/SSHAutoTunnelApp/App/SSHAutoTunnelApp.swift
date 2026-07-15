@@ -21,6 +21,13 @@ struct SSHAutoTunnelApp: App {
         .windowResizability(.contentMinSize)
         .defaultSize(width: 1_200, height: 760)
         .defaultLaunchBehavior(.presented)
+        .commands {
+            CommandGroup(replacing: .appInfo) {
+                Button("About SSH AutoTunnel") {
+                    AboutPanelPresenter.show()
+                }
+            }
+        }
 
         MenuBarExtra {
             MenuBarView()

@@ -107,6 +107,12 @@ struct MenuBarView: View {
             Divider()
 
             Button {
+                AboutPanelPresenter.show()
+            } label: {
+                Label("About SSH AutoTunnel", systemImage: "info.circle")
+            }
+
+            Button {
                 openWindow(id: "settings")
                 AppActivation.activate()
             } label: {
