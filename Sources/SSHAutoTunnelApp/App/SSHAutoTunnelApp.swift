@@ -11,12 +11,15 @@ struct SSHAutoTunnelApp: App {
     var body: some Scene {
         Window("SSH AutoTunnel", id: "main") {
             DashboardView()
+                .textFieldStyle(.roundedBorder)
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState
                 }
-                .frame(minWidth: 820, minHeight: 560)
+                .frame(minWidth: 1_200, minHeight: 620)
         }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1_200, height: 760)
         .defaultLaunchBehavior(.presented)
 
         MenuBarExtra {
@@ -33,6 +36,7 @@ struct SSHAutoTunnelApp: App {
 
         Window("New Connection", id: "connection-template-setup") {
             ConnectionTemplateSetupView()
+                .textFieldStyle(.roundedBorder)
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState
@@ -41,12 +45,15 @@ struct SSHAutoTunnelApp: App {
 
         Window("SSH AutoTunnel Settings", id: "settings") {
             SettingsView()
+                .textFieldStyle(.roundedBorder)
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState
                 }
-                .frame(minWidth: 640, minHeight: 460)
+                .frame(minWidth: 820, minHeight: 560)
         }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 860, height: 640)
 
         Window("SSH AutoTunnel Diagnostics", id: "diagnostics") {
             DiagnosticsView()

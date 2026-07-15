@@ -434,20 +434,38 @@ struct ProfileEditorView: View {
     }
 
     private func localForwardingRow(_ forwarding: LocalPortForward) -> some View {
-        HStack(spacing: 8) {
+        HStack(alignment: .top, spacing: 8) {
             Toggle("", isOn: forwardingBinding(forwarding.id, \.enabled, fallback: forwarding.enabled))
                 .labelsHidden()
                 .frame(width: 24)
-            TextField("Bind", text: optionalForwardingBinding(forwarding.id, \.bindAddress, fallback: forwarding.bindAddress ?? ""), prompt: Text("127.0.0.1"))
-                .frame(minWidth: 110)
-            TextField("Local port", value: forwardingBinding(forwarding.id, \.localPort, fallback: forwarding.localPort), format: .number)
-                .frame(width: 90)
+                .padding(.top, 18)
+            CompactConfigurationField(title: "Bind") {
+                TextField("Bind", text: optionalForwardingBinding(forwarding.id, \.bindAddress, fallback: forwarding.bindAddress ?? ""), prompt: Text("127.0.0.1"))
+                    .labelsHidden()
+                    .accessibilityLabel("Bind")
+            }
+            .frame(minWidth: 110)
+            CompactConfigurationField(title: "Local port") {
+                TextField("Local port", value: forwardingBinding(forwarding.id, \.localPort, fallback: forwarding.localPort), format: .number)
+                    .labelsHidden()
+                    .accessibilityLabel("Local port")
+            }
+            .frame(width: 90)
             Image(systemName: "arrow.right")
                 .foregroundStyle(.secondary)
-            TextField("Target host", text: forwardingBinding(forwarding.id, \.targetHost, fallback: forwarding.targetHost))
-                .frame(minWidth: 140)
-            TextField("Target port", value: forwardingBinding(forwarding.id, \.targetPort, fallback: forwarding.targetPort), format: .number)
-                .frame(width: 90)
+                .padding(.top, 21)
+            CompactConfigurationField(title: "Target host") {
+                TextField("Target host", text: forwardingBinding(forwarding.id, \.targetHost, fallback: forwarding.targetHost))
+                    .labelsHidden()
+                    .accessibilityLabel("Target host")
+            }
+            .frame(minWidth: 140)
+            CompactConfigurationField(title: "Target port") {
+                TextField("Target port", value: forwardingBinding(forwarding.id, \.targetPort, fallback: forwarding.targetPort), format: .number)
+                    .labelsHidden()
+                    .accessibilityLabel("Target port")
+            }
+            .frame(width: 90)
             Button(role: .destructive) {
                 removeLocalForwarding(id: forwarding.id)
             } label: {
@@ -455,6 +473,7 @@ struct ProfileEditorView: View {
             }
             .labelStyle(.iconOnly)
             .buttonStyle(.borderless)
+            .padding(.top, 18)
             .help("Remove this local port forwarding row")
         }
     }
