@@ -37,7 +37,7 @@ public enum ProfileTemplate {
             curatedSSHOptions: CuratedSSHOptions(
                 identityFiles: ["~/.ssh/id_example"],
                 forwardAgent: .disabled,
-                maxReconnectAttempts: nil
+                maxReconnectAttempts: TunnelLifecyclePolicy.maximumReconnectAttempts
             ),
             extraSSHOptions: ["-o", "IdentitiesOnly=yes"]
         )

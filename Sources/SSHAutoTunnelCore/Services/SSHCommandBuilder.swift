@@ -39,6 +39,8 @@ public enum SSHCommandBuilder {
             "-p", "\(profile.sshPort)",
             "-o", "ExitOnForwardFailure=yes",
             "-o", "ForkAfterAuthentication=no",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ConnectTimeout=20",
             "-o", "ServerAliveInterval=20",
             "-o", "ServerAliveCountMax=2"
         ]

@@ -26,6 +26,8 @@ final class JumpHostControlMasterTests: XCTestCase {
         XCTAssertEqual(controlMaster.endpoint.adapterHost, "ssh-autotunnel-hop-\(controlMaster.endpoint.stableHash)")
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-M", "-tt", "-S", controlMaster.controlPath]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "ControlMaster=yes"]))
+        XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "ConnectionAttempts=1"]))
+        XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "ConnectTimeout=20"]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "ClearAllForwardings=yes"]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "StrictHostKeyChecking=yes"]))
         XCTAssertTrue(controlMaster.command.arguments.containsSubsequence(["-o", "PreferredAuthentications=keyboard-interactive,password"]))

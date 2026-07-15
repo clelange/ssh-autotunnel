@@ -202,6 +202,7 @@ final class TunnelManagerProcessTests: XCTestCase {
         let profile = testProfile(autoReconnect: true)
         let manager = TunnelManager(
             processLauncher: launcher,
+            socks5Probe: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -220,6 +221,8 @@ final class TunnelManagerProcessTests: XCTestCase {
 
         manager.start(profile: profile)
         wait(for: [firstStart], timeout: 1)
+        manager.runHealthCheckForTesting()
+        XCTAssertEqual(manager.status(for: profile.id).health, .healthy)
         try XCTUnwrap(launcher.sessions.first).exit(status: 255)
         wait(for: [secondStart], timeout: 1)
 
@@ -233,6 +236,7 @@ final class TunnelManagerProcessTests: XCTestCase {
         profile.curatedSSHOptions.maxReconnectAttempts = 0
         let manager = TunnelManager(
             processLauncher: launcher,
+            socks5Probe: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -245,13 +249,141 @@ final class TunnelManagerProcessTests: XCTestCase {
 
         manager.start(profile: profile)
         wait(for: [started], timeout: 1)
+        manager.runHealthCheckForTesting()
         try XCTUnwrap(launcher.sessions.first).exit(status: 255)
         waitUntil("reconnect limit is reported") {
-            manager.status(for: profile.id).message.contains("Reconnect attempt limit reached")
+            manager.status(for: profile.id).message.contains("Automatic reconnect stopped")
         }
 
         XCTAssertEqual(launcher.sessions.count, 1)
         XCTAssertEqual(manager.status(for: profile.id).health, .failed)
+    }
+
+    func testInitialAuthenticationFailureNeverReconnects() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            reconnectDelay: { _ in 0.01 },
+            processExitOutputSettleDelay: 0,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("initial tunnel starts") { launcher.sessions.count == 1 }
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.emit("Permission denied, please try again.\r\n")
+        session.exit(status: 255)
+
+        waitUntil("authentication failure is terminal") {
+            manager.status(for: profile.id).health == .failed
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("not retryable"))
+    }
+
+    func testAutomaticReconnectStopsAfterThreeFailedAttempts() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socks5Probe: { _ in true },
+            attemptLedger: SSHConnectionAttemptLedger(limit: 100, window: 600),
+            reconnectDelay: { _ in 0.01 },
+            processExitOutputSettleDelay: 0,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("initial tunnel starts") { launcher.sessions.count == 1 }
+        manager.runHealthCheckForTesting()
+        launcher.sessions[0].exit(status: 255)
+
+        for expectedCount in 2...4 {
+            waitUntil("automatic reconnect attempt \(expectedCount - 1) starts") {
+                launcher.sessions.count == expectedCount
+            }
+            launcher.sessions[expectedCount - 1].exit(status: 255)
+        }
+
+        waitUntil("automatic reconnect reaches terminal state") {
+            manager.status(for: profile.id).health == .failed
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 4)
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("stopped after 3 failed attempts"))
+    }
+
+    func testAuthenticationFailureOnAutomaticAttemptStopsCampaignWithLateOutput() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socks5Probe: { _ in true },
+            attemptLedger: SSHConnectionAttemptLedger(limit: 100, window: 600),
+            reconnectDelay: { _ in 0.01 },
+            processExitOutputSettleDelay: 0.03,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("initial tunnel starts") { launcher.sessions.count == 1 }
+        manager.runHealthCheckForTesting()
+        launcher.sessions[0].exit(status: 255)
+        waitUntil("automatic reconnect starts") { launcher.sessions.count == 2 }
+
+        launcher.sessions[1].exit(status: 255)
+        launcher.sessions[1].emit("Permission denied, please try again.\r\n")
+        waitUntil("automatic authentication failure stops") {
+            manager.status(for: profile.id).health == .failed
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 2)
+        XCTAssertTrue(manager.status(for: profile.id).message.contains("not retryable"))
+    }
+
+    func testReconnectAttemptsResetOnlyAfterStableHealthyInterval() throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        var currentDate = Date(timeIntervalSince1970: 1_000)
+        var scheduledAttempts: [Int] = []
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            socks5Probe: { _ in true },
+            attemptLedger: SSHConnectionAttemptLedger(limit: 100, window: 600),
+            reconnectDelay: { attempt in
+                scheduledAttempts.append(attempt)
+                return 0.01
+            },
+            healthyResetInterval: 300,
+            processExitOutputSettleDelay: 0,
+            now: { currentDate },
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("initial tunnel starts") { launcher.sessions.count == 1 }
+        manager.runHealthCheckForTesting()
+        launcher.sessions[0].exit(status: 255)
+        waitUntil("first reconnect starts") { launcher.sessions.count == 2 }
+
+        manager.runHealthCheckForTesting()
+        currentDate = currentDate.addingTimeInterval(299)
+        manager.runHealthCheckForTesting()
+        launcher.sessions[1].exit(status: 255)
+        waitUntil("second reconnect starts") { launcher.sessions.count == 3 }
+
+        manager.runHealthCheckForTesting()
+        currentDate = currentDate.addingTimeInterval(300)
+        manager.runHealthCheckForTesting()
+        launcher.sessions[2].exit(status: 255)
+        waitUntil("post-stability reconnect starts") { launcher.sessions.count == 4 }
+
+        XCTAssertEqual(scheduledAttempts, [1, 2, 1])
     }
 
     func testStartUsesAllocatedRuntimeSocksPortWithoutChangingProfile() throws {
@@ -630,16 +762,17 @@ final class TunnelManagerProcessTests: XCTestCase {
 
         XCTAssertEqual(
             manager.status(for: profile.id).message,
-            "SSH exited with status 255: Permission denied, please try again."
+            "SSH exited with status 255: Permission denied, please try again.; authentication or host-key failure is not retryable; automatic reconnect stopped and no more attempts will be made"
         )
     }
 
     func testRepeatedHealthFailureRestartsTunnel() throws {
         let launcher = FakeSSHProcessLauncher()
         let profile = testProfile(autoReconnect: true)
+        var probeSucceeds = true
         let manager = TunnelManager(
             processLauncher: launcher,
-            socks5Probe: { _ in false },
+            socks5Probe: { _ in probeSucceeds },
             reconnectDelay: { _ in 0.01 },
             initialReadinessGracePeriod: 0,
             startsHealthTimer: false
@@ -659,6 +792,10 @@ final class TunnelManagerProcessTests: XCTestCase {
 
         manager.start(profile: profile)
         wait(for: [firstStart], timeout: 1)
+
+        manager.runHealthCheckForTesting()
+        XCTAssertEqual(manager.status(for: profile.id).health, .healthy)
+        probeSucceeds = false
 
         manager.runHealthCheckForTesting()
         XCTAssertEqual(manager.status(for: profile.id).health, .unhealthy)

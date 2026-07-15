@@ -57,6 +57,8 @@ public enum JumpHostControlMasterFactory {
             "-S", paths.controlPath,
             "-o", "ControlMaster=yes",
             "-o", "ControlPersist=no",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ConnectTimeout=20",
             "-o", "ServerAliveInterval=20",
             "-o", "ServerAliveCountMax=2",
             "-p", "\(profile.sshPort)"

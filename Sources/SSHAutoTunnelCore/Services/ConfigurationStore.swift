@@ -38,8 +38,9 @@ public final class ConfigurationStore {
             try FileProtection.protectFile(url)
             let data = try Data(contentsOf: url)
             let decoded = try decoder.decode(AppConfiguration.self, from: data)
-            let (migrated, didUpdate) = SSHAuto2FAImporter.backfillPresetSSHUsers(in: decoded)
-            if didUpdate {
+            let reconnectMigration = ReconnectConfigurationMigration.migrate(decoded)
+            let (migrated, didUpdateUsers) = SSHAuto2FAImporter.backfillPresetSSHUsers(in: reconnectMigration.configuration)
+            if reconnectMigration.didUpdate || didUpdateUsers {
                 try save(migrated)
             }
             return migrated

@@ -74,7 +74,7 @@ final class ConfigurationContentValidatorTests: XCTestCase {
 
         XCTAssertThrowsError(try ProfileConfigurationEditor.create(profile: profile, in: AppConfiguration())) { error in
             let validationError = error as? ConfigurationContentValidationError
-            XCTAssertTrue(validationError?.messages.contains("Profile 'Reconnect' reconnect attempt limit must be zero or greater") == true)
+            XCTAssertTrue(validationError?.messages.contains("Profile 'Reconnect' reconnect attempt limit must be between 1 and 3") == true)
         }
     }
 

@@ -247,7 +247,7 @@ public struct CuratedSSHOptions: Codable, Equatable, Sendable {
         certificateFiles: [String] = [],
         forwardAgent: SSHOptionToggle = .systemDefault,
         proxyCommand: String? = nil,
-        maxReconnectAttempts: Int? = nil
+        maxReconnectAttempts: Int? = TunnelLifecyclePolicy.maximumReconnectAttempts
     ) {
         self.bindAddress = bindAddress
         self.addressFamily = addressFamily
@@ -269,6 +269,7 @@ public struct CuratedSSHOptions: Codable, Equatable, Sendable {
         forwardAgent = try container.decodeIfPresent(SSHOptionToggle.self, forKey: .forwardAgent) ?? .systemDefault
         proxyCommand = try container.decodeIfPresent(String.self, forKey: .proxyCommand)
         maxReconnectAttempts = try container.decodeIfPresent(Int.self, forKey: .maxReconnectAttempts)
+            ?? TunnelLifecyclePolicy.maximumReconnectAttempts
     }
 }
 

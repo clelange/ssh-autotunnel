@@ -236,7 +236,7 @@ final class HopConnectionManagerTests: XCTestCase {
         second.hostKeyPolicy = .strict
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             startsHealthTimer: false
         )
 
@@ -292,7 +292,7 @@ final class HopConnectionManagerTests: XCTestCase {
         let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -311,6 +311,8 @@ final class HopConnectionManagerTests: XCTestCase {
 
         manager.start(profile: profile)
         wait(for: [firstStart], timeout: 1)
+        manager.runHealthCheckForTesting()
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .healthy)
         try XCTUnwrap(launcher.sessions.first).exit(status: 255)
         wait(for: [secondStart], timeout: 1)
 
@@ -324,7 +326,7 @@ final class HopConnectionManagerTests: XCTestCase {
         profile.curatedSSHOptions.maxReconnectAttempts = 0
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -337,9 +339,10 @@ final class HopConnectionManagerTests: XCTestCase {
 
         manager.start(profile: profile)
         wait(for: [started], timeout: 1)
+        manager.runHealthCheckForTesting()
         try XCTUnwrap(launcher.sessions.first).exit(status: 255)
         waitUntil("hop reconnect limit is reported") {
-            manager.status(for: profile.id)?.message.contains("Hop reconnect attempt limit reached") == true
+            manager.status(for: profile.id)?.message.contains("Automatic hop reconnect stopped") == true
         }
 
         XCTAssertEqual(launcher.sessions.count, 1)
@@ -351,7 +354,7 @@ final class HopConnectionManagerTests: XCTestCase {
         let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -657,7 +660,7 @@ final class HopConnectionManagerTests: XCTestCase {
         let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -680,6 +683,8 @@ final class HopConnectionManagerTests: XCTestCase {
         manager.start(profile: profile, options: SSHLaunchOptions(verbose: true))
         wait(for: [firstStart], timeout: 1)
         XCTAssertTrue(try XCTUnwrap(launcher.commands.first).arguments.contains("-vvv"))
+        manager.runHealthCheckForTesting()
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .healthy)
 
         try XCTUnwrap(launcher.sessions.first).exit(status: 255)
         wait(for: [secondStart], timeout: 1)
