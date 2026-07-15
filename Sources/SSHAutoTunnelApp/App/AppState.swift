@@ -47,9 +47,11 @@ final class AppState: ObservableObject {
     private let terminalLauncher = InteractiveTerminalLauncher()
     private let terminalDiscovery = InteractiveTerminalDiscovery()
     private var pathMonitor: NWPathMonitor?
+    private var pendingNetworkRefreshTask: Task<Void, Never>?
     private var pendingConfigurationSaveTask: Task<Void, Never>?
     private var pendingPACAppendSourceTask: Task<Void, Never>?
     private var pendingTunnelStartTokens: [UUID: UUID] = [:]
+    private var connectionIntent = DirectAccessConnectionIntent()
     private var loadedPACAppendSource: PACAppendSource?
     private var appendedPACContent: String?
     private let jsonEncoder = JSONEncoder()
@@ -123,14 +125,19 @@ final class AppState: ObservableObject {
     }
 
     private var pacVersion: Int {
-        let statusHash = statuses.values
+        let statusSignature = statuses.values
             .sorted { $0.profileID.uuidString < $1.profileID.uuidString }
             .map { status in
                 let effectivePort = status.effectiveLocalSocksPort.map(String.init) ?? "-"
                 return "\(status.profileID.uuidString):\(status.health.rawValue):\(effectivePort)"
             }
             .joined(separator: "|")
-            .hashValue
+        let networkHash = (
+            sortedNetworkDisabledProfileIDs().map(\.uuidString)
+                + sortedDirectAccessProfileIDs().map(\.uuidString)
+                + [networkDecision.shouldDisableProxy.description, networkDecision.isDirectAccessForAllProfiles.description]
+        ).joined(separator: "|")
+        let statusHash = "\(statusSignature)|\(networkHash)".hashValue
         return abs(statusHash)
     }
 
@@ -150,7 +157,35 @@ final class AppState: ObservableObject {
         normalizedJumpHost(for: profile) != nil
     }
 
-    func connect(_ profile: TunnelProfile) {
+    func isDirectAccessActive(for profileID: UUID) -> Bool {
+        networkDecision.directAccessProfileIDs.contains(profileID)
+    }
+
+    func directAccessRuleNames(for profileID: UUID) -> [String] {
+        networkDecision.matchedDirectAccessRules
+            .filter { $0.profileID == nil || $0.profileID == profileID }
+            .map(\.name)
+    }
+
+    func willResumeAfterDirectAccess(_ profileID: UUID) -> Bool {
+        connectionIntent.shouldResumeTunnel(profileID)
+    }
+
+    private func directAccessBlockedMessage(for profile: TunnelProfile) -> String {
+        "\(profile.name): Connection paused by \(directAccessRuleNames(for: profile.id).first ?? "direct network policy")"
+    }
+
+    private func directAccessPausedMessage(for profile: TunnelProfile) -> String {
+        let suffix = willResumeAfterDirectAccess(profile.id) ? "; will resume when the network changes" : ""
+        return "Direct on this network — connection paused by \(directAccessRuleNames(for: profile.id).first ?? "network policy")\(suffix)"
+    }
+
+    @discardableResult
+    func connect(_ profile: TunnelProfile) -> Bool {
+        guard connectionIntent.requestTunnel(profile.id) else {
+            lastProxyMessage = directAccessBlockedMessage(for: profile)
+            return false
+        }
         startSSHLogSession(for: profile, verbose: false)
         if hasJumpHost(profile) {
             let token = UUID()
@@ -163,15 +198,22 @@ final class AppState: ObservableObject {
         } else {
             startTunnel(profile, message: "Starting tunnel", options: .standard)
         }
+        return true
     }
 
     func disconnect(_ profile: TunnelProfile) {
+        connectionIntent.cancelTunnel(profile.id)
         pendingTunnelStartTokens[profile.id] = nil
         lastProxyMessage = "\(profile.name): Disconnect requested"
         tunnelManager.stop(profileID: profile.id)
     }
 
-    func reconnect(_ profile: TunnelProfile) {
+    @discardableResult
+    func reconnect(_ profile: TunnelProfile) -> Bool {
+        guard connectionIntent.requestTunnel(profile.id) else {
+            lastProxyMessage = directAccessBlockedMessage(for: profile)
+            return false
+        }
         startSSHLogSession(for: profile, verbose: false)
         if hasJumpHost(profile) {
             let token = UUID()
@@ -187,6 +229,7 @@ final class AppState: ObservableObject {
             lastProxyMessage = "\(profile.name): Reconnect requested"
             tunnelManager.reconnect(profile: profile, options: .standard, reservedSocksPorts: reservedSocksPorts(excluding: profile.id))
         }
+        return true
     }
 
     func connectAll() {
@@ -198,6 +241,8 @@ final class AppState: ObservableObject {
     func disconnectAll() {
         pendingTunnelStartTokens.removeAll()
         for profile in configuration.profiles {
+            connectionIntent.cancelTunnel(profile.id)
+            connectionIntent.cancelStandaloneHop(profile.id)
             tunnelManager.stop(profileID: profile.id)
             if hasJumpHost(profile) {
                 hopManager.stop(profileID: profile.id)
@@ -206,22 +251,38 @@ final class AppState: ObservableObject {
         lastProxyMessage = "Disconnect all requested"
     }
 
-    func connectHop(_ profile: TunnelProfile) {
+    @discardableResult
+    func connectHop(_ profile: TunnelProfile) -> Bool {
+        guard hasJumpHost(profile) else {
+            lastProxyMessage = "\(profile.name): No jump host configured"
+            return false
+        }
+        guard connectionIntent.requestStandaloneHop(profile.id) else {
+            lastProxyMessage = directAccessBlockedMessage(for: profile)
+            return false
+        }
         startHop(profile, resetLog: true)
+        return true
     }
 
     func disconnectHop(_ profile: TunnelProfile) {
+        connectionIntent.cancelStandaloneHop(profile.id)
         pendingTunnelStartTokens[profile.id] = nil
         lastProxyMessage = "\(profile.name): Hop disconnect requested; terminal sessions sharing this master may close"
         hopManager.stop(profileID: profile.id)
     }
 
-    func reconnectHop(_ profile: TunnelProfile) {
-        startSSHLogSession(for: profile, verbose: false)
+    @discardableResult
+    func reconnectHop(_ profile: TunnelProfile) -> Bool {
         guard hasJumpHost(profile) else {
             lastProxyMessage = "\(profile.name): No jump host configured"
-            return
+            return false
         }
+        guard connectionIntent.requestStandaloneHop(profile.id) else {
+            lastProxyMessage = directAccessBlockedMessage(for: profile)
+            return false
+        }
+        startSSHLogSession(for: profile, verbose: false)
         hopStatuses[profile.id] = HopRuntimeStatus(
             profileID: profile.id,
             jumpHost: normalizedJumpHost(for: profile) ?? "",
@@ -230,11 +291,18 @@ final class AppState: ObservableObject {
         )
         lastProxyMessage = "\(profile.name): Hop reconnect requested; terminal sessions sharing this master may close"
         hopManager.reconnect(profile: profile, options: .standard)
+        return true
     }
 
     func connectInteractiveSSH(_ profile: TunnelProfile) {
         do {
             let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
+            if isDirectAccessActive(for: profile.id) {
+                let command = try interactiveSSHHelperCommand(for: profile, helperCommand: "interactive-ssh-direct")
+                try terminalLauncher.launch(command: command, preference: configuration.interactiveTerminal)
+                lastProxyMessage = "\(profile.name): Opened direct interactive SSH in \(configuration.interactiveTerminal.app.displayName)"
+                return
+            }
             if InteractiveSSHJumpHostPolicy.requiresPersistentJumpHostSession(interactiveProfile) {
                 lastProxyMessage = "\(profile.name): Preparing hop for interactive SSH"
                 Task {
@@ -279,7 +347,16 @@ final class AppState: ObservableObject {
 
     private func connectLaunchProfiles() {
         for profile in configuration.profiles where profile.connectOnLaunch {
-            connect(profile)
+            if isDirectAccessActive(for: profile.id) {
+                connectionIntent.deferTunnelUntilDirectAccessEnds(profile.id)
+                statuses[profile.id] = TunnelRuntimeStatus(
+                    profileID: profile.id,
+                    health: .stopped,
+                    message: directAccessPausedMessage(for: profile)
+                )
+            } else {
+                connect(profile)
+            }
         }
     }
 
@@ -377,6 +454,10 @@ final class AppState: ObservableObject {
 
     func connectWithVerboseSSHLogging(profileID: UUID) {
         guard let profile = configuration.profiles.first(where: { $0.id == profileID }) else { return }
+        guard connectionIntent.requestTunnel(profile.id) else {
+            lastProxyMessage = directAccessBlockedMessage(for: profile)
+            return
+        }
         diagnosticsSelectedProfileID = profileID
         let options = SSHLaunchOptions(verbose: true)
         startSSHLogSession(for: profile, verbose: true)
@@ -395,6 +476,10 @@ final class AppState: ObservableObject {
 
     func connectHopWithVerboseSSHLogging(profileID: UUID) {
         guard let profile = configuration.profiles.first(where: { $0.id == profileID }) else { return }
+        guard connectionIntent.requestStandaloneHop(profile.id) else {
+            lastProxyMessage = directAccessBlockedMessage(for: profile)
+            return
+        }
         diagnosticsSelectedProfileID = profileID
         startHop(profile, resetLog: true, options: SSHLaunchOptions(verbose: true))
     }
@@ -432,6 +517,7 @@ final class AppState: ObservableObject {
     }
 
     func prepareForTermination() {
+        pendingNetworkRefreshTask?.cancel()
         pendingConfigurationSaveTask?.cancel()
         pendingPACAppendSourceTask?.cancel()
         pendingTunnelStartTokens.removeAll()
@@ -661,9 +747,10 @@ final class AppState: ObservableObject {
             refreshSystemPACStatus()
         }
         do {
-            if networkDecision.shouldDisableProxy {
+            if networkDecision.shouldDisableProxy || networkDecision.isDirectAccessForAllProfiles {
                 try proxyManager.restoreIfNeeded()
-                lastProxyMessage = "System PAC disabled by network rule \(networkDecision.matchedRule?.name ?? "")"
+                let ruleName = networkDecision.matchedDirectAccessRules.first?.name ?? networkDecision.matchedRule?.name ?? "network policy"
+                lastProxyMessage = "System PAC disabled by network rule \(ruleName)"
             } else {
                 let service = try proxyManager.applyPAC(url: pacURL)
                 lastProxyMessage = "System PAC set on \(service)"
@@ -885,6 +972,7 @@ final class AppState: ObservableObject {
             tunnelManager.stop(profileID: id)
             hopManager.stop(profileID: id)
         }
+        connectionIntent.removeProfiles(idSet)
 
         var updated = configuration
         for id in ids {
@@ -942,16 +1030,16 @@ final class AppState: ObservableObject {
         return base
     }
 
-    func addDisableRuleForCurrentNetwork() {
+    func addDirectAccessRuleForCurrentNetwork(profileID: UUID? = nil) {
         refreshNetworkDecision()
-        guard let rule = NetworkPolicyRule.disableProxyRule(from: currentNetworkFingerprint) else {
+        guard let rule = NetworkPolicyRule.directAccessRule(from: currentNetworkFingerprint, profileID: profileID) else {
             lastProxyMessage = "Current network does not expose enough fingerprint data for a rule"
             return
         }
         do {
             configuration = try NetworkRuleConfigurationEditor.create(rule: rule, in: configuration)
             saveConfiguration()
-            lastProxyMessage = "Added network rule \(rule.name)"
+            lastProxyMessage = "Added direct network \(rule.name)"
         } catch {
             lastProxyMessage = "Could not add network rule: \(error.localizedDescription)"
         }
@@ -967,6 +1055,8 @@ final class AppState: ObservableObject {
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
             matchedNetworkRule: networkDecision.matchedRule?.name,
             networkDisabledProfileIDs: sortedNetworkDisabledProfileIDs(),
+            directAccessProfileIDs: sortedDirectAccessProfileIDs(),
+            matchedDirectAccessRules: networkDecision.matchedDirectAccessRules.map(\.name),
             profiles: profileStatuses
         )
     }
@@ -986,6 +1076,8 @@ final class AppState: ObservableObject {
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
             matchedNetworkRule: networkDecision.matchedRule?.name,
             networkDisabledProfileIDs: sortedNetworkDisabledProfileIDs(),
+            directAccessProfileIDs: sortedDirectAccessProfileIDs(),
+            matchedDirectAccessRules: networkDecision.matchedDirectAccessRules.map(\.name),
             configuredPorts: LocalServerPorts(configuration: configuration),
             activePorts: localServers.activePorts,
             currentNetwork: currentNetworkFingerprint,
@@ -1046,11 +1138,13 @@ final class AppState: ObservableObject {
                 retaining: ConfigurationStore.defaultPreImportBackupRetentionCount
             )
             let importedProfileIDs = Set(imported.profiles.map(\.id))
+            let removedProfileIDs = Set(configuration.profiles.map(\.id)).subtracting(importedProfileIDs)
             for profile in configuration.profiles where !importedProfileIDs.contains(profile.id) {
                 pendingTunnelStartTokens[profile.id] = nil
                 tunnelManager.stop(profileID: profile.id)
                 hopManager.stop(profileID: profile.id)
             }
+            connectionIntent.removeProfiles(removedProfileIDs)
             statuses = statuses.filter { importedProfileIDs.contains($0.key) }
             hopStatuses = hopStatuses.filter { importedProfileIDs.contains($0.key) }
             configuration = imported
@@ -1362,8 +1456,23 @@ final class AppState: ObservableObject {
     }
 
     func refreshNetworkDecision() {
-        currentNetworkFingerprint = networkIdentity.currentFingerprint()
-        networkDecision = networkIdentity.evaluate(configuration: configuration, fingerprint: currentNetworkFingerprint)
+        let fingerprint = networkIdentity.currentFingerprint()
+        let decision = networkIdentity.evaluate(configuration: configuration, fingerprint: fingerprint)
+        let newlyPausedProfileIDs = decision.directAccessProfileIDs.subtracting(connectionIntent.pausedProfileIDs)
+
+        for profileID in newlyPausedProfileIDs {
+            let tunnelIsActive = isActive(statuses[profileID]?.health ?? .stopped)
+            if tunnelIsActive {
+                connectionIntent.deferTunnelUntilDirectAccessEnds(profileID)
+            } else if let hopHealth = hopStatuses[profileID]?.health, isActive(hopHealth) {
+                connectionIntent.deferStandaloneHopUntilDirectAccessEnds(profileID)
+            }
+        }
+
+        let transition = connectionIntent.updatePausedProfileIDs(decision.directAccessProfileIDs)
+        currentNetworkFingerprint = fingerprint
+        networkDecision = decision
+        reconcileDirectAccessTransition(transition)
     }
 
     func refreshSystemPACStatus() {
@@ -1375,17 +1484,48 @@ final class AppState: ObservableObject {
         monitor.pathUpdateHandler = { [weak self] _ in
             DispatchQueue.main.async {
                 guard let self else { return }
-                self.refreshNetworkDecision()
-                self.writePACCopy()
-                if self.configuration.proxyApplyMode == .activeNetworkServicePAC {
-                    self.applySystemPAC()
-                } else {
-                    self.refreshSystemPACStatus()
-                }
+                self.scheduleNetworkRefresh()
             }
         }
         monitor.start(queue: DispatchQueue(label: "dev.clange.ssh-autotunnel.network"))
         pathMonitor = monitor
+    }
+
+    private func scheduleNetworkRefresh(delaySeconds: TimeInterval = 0.75) {
+        pendingNetworkRefreshTask?.cancel()
+        pendingNetworkRefreshTask = Task { [weak self] in
+            let nanoseconds = UInt64(max(0, delaySeconds) * 1_000_000_000)
+            try? await Task.sleep(nanoseconds: nanoseconds)
+            guard !Task.isCancelled, let self else { return }
+            self.refreshNetworkDecision()
+            self.writePACCopy()
+            if self.configuration.proxyApplyMode == .activeNetworkServicePAC {
+                self.applySystemPAC()
+            } else {
+                self.refreshSystemPACStatus()
+            }
+        }
+    }
+
+    private func reconcileDirectAccessTransition(_ transition: DirectAccessTransition) {
+        for profileID in transition.profileIDsToPause {
+            pendingTunnelStartTokens[profileID] = nil
+            tunnelManager.stop(profileID: profileID)
+            hopManager.stop(profileID: profileID)
+            if let profile = configuration.profiles.first(where: { $0.id == profileID }) {
+                lastProxyMessage = directAccessPausedMessage(for: profile)
+            }
+        }
+
+        for profileID in transition.tunnelProfileIDsToResume {
+            guard let profile = configuration.profiles.first(where: { $0.id == profileID }) else { continue }
+            connect(profile)
+        }
+
+        for profileID in transition.standaloneHopProfileIDsToResume {
+            guard let profile = configuration.profiles.first(where: { $0.id == profileID }) else { continue }
+            connectHop(profile)
+        }
     }
 
     private func currentPAC() -> String {
@@ -1394,6 +1534,7 @@ final class AppState: ObservableObject {
             statuses: statuses,
             proxyDisabledByNetworkPolicy: networkDecision.shouldDisableProxy,
             networkDisabledProfileIDs: networkDecision.disabledProfileIDs,
+            directAccessProfileIDs: networkDecision.directAccessProfileIDs,
             appendedPAC: configuration.pacAppendSource.isReadyToLoad ? appendedPACContent : nil
         )
         return PACGenerator.generate(context: context)
@@ -1410,6 +1551,10 @@ final class AppState: ObservableObject {
         networkDecision.disabledProfileIDs.sorted { $0.uuidString < $1.uuidString }
     }
 
+    private func sortedDirectAccessProfileIDs() -> [UUID] {
+        networkDecision.directAccessProfileIDs.sorted { $0.uuidString < $1.uuidString }
+    }
+
     func writePACCopy() {
         do {
             let url = try AppPaths.pacCopyURL()
@@ -1423,7 +1568,9 @@ final class AppState: ObservableObject {
     private func statusHTML() -> String {
         let rows = configuration.profiles.map { profile in
             let status = status(for: profile)
-            return "<tr><td>\(escape(profile.name))</td><td>\(escape(status.health.rawValue))</td><td>\(escape(socksPortSummary(profile: profile, status: status)))</td><td>\(escape(status.message))</td></tr>"
+            let health = isDirectAccessActive(for: profile.id) ? "direct access" : status.health.rawValue
+            let message = isDirectAccessActive(for: profile.id) ? directAccessPausedMessage(for: profile) : status.message
+            return "<tr><td>\(escape(profile.name))</td><td>\(escape(health))</td><td>\(escape(socksPortSummary(profile: profile, status: status)))</td><td>\(escape(message))</td></tr>"
         }.joined()
         return """
         <!doctype html>
@@ -1433,6 +1580,7 @@ final class AppState: ObservableObject {
         <h1>SSH AutoTunnel</h1>
         <p>PAC URL: <code>\(escape(pacURL))</code></p>
         <p>Network policy: \(networkDecision.shouldDisableProxy ? "proxy disabled" : "proxy allowed") \(escape(networkDecision.matchedRule?.name ?? ""))</p>
+        <p>Direct access: \(networkDecision.directAccessProfileIDs.isEmpty ? "inactive" : escape(networkDecision.matchedDirectAccessRules.map(\.name).joined(separator: ", ")))</p>
         <table><tr><th>Profile</th><th>Status</th><th>SOCKS</th><th>Message</th></tr>\(rows)</table>
         </body></html>
         """

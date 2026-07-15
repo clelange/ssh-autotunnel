@@ -79,6 +79,13 @@ struct OverviewPage: View {
                             systemImage: "slash.circle"
                         )
                     }
+                    if !appState.networkDecision.directAccessProfileIDs.isEmpty {
+                        InlineNotice(
+                            title: "Direct access active",
+                            message: directAccessSummary,
+                            systemImage: "point.3.connected.trianglepath.dotted"
+                        )
+                    }
                 }
 
                 SectionPanel(title: "Local Servers", systemImage: "point.3.connected.trianglepath.dotted") {
@@ -163,6 +170,15 @@ struct OverviewPage: View {
             KeyValueRow("Local API", "\(active?.apiHTTPPort ?? configured.apiHTTPPort)"),
             KeyValueRow("Blocking Proxy", "\(active?.blockingHTTPProxyPort ?? configured.blockingHTTPProxyPort)")
         ]
+    }
+
+    private var directAccessSummary: String {
+        let profiles = appState.configuration.profiles
+            .filter { appState.networkDecision.directAccessProfileIDs.contains($0.id) }
+            .map(\.name)
+            .joined(separator: ", ")
+        let rule = appState.networkDecision.matchedDirectAccessRules.first?.name ?? "direct network policy"
+        return "\(rule): \(profiles.isEmpty ? "affected connections paused" : profiles)"
     }
 }
 

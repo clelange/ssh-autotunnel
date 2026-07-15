@@ -133,8 +133,8 @@ extension AppState {
     }
 
     var systemPACMenuTitle: String {
-        if networkDecision.shouldDisableProxy {
-            return menuTitle(prefix: "PAC off: ", value: networkDecision.matchedRule?.name ?? activePACServiceName)
+        if networkPolicyDisablesSystemPAC {
+            return menuTitle(prefix: "PAC off: ", value: networkPolicySystemPACRuleName)
         }
 
         switch systemPACStatus.state {
@@ -155,8 +155,8 @@ extension AppState {
     }
 
     var systemPACStatusTitle: String {
-        if networkDecision.shouldDisableProxy {
-            return "System PAC disabled by \(networkDecision.matchedRule?.name ?? "network rule")"
+        if networkPolicyDisablesSystemPAC {
+            return "System PAC disabled by \(networkPolicySystemPACRuleName)"
         }
 
         switch systemPACStatus.state {
@@ -174,7 +174,7 @@ extension AppState {
     }
 
     var systemPACStatusSummary: String {
-        if networkDecision.shouldDisableProxy {
+        if networkPolicyDisablesSystemPAC {
             return "Disabled"
         }
 
@@ -193,8 +193,8 @@ extension AppState {
     }
 
     var systemPACStatusDetail: String {
-        if networkDecision.shouldDisableProxy {
-            return "Matched rule: \(networkDecision.matchedRule?.name ?? "unknown"). Active service: \(activePACServiceName)."
+        if networkPolicyDisablesSystemPAC {
+            return "Matched rule: \(networkPolicySystemPACRuleName). Active service: \(activePACServiceName)."
         }
 
         switch systemPACStatus.state {
@@ -215,7 +215,7 @@ extension AppState {
     }
 
     var systemPACStatusSymbol: String {
-        if networkDecision.shouldDisableProxy {
+        if networkPolicyDisablesSystemPAC {
             return "slash.circle.fill"
         }
 
@@ -234,7 +234,7 @@ extension AppState {
     }
 
     var systemPACMenuBarBadgeSymbol: String {
-        if networkDecision.shouldDisableProxy {
+        if networkPolicyDisablesSystemPAC {
             return "slash.circle"
         }
 
@@ -253,7 +253,7 @@ extension AppState {
     }
 
     var systemPACStatusTint: Color {
-        if networkDecision.shouldDisableProxy {
+        if networkPolicyDisablesSystemPAC {
             return .secondary
         }
 
@@ -274,6 +274,16 @@ extension AppState {
             ?? currentNetworkFingerprint.serviceName
             ?? currentNetworkFingerprint.interfaceName
             ?? "active service"
+    }
+
+    private var networkPolicyDisablesSystemPAC: Bool {
+        networkDecision.shouldDisableProxy || networkDecision.isDirectAccessForAllProfiles
+    }
+
+    private var networkPolicySystemPACRuleName: String {
+        networkDecision.matchedDirectAccessRules.first?.name
+            ?? networkDecision.matchedRule?.name
+            ?? "network rule"
     }
 
     private func menuTitle(prefix: String, value: String) -> String {

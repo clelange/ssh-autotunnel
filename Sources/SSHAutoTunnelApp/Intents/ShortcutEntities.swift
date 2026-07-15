@@ -24,18 +24,22 @@ enum ShortcutPACFailureMode: String, AppEnum {
 }
 
 enum ShortcutNetworkPolicyAction: String, AppEnum {
+    case directAccess
     case disableProxy
     case allowProxy
 
     static var typeDisplayRepresentation = TypeDisplayRepresentation(name: "Network Policy Action")
 
     static var caseDisplayRepresentations: [ShortcutNetworkPolicyAction: DisplayRepresentation] = [
+        .directAccess: "Use Direct Access",
         .disableProxy: "Disable Proxy",
         .allowProxy: "Allow Proxy"
     ]
 
     var coreValue: NetworkPolicyAction {
         switch self {
+        case .directAccess:
+            .directAccess
         case .disableProxy:
             .disableProxy
         case .allowProxy:
@@ -381,7 +385,7 @@ struct ShortcutNetworkRuleEntity: AppEntity {
             id: "",
             name: "Select network rule",
             matchSummary: "",
-            action: AutomationSummaries.networkActionName(.disableProxy),
+            action: AutomationSummaries.networkActionName(.directAccess),
             profileName: "",
             enabled: true
         )

@@ -22,6 +22,11 @@ public struct SSHCommand: Equatable, Sendable {
     }
 }
 
+public enum SSHInteractiveRoute: Equatable, Sendable {
+    case configured
+    case direct
+}
+
 public enum SSHCommandBuilder {
     public static func tunnelCommand(for profile: TunnelProfile, options: SSHLaunchOptions = .standard) -> SSHCommand {
         var arguments: [String] = []
@@ -71,7 +76,11 @@ public enum SSHCommandBuilder {
         return SSHCommand(arguments: arguments)
     }
 
-    public static func interactiveCommand(for profile: TunnelProfile, options: SSHLaunchOptions = .standard) -> SSHCommand {
+    public static func interactiveCommand(
+        for profile: TunnelProfile,
+        options: SSHLaunchOptions = .standard,
+        route: SSHInteractiveRoute = .configured
+    ) -> SSHCommand {
         var profile = profile
         profile.host = profile.resolvedInteractiveHost
         var arguments = [
@@ -79,6 +88,14 @@ public enum SSHCommandBuilder {
         ]
         appendControlMasterSuppression(to: &arguments)
         appendForwardingSuppression(to: &arguments)
+        if route == .direct {
+            arguments += [
+                "-o", "ProxyJump=none",
+                "-o", "ProxyCommand=none"
+            ]
+            profile.jumpHost = nil
+            profile.curatedSSHOptions.proxyCommand = nil
+        }
 
         if let strictHostKeyCheckingValue = profile.hostKeyPolicy.strictHostKeyCheckingValue {
             arguments += ["-o", "StrictHostKeyChecking=\(strictHostKeyCheckingValue)"]

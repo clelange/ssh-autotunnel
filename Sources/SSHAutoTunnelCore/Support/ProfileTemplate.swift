@@ -61,9 +61,9 @@ public enum NetworkRuleTemplate {
     public static func example(profileID: UUID? = nil) -> NetworkPolicyRule {
         NetworkPolicyRule(
             id: UUID(uuidString: "33333333-4444-5555-6666-777777777777")!,
-            name: "Example trusted network",
-            match: NetworkMatch(searchDomainContains: "example.org"),
-            action: .disableProxy,
+            name: "Example direct network",
+            match: NetworkMatch(searchDomainSuffix: "example.org"),
+            action: .directAccess,
             profileID: profileID
         )
     }

@@ -38,6 +38,8 @@ final class DiagnosticsSnapshotTests: XCTestCase {
             ),
             proxyDisabledByNetworkPolicy: true,
             matchedNetworkRule: "Trusted Wi-Fi: CERN",
+            directAccessProfileIDs: [profileID],
+            matchedDirectAccessRules: ["PSI internal"],
             configuredPorts: LocalServerPorts(pacHTTPPort: 18483, blockingHTTPProxyPort: 18485, apiHTTPPort: 18484),
             activePorts: LocalServerPorts(pacHTTPPort: 18483, blockingHTTPProxyPort: 18485, apiHTTPPort: 18484),
             currentNetwork: NetworkFingerprint(serviceName: "Wi-Fi", wifiSSID: "CERN", hasVPNInterface: true),
@@ -60,6 +62,8 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         XCTAssertEqual(decoded, snapshot)
         XCTAssertEqual(decoded.profiles.first?.hop?.ownership, .adoptedAppOwned)
         XCTAssertEqual(decoded.profiles.first?.hop?.issue, hopIssue)
+        XCTAssertEqual(decoded.directAccessProfileIDs, [profileID])
+        XCTAssertEqual(decoded.matchedDirectAccessRules, ["PSI internal"])
     }
 
     func testAppStatusSnapshotCarriesSystemPACStatus() throws {

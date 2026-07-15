@@ -4,6 +4,14 @@ import XCTest
 @testable import SSHAutoTunnelCore
 
 final class HopConnectionManagerTests: XCTestCase {
+    func testDirectPolicyStopDoesNotReconnectWhenOutputArrivesBeforeTermination() throws {
+        try assertDirectPolicyStyleStopDoesNotReconnect(outputBeforeTermination: true)
+    }
+
+    func testDirectPolicyStopDoesNotReconnectWhenOutputArrivesAfterTermination() throws {
+        try assertDirectPolicyStyleStopDoesNotReconnect(outputBeforeTermination: false)
+    }
+
     func testSendsPasswordAndGeneratesTOTPWhenPrompted() throws {
         let launcher = FakeHopSSHProcessLauncher()
         let keychain = FakeHopKeychain(values: [
@@ -405,6 +413,48 @@ final class HopConnectionManagerTests: XCTestCase {
         }
 
         XCTAssertEqual(session.forceKillCallCount, 0)
+    }
+
+    private func assertDirectPolicyStyleStopDoesNotReconnect(outputBeforeTermination: Bool) throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            reconnectDelay: { _ in 0.01 },
+            processExitObservationDelay: 0,
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "hop process started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH hop process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.exitsOnTerminate = false
+
+        manager.stop(profileID: profile.id)
+        waitUntil("hop enters stopping") {
+            manager.status(for: profile.id)?.health == .stopping
+        }
+        if outputBeforeTermination {
+            session.emit("Connection closed by remote host\r\n")
+        }
+        session.exit(status: SIGTERM)
+        if !outputBeforeTermination {
+            session.emit("Connection closed by remote host\r\n")
+        }
+        waitUntil("hop stops") {
+            manager.status(for: profile.id)?.health == .stopped
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .stopped)
     }
 
     func testManualStopForceKillsStubbornHopBeforeReportingStopped() throws {

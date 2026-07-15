@@ -117,6 +117,7 @@ public enum ConfigurationContentValidator {
             ("Network rule '\(rule.name)' Wi-Fi BSSID", rule.match.wifiBSSID),
             ("Network rule '\(rule.name)' service name match", rule.match.serviceNameContains),
             ("Network rule '\(rule.name)' search domain match", rule.match.searchDomainContains),
+            ("Network rule '\(rule.name)' search domain suffix", rule.match.searchDomainSuffix),
             ("Network rule '\(rule.name)' gateway", rule.match.gateway)
         ])
         if rule.match.isEmpty {

@@ -30,6 +30,12 @@ struct SSHAutoTunnelCLI {
                 let status = try InteractiveSSHSessionRunner().run(profile: interactiveProfile)
                 exit(status == 0 ? 0 : status)
             }
+            if invocation.command == "interactive-ssh-direct" {
+                let profile = try profile(named: invocation.profileName, in: configuration)
+                let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
+                let status = try InteractiveSSHSessionRunner().runDirect(profile: interactiveProfile)
+                exit(status == 0 ? 0 : status)
+            }
             if invocation.command == "interactive-ssh-jump" {
                 let profile = try profile(named: invocation.profileName, in: configuration)
                 let interactiveProfile = InteractiveSSHProfileResolver.resolve(profile: profile, in: configuration)
@@ -124,7 +130,7 @@ struct SSHAutoTunnelCLI {
                 response = try await client.send(ControlRequest(action: .updateNetworkRule, networkRuleName: rule.name, networkRuleID: rule.id, networkRule: rule))
             case "delete-network-rule":
                 response = try await client.send(ControlRequest(action: .deleteNetworkRule, networkRuleName: invocation.profileName))
-            case "trust-current-network":
+            case "trust-current-network", "use-direct-current-network":
                 response = try await client.send(ControlRequest(action: .createNetworkRuleFromCurrentNetwork, profileName: invocation.profileName))
             case "diagnostics":
                 response = try await client.send(ControlRequest(action: .diagnostics))
@@ -180,6 +186,13 @@ struct SSHAutoTunnelCLI {
                 .filter { status.networkDisabledProfileIDs.contains($0.id) }
                 .map(\.name)
             print("Network policy disabled profiles: \(disabledProfileNames.isEmpty ? "unknown" : disabledProfileNames.joined(separator: ", "))")
+        }
+        if !status.directAccessProfileIDs.isEmpty {
+            let directProfileNames = status.profiles
+                .filter { status.directAccessProfileIDs.contains($0.id) }
+                .map(\.name)
+            let rules = status.matchedDirectAccessRules.isEmpty ? "direct network policy" : status.matchedDirectAccessRules.joined(separator: ", ")
+            print("Direct access (\(rules)): \(directProfileNames.isEmpty ? "unknown" : directProfileNames.joined(separator: ", "))")
         }
         for profile in status.profiles {
             let pid = profile.pid.map { " pid=\($0)" } ?? ""
@@ -394,11 +407,13 @@ struct SSHAutoTunnelCLI {
           ssh-autotunnelctl update-network-rule <network-rule.json|->
           ssh-autotunnelctl delete-network-rule <network rule name>
           ssh-autotunnelctl trust-current-network [profile name]
+          ssh-autotunnelctl use-direct-current-network [profile name]
           ssh-autotunnelctl connect <profile name>
           ssh-autotunnelctl connect-hop <profile name>
           ssh-autotunnelctl disconnect-hop <profile name>
           ssh-autotunnelctl reconnect-hop <profile name>
           ssh-autotunnelctl interactive-ssh <profile name>
+          ssh-autotunnelctl interactive-ssh-direct <profile name>
           ssh-autotunnelctl interactive-ssh-jump <profile name>
           ssh-autotunnelctl interactive-ssh-final <profile name>
           ssh-autotunnelctl disconnect <profile name>
