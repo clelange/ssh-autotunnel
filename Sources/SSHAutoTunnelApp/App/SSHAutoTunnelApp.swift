@@ -16,8 +16,10 @@ struct SSHAutoTunnelApp: App {
                 .onAppear {
                     appDelegate.appState = appState
                 }
-                .frame(minWidth: 820, minHeight: 560)
+                .frame(minWidth: 1_200, minHeight: 620)
         }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 1_200, height: 760)
         .defaultLaunchBehavior(.presented)
 
         MenuBarExtra {
@@ -48,8 +50,10 @@ struct SSHAutoTunnelApp: App {
                 .onAppear {
                     appDelegate.appState = appState
                 }
-                .frame(minWidth: 640, minHeight: 460)
+                .frame(minWidth: 820, minHeight: 560)
         }
+        .windowResizability(.contentMinSize)
+        .defaultSize(width: 860, height: 640)
 
         Window("SSH AutoTunnel Diagnostics", id: "diagnostics") {
             DiagnosticsView()

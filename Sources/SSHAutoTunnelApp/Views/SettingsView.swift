@@ -34,7 +34,7 @@ struct SettingsView: View {
                 }
         }
         .padding(12)
-        .frame(minWidth: 680, idealWidth: 720, minHeight: 520, idealHeight: 600)
+        .frame(minWidth: 820, idealWidth: 860, minHeight: 560, idealHeight: 640)
         .onChange(of: appState.configuration) {
             appState.scheduleConfigurationSave()
         }
