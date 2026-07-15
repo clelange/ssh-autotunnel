@@ -90,34 +90,60 @@ struct PACRulesView: View {
 
 struct NetworkRulesView: View {
     @EnvironmentObject private var appState: AppState
+    @State private var presentsDirectNetworkSheet = false
 
-    private var ruleIDs: [UUID] {
-        appState.configuration.networkRules.map(\.id)
+    private var directRuleIDs: [UUID] {
+        appState.configuration.networkRules.filter { $0.action == .directAccess }.map(\.id)
+    }
+
+    private var legacyRuleIDs: [UUID] {
+        appState.configuration.networkRules.filter { $0.action != .directAccess }.map(\.id)
     }
 
     var body: some View {
         Form {
-            Section("Current Decision") {
-                Text(appState.networkDecision.shouldDisableProxy ? "Proxy disabled by network policy" : "Proxy allowed")
-                if let rule = appState.networkDecision.matchedRule {
+            Section("Current Behavior") {
+                if appState.networkDecision.directAccessProfileIDs.isEmpty {
+                    Label("No direct-network policy is active", systemImage: "network")
+                } else {
+                    Label("Using direct access on this network", systemImage: "point.3.connected.trianglepath.dotted")
+                    Text("Paused profiles: \(directAccessProfileNames())")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(appState.networkDecision.matchedDirectAccessRules) { rule in
                     Text("Matched: \(rule.name)")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if let rule = appState.networkDecision.matchedRule {
+                    Text("Legacy routing policy matched: \(rule.name)")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
                 if !appState.networkDecision.disabledProfileIDs.isEmpty {
-                    Text("Disabled profiles: \(disabledProfileNames())")
+                    Text("Legacy PAC bypass: \(disabledProfileNames())")
+                        .font(.caption)
                         .foregroundStyle(.secondary)
                 }
             }
 
             Section("Current Network") {
                 NetworkFingerprintView(fingerprint: appState.currentNetworkFingerprint)
-                Button("Use Direct Access on This Network") {
-                    appState.addDirectAccessRuleForCurrentNetwork()
+                Text(currentConnectionExplanation)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Button("Use Direct Access on This Network…") {
+                    presentsDirectNetworkSheet = true
                 }
+                .disabled(appState.configuration.profiles.isEmpty)
             }
 
-            Section("Rules") {
-                ForEach(ruleIDs, id: \.self) { ruleID in
+            Section {
+                if directRuleIDs.isEmpty {
+                    Text("No direct networks configured.")
+                        .foregroundStyle(.secondary)
+                }
+                ForEach(directRuleIDs, id: \.self) { ruleID in
                     NetworkRuleEditorDisclosure(
                         ruleID: ruleID,
                         showsScopePicker: true,
@@ -125,17 +151,29 @@ struct NetworkRulesView: View {
                     )
                     .environmentObject(appState)
                 }
-                .onDelete(perform: deleteRules)
+                Button("Add Direct Network…") {
+                    presentsDirectNetworkSheet = true
+                }
+            } header: {
+                Text("Direct Networks")
+            } footer: {
+                Text("When matched, affected tunnels and app-owned hop usage stop, PAC traffic uses the normal fallback, and Interactive SSH connects directly. Network-provided identifiers are convenience signals, not authentication.")
+            }
 
-                Button("Add Network Rule") {
-                    appState.configuration.networkRules.append(
-                        NetworkPolicyRule(
-                            name: "Trusted network",
-                            match: NetworkMatch(searchDomainContains: "example.org"),
-                            action: .disableProxy
+            if !legacyRuleIDs.isEmpty {
+                Section {
+                    ForEach(legacyRuleIDs, id: \.self) { ruleID in
+                        NetworkRuleEditorDisclosure(
+                            ruleID: ruleID,
+                            showsScopePicker: true,
+                            onDelete: { deleteRule(id: ruleID) }
                         )
-                    )
-                    appState.saveConfiguration()
+                        .environmentObject(appState)
+                    }
+                } header: {
+                    Text("Legacy Routing Policies")
+                } footer: {
+                    Text("Legacy Disable/Allow Proxy policies affect PAC routing only. If several identifiers are filled in, all of them must match.")
                 }
             }
         }
@@ -143,11 +181,13 @@ struct NetworkRulesView: View {
         .onChange(of: appState.configuration.networkRules) {
             appState.scheduleConfigurationSave()
         }
-    }
-
-    private func deleteRules(at offsets: IndexSet) {
-        appState.configuration.networkRules.remove(atOffsets: offsets)
-        appState.saveConfiguration()
+        .sheet(isPresented: $presentsDirectNetworkSheet) {
+            DirectNetworkCreationSheet(
+                fingerprint: appState.currentNetworkFingerprint,
+                initialProfileID: appState.configuration.profiles.first?.id
+            )
+            .environmentObject(appState)
+        }
     }
 
     private func deleteRule(id ruleID: UUID) {
@@ -161,10 +201,173 @@ struct NetworkRulesView: View {
             .map(\.name)
         return names.isEmpty ? "unknown" : names.joined(separator: ", ")
     }
+
+    private func directAccessProfileNames() -> String {
+        let names = appState.configuration.profiles
+            .filter { appState.networkDecision.directAccessProfileIDs.contains($0.id) }
+            .map(\.name)
+        return names.isEmpty ? "unknown" : names.joined(separator: ", ")
+    }
+
+    private var currentConnectionExplanation: String {
+        if let ssid = appState.currentNetworkFingerprint.wifiSSID, !ssid.isEmpty {
+            return "Wi-Fi network \(ssid). DNS search-domain policies also work when the same organization is reached over Ethernet or VPN."
+        }
+        return "No Wi-Fi SSID is present. On Ethernet, use a DNS search domain when available; the gateway is an advanced alternative."
+    }
+}
+
+private struct DirectNetworkCreationSheet: View {
+    private enum SignalKind: String, CaseIterable, Identifiable {
+        case searchDomain
+        case wifiSSID
+        case gateway
+
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .searchDomain: "DNS search domain"
+            case .wifiSSID: "Wi-Fi SSID"
+            case .gateway: "Gateway"
+            }
+        }
+    }
+
+    @EnvironmentObject private var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+    private let locksProfile: Bool
+    @State private var name: String
+    @State private var profileID: UUID?
+    @State private var signalKind: SignalKind
+    @State private var searchDomain: String
+    @State private var wifiSSID: String
+    @State private var gateway: String
+    @State private var errorMessage: String?
+
+    init(fingerprint: NetworkFingerprint, initialProfileID: UUID?, locksProfile: Bool = false) {
+        let searchDomain = fingerprint.searchDomains.first ?? ""
+        let wifiSSID = fingerprint.wifiSSID ?? ""
+        let gateway = fingerprint.gateway ?? ""
+        let signalKind: SignalKind = !searchDomain.isEmpty ? .searchDomain : (!wifiSSID.isEmpty ? .wifiSSID : .gateway)
+        let signalName = !searchDomain.isEmpty ? searchDomain : (!wifiSSID.isEmpty ? wifiSSID : gateway)
+        _name = State(initialValue: signalName.isEmpty ? "Direct network" : "Direct access: \(signalName)")
+        _profileID = State(initialValue: initialProfileID)
+        _signalKind = State(initialValue: signalKind)
+        _searchDomain = State(initialValue: searchDomain)
+        _wifiSSID = State(initialValue: wifiSSID)
+        _gateway = State(initialValue: gateway)
+        self.locksProfile = locksProfile
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Policy") {
+                    TextField("Name", text: $name)
+                    Picker("Apply to", selection: $profileID) {
+                        Text("All profiles").tag(Optional<UUID>.none)
+                        ForEach(appState.configuration.profiles) { profile in
+                            Text(profile.name).tag(Optional(profile.id))
+                        }
+                    }
+                    .disabled(locksProfile)
+                }
+
+                Section {
+                    Picker("Identify by", selection: $signalKind) {
+                        ForEach(SignalKind.allCases) { kind in
+                            Text(kind.label).tag(kind)
+                        }
+                    }
+                    switch signalKind {
+                    case .searchDomain:
+                        TextField("Domain", text: $searchDomain)
+                        Text("Matches this DNS search domain or a real subdomain, regardless of Wi-Fi, Ethernet, or VPN transport.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .wifiSSID:
+                        TextField("Wi-Fi SSID", text: $wifiSSID)
+                        Text("Wi-Fi only. This policy cannot match a wired connection.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    case .gateway:
+                        TextField("Gateway", text: $gateway)
+                        Text("Advanced: gateway addresses can be reused by unrelated networks.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                } header: {
+                    Text("Network Identifier")
+                } footer: {
+                    Text("Network identifiers can be supplied by the local network. Use this only to select a direct route on networks you trust.")
+                }
+
+                Section("Behavior") {
+                    Text("The selected connection stops while this policy matches, its PAC routes use the normal fallback, and Interactive SSH skips its jump host. Previous tunnel intent resumes when the network changes.")
+                        .foregroundStyle(.secondary)
+                }
+
+                if let errorMessage {
+                    Section {
+                        Text(errorMessage)
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
+            .navigationTitle("Add Direct Network")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("Cancel") { dismiss() }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Add") { addRule() }
+                        .disabled(name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || selectedValue.isEmpty)
+                }
+            }
+        }
+        .frame(minWidth: 520, minHeight: 470)
+    }
+
+    private var selectedValue: String {
+        let value: String
+        switch signalKind {
+        case .searchDomain: value = searchDomain
+        case .wifiSSID: value = wifiSSID
+        case .gateway: value = gateway
+        }
+        return value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    private func addRule() {
+        let match: NetworkMatch
+        switch signalKind {
+        case .searchDomain:
+            match = NetworkMatch(searchDomainSuffix: selectedValue)
+        case .wifiSSID:
+            match = NetworkMatch(wifiSSID: selectedValue)
+        case .gateway:
+            match = NetworkMatch(gateway: selectedValue)
+        }
+        let rule = NetworkPolicyRule(
+            name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+            match: match,
+            action: .directAccess,
+            profileID: profileID
+        )
+        do {
+            appState.configuration = try NetworkRuleConfigurationEditor.create(rule: rule, in: appState.configuration)
+            appState.saveConfiguration()
+            dismiss()
+        } catch {
+            errorMessage = error.localizedDescription
+        }
+    }
 }
 
 struct ProfileScopedRulesEditor: View {
     @EnvironmentObject private var appState: AppState
+    @State private var presentsDirectNetworkSheet = false
     let profile: TunnelProfile
 
     private var pacRuleIDs: [UUID] {
@@ -173,9 +376,15 @@ struct ProfileScopedRulesEditor: View {
             .map(\.id)
     }
 
-    private var networkRuleIDs: [UUID] {
+    private var directNetworkRuleIDs: [UUID] {
         appState.configuration.networkRules
-            .filter { $0.profileID == profile.id }
+            .filter { $0.profileID == profile.id && $0.action == .directAccess }
+            .map(\.id)
+    }
+
+    private var legacyNetworkRuleIDs: [UUID] {
+        appState.configuration.networkRules
+            .filter { $0.profileID == profile.id && $0.action != .directAccess }
             .map(\.id)
     }
 
@@ -206,12 +415,12 @@ struct ProfileScopedRulesEditor: View {
             }
         }
 
-        Section("Network Rules for This Profile") {
-            if networkRuleIDs.isEmpty {
-                Text("No scoped network rules reference this profile.")
+        Section("Direct Networks for This Profile") {
+            if directNetworkRuleIDs.isEmpty {
+                Text("No direct networks configured for this profile.")
                     .foregroundStyle(.secondary)
             } else {
-                ForEach(networkRuleIDs, id: \.self) { ruleID in
+                ForEach(directNetworkRuleIDs, id: \.self) { ruleID in
                     NetworkRuleEditorDisclosure(
                         ruleID: ruleID,
                         showsScopePicker: false,
@@ -222,11 +431,34 @@ struct ProfileScopedRulesEditor: View {
             }
 
             Button {
-                addNetworkRule()
+                presentsDirectNetworkSheet = true
             } label: {
-                Label("Add Network Rule", systemImage: "plus")
+                Label("Add Direct Network…", systemImage: "plus")
             }
         }
+
+        if !legacyNetworkRuleIDs.isEmpty {
+            Section("Legacy Routing Policies for This Profile") {
+                ForEach(legacyNetworkRuleIDs, id: \.self) { ruleID in
+                    NetworkRuleEditorDisclosure(
+                        ruleID: ruleID,
+                        showsScopePicker: false,
+                        onDelete: { deleteNetworkRule(id: ruleID) }
+                    )
+                    .environmentObject(appState)
+                }
+            }
+        }
+        Color.clear
+            .frame(height: 0)
+            .sheet(isPresented: $presentsDirectNetworkSheet) {
+                DirectNetworkCreationSheet(
+                    fingerprint: appState.currentNetworkFingerprint,
+                    initialProfileID: profile.id,
+                    locksProfile: true
+                )
+                .environmentObject(appState)
+            }
     }
 
     private func addPACRule() {
@@ -238,18 +470,6 @@ struct ProfileScopedRulesEditor: View {
 
     private func deletePACRule(id ruleID: UUID) {
         appState.configuration.pacRules.removeAll { $0.id == ruleID }
-        appState.saveConfiguration()
-    }
-
-    private func addNetworkRule() {
-        appState.configuration.networkRules.append(
-            NetworkPolicyRule(
-                name: "\(profile.name) trusted network",
-                match: NetworkMatch(searchDomainContains: "example.org"),
-                action: .disableProxy,
-                profileID: profile.id
-            )
-        )
         appState.saveConfiguration()
     }
 
@@ -373,15 +593,35 @@ private struct NetworkRuleEditorDisclosure: View {
                         }
                     }
                 }
-                TextField("Wi-Fi SSID", text: optionalRuleBinding($appState.configuration.networkRules[index].match.wifiSSID))
-                TextField("Wi-Fi BSSID", text: optionalRuleBinding($appState.configuration.networkRules[index].match.wifiBSSID))
-                TextField("Service contains", text: optionalRuleBinding($appState.configuration.networkRules[index].match.serviceNameContains))
-                TextField("Search domain contains", text: optionalRuleBinding($appState.configuration.networkRules[index].match.searchDomainContains))
-                TextField("Gateway", text: optionalRuleBinding($appState.configuration.networkRules[index].match.gateway))
-                Picker("Action", selection: $appState.configuration.networkRules[index].action) {
-                    ForEach(NetworkPolicyAction.allCases) { action in
-                        Text(action.rawValue).tag(action)
+                if appState.configuration.networkRules[index].action == .directAccess {
+                    TextField("Search domain or subdomain", text: optionalRuleBinding($appState.configuration.networkRules[index].match.searchDomainSuffix))
+                    DisclosureGroup("Advanced identifiers") {
+                        TextField("Wi-Fi SSID", text: optionalRuleBinding($appState.configuration.networkRules[index].match.wifiSSID))
+                        TextField("Wi-Fi BSSID", text: optionalRuleBinding($appState.configuration.networkRules[index].match.wifiBSSID))
+                        TextField("Service contains", text: optionalRuleBinding($appState.configuration.networkRules[index].match.serviceNameContains))
+                        TextField("Gateway", text: optionalRuleBinding($appState.configuration.networkRules[index].match.gateway))
                     }
+                    LabeledContent("Behavior", value: "Pause connection and use direct access")
+                } else {
+                    TextField("Wi-Fi SSID", text: optionalRuleBinding($appState.configuration.networkRules[index].match.wifiSSID))
+                    TextField("Wi-Fi BSSID", text: optionalRuleBinding($appState.configuration.networkRules[index].match.wifiBSSID))
+                    TextField("Service contains", text: optionalRuleBinding($appState.configuration.networkRules[index].match.serviceNameContains))
+                    TextField("Legacy search domain contains", text: optionalRuleBinding($appState.configuration.networkRules[index].match.searchDomainContains))
+                    TextField("Gateway", text: optionalRuleBinding($appState.configuration.networkRules[index].match.gateway))
+                    Picker("Legacy action", selection: $appState.configuration.networkRules[index].action) {
+                        Text("Disable proxy routing").tag(NetworkPolicyAction.disableProxy)
+                        Text("Allow proxy routing").tag(NetworkPolicyAction.allowProxy)
+                    }
+                }
+                if conditionCount(appState.configuration.networkRules[index].match) > 1 {
+                    Label("All configured identifiers must match (AND).", systemImage: "info.circle")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if isWiFiOnly(appState.configuration.networkRules[index].match) {
+                    Label("Wi-Fi only; this cannot match Ethernet.", systemImage: "wifi")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
                 Button(role: .destructive) {
                     onDelete()
@@ -390,6 +630,27 @@ private struct NetworkRuleEditorDisclosure: View {
                 }
             }
         }
+    }
+
+    private func conditionCount(_ match: NetworkMatch) -> Int {
+        [
+            match.wifiSSID,
+            match.wifiBSSID,
+            match.serviceNameContains,
+            match.searchDomainContains,
+            match.searchDomainSuffix,
+            match.gateway
+        ].compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false ? $0 : nil }.count
+            + (match.vpnRequired == nil ? 0 : 1)
+    }
+
+    private func isWiFiOnly(_ match: NetworkMatch) -> Bool {
+        (match.wifiSSID?.isEmpty == false || match.wifiBSSID?.isEmpty == false)
+            && match.serviceNameContains?.isEmpty != false
+            && match.searchDomainContains?.isEmpty != false
+            && match.searchDomainSuffix?.isEmpty != false
+            && match.gateway?.isEmpty != false
+            && match.vpnRequired == nil
     }
 }
 

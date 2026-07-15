@@ -135,7 +135,7 @@ struct DashboardView: View {
         case .networkRules:
             NetworkRulesView()
                 .environmentObject(appState)
-                .navigationTitle("Network Rules")
+                .navigationTitle("Direct Networks")
         case .profile(let id):
             if let profile = appState.configuration.profiles.first(where: { $0.id == id }) {
                 ProfileDetailPage(profile: profile) { deletedProfileID, _ in
@@ -370,7 +370,7 @@ private struct DashboardSidebar: View {
                     CountedSidebarLabel(title: "PAC Rules", count: appState.configuration.pacRules.count, systemImage: "point.3.connected.trianglepath.dotted")
                 }
                 NavigationLink(value: DashboardSelection.networkRules) {
-                    CountedSidebarLabel(title: "Network Rules", count: appState.configuration.networkRules.count, systemImage: "wifi.router")
+                    CountedSidebarLabel(title: "Direct Networks", count: appState.configuration.networkRules.filter { $0.action == .directAccess }.count, systemImage: "point.3.connected.trianglepath.dotted")
                 }
             }
 
@@ -386,6 +386,7 @@ private struct DashboardSidebar: View {
                         } label: {
                             Label("Connect", systemImage: "play.fill")
                         }
+                        .disabled(appState.isDirectAccessActive(for: profile.id))
                         Button {
                             appState.disconnect(profile)
                         } label: {
@@ -449,16 +450,24 @@ private struct SidebarProfileRow: View {
     var body: some View {
         HStack(spacing: 8) {
             Circle()
-                .fill(statusColor(for: appState.status(for: profile).health))
+                .fill(appState.isDirectAccessActive(for: profile.id) ? Color.blue : statusColor(for: appState.status(for: profile).health))
                 .frame(width: 8, height: 8)
             VStack(alignment: .leading, spacing: 2) {
                 Text(profile.name)
                     .lineLimit(1)
-                Text(appState.status(for: profile).message)
+                Text(sidebarMessage)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
         }
+    }
+
+    private var sidebarMessage: String {
+        if appState.isDirectAccessActive(for: profile.id) {
+            let resume = appState.willResumeAfterDirectAccess(profile.id) ? " · resumes later" : ""
+            return "Direct access · paused\(resume)"
+        }
+        return appState.status(for: profile).message
     }
 }

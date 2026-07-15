@@ -385,7 +385,7 @@ struct ShortcutNetworkRuleEntity: AppEntity {
             id: "",
             name: "Select network rule",
             matchSummary: "",
-            action: AutomationSummaries.networkActionName(.disableProxy),
+            action: AutomationSummaries.networkActionName(.directAccess),
             profileName: "",
             enabled: true
         )

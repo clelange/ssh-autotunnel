@@ -1568,7 +1568,9 @@ final class AppState: ObservableObject {
     private func statusHTML() -> String {
         let rows = configuration.profiles.map { profile in
             let status = status(for: profile)
-            return "<tr><td>\(escape(profile.name))</td><td>\(escape(status.health.rawValue))</td><td>\(escape(socksPortSummary(profile: profile, status: status)))</td><td>\(escape(status.message))</td></tr>"
+            let health = isDirectAccessActive(for: profile.id) ? "direct access" : status.health.rawValue
+            let message = isDirectAccessActive(for: profile.id) ? directAccessPausedMessage(for: profile) : status.message
+            return "<tr><td>\(escape(profile.name))</td><td>\(escape(health))</td><td>\(escape(socksPortSummary(profile: profile, status: status)))</td><td>\(escape(message))</td></tr>"
         }.joined()
         return """
         <!doctype html>
@@ -1578,6 +1580,7 @@ final class AppState: ObservableObject {
         <h1>SSH AutoTunnel</h1>
         <p>PAC URL: <code>\(escape(pacURL))</code></p>
         <p>Network policy: \(networkDecision.shouldDisableProxy ? "proxy disabled" : "proxy allowed") \(escape(networkDecision.matchedRule?.name ?? ""))</p>
+        <p>Direct access: \(networkDecision.directAccessProfileIDs.isEmpty ? "inactive" : escape(networkDecision.matchedDirectAccessRules.map(\.name).joined(separator: ", ")))</p>
         <table><tr><th>Profile</th><th>Status</th><th>SOCKS</th><th>Message</th></tr>\(rows)</table>
         </body></html>
         """

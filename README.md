@@ -24,7 +24,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - Automatic reconnect for unexpected SSH exits and repeated SOCKS5 health-check failures.
 - Optional macOS Automatic Proxy Configuration for the active network service.
 - Durable system PAC snapshots so the previous macOS proxy state can be restored after app restart or quit.
-- Network fingerprint rules to disable all proxy/PAC behavior or only selected profiles on trusted networks.
+- Direct-network policies that pause selected tunnels and use normal network access when organizational resources are reachable without a jump host, across Wi-Fi, Ethernet, or VPN.
 - Settings and diagnostics windows.
 - Port validation for PAC/API/blocking/SOCKS settings, with local server restart when valid listener ports change.
 - Local API and CLI helper for tunnel control, profile management, PAC, diagnostics, system proxy, and imports.
@@ -117,8 +117,8 @@ swift run ssh-autotunnelctl delete-pac-rule "Old routing"
 swift run ssh-autotunnelctl network-rule-template > network-rule.json
 swift run ssh-autotunnelctl create-network-rule ./network-rule.json
 swift run ssh-autotunnelctl update-network-rule ./network-rule.json
-swift run ssh-autotunnelctl delete-network-rule "Old trusted network"
-swift run ssh-autotunnelctl trust-current-network "CERN LxPlus"
+swift run ssh-autotunnelctl delete-network-rule "Old direct network"
+swift run ssh-autotunnelctl use-direct-current-network "PSI General"
 swift run ssh-autotunnelctl connect "CERN LxPlus"
 swift run ssh-autotunnelctl connect-hop "PSI General"
 swift run ssh-autotunnelctl disconnect-hop "PSI General"
@@ -177,7 +177,7 @@ For external automation, generate a profile JSON template with `ssh-autotunnelct
 
 PAC routing rules can be managed the same way with `ssh-autotunnelctl pac-rule-template`, `create-pac-rule`, `update-pac-rule`, and `delete-pac-rule`.
 
-Trusted-network rules can be managed with `ssh-autotunnelctl network-rule-template`, `create-network-rule`, `update-network-rule`, and `delete-network-rule`. `trust-current-network` asks the running app to create a disable rule from the current network fingerprint; pass a profile name to scope that rule to one tunnel.
+Direct-network policies can be managed with `ssh-autotunnelctl network-rule-template`, `create-network-rule`, `update-network-rule`, and `delete-network-rule`. `use-direct-current-network` asks the running app to create a policy from the current DNS search domain, Wi-Fi SSID, or gateway; pass a profile name to scope it to one tunnel. The older `trust-current-network` spelling remains an alias.
 
 ## Development Notes
 

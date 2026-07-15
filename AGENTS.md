@@ -117,6 +117,7 @@
 - Polished first-run template setup UI with fitting empty-state actions, human-readable System PAC summaries, clearer credential readiness labels, and disabled save with review warnings when required setup input is missing.
 - Added a tester QA checklist covering first-run setup, templates, credentials, tunnels, PAC/network behavior, CLI, Shortcuts, cleanup, and issue reporting for ad-hoc builds.
 - Added a Developer ID release packaging path that signs the app, embedded CLI, top-level CLI, and DMG with hardened runtime/timestamps, supports notarytool submission/stapling, and documents GitHub Release publishing.
+- Replaced the primary trusted-network workflow with Direct Networks that prefer DNS search-domain matching across Wi-Fi/Ethernet/VPN, pause matching tunnels and shared-hop usage, resume prior intent, route PAC traffic normally, and launch direct interactive SSH while preserving legacy routing-only policies.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status

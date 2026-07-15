@@ -1033,7 +1033,7 @@ struct SSHAutoTunnelShortcuts: AppShortcutsProvider {
         AppShortcut(
             intent: ListNetworkRulesIntent(),
             phrases: ["List \(.applicationName) network rules"],
-            shortTitle: "List Network Rules",
+            shortTitle: "List Direct Networks",
             systemImageName: "network"
         )
         AppShortcut(

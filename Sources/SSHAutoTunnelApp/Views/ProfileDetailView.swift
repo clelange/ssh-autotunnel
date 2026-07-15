@@ -18,6 +18,10 @@ struct ProfileDetailPage: View {
         appState.hopStatus(for: profile)
     }
 
+    private var usesDirectAccess: Bool {
+        appState.isDirectAccessActive(for: profile.id)
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
@@ -77,6 +81,11 @@ struct ProfileDetailPage: View {
                     if let hop {
                         StatusLine(label: "Hop", health: hop.health, message: hop.message, pid: hop.pid)
                     }
+                    if usesDirectAccess {
+                        Label(directAccessStatus, systemImage: "point.3.connected.trianglepath.dotted")
+                            .font(.caption)
+                            .foregroundStyle(.blue)
+                    }
                 }
                 .padding(.top, 2)
             }
@@ -86,8 +95,12 @@ struct ProfileDetailPage: View {
             VStack(alignment: .trailing, spacing: 8) {
                 HStack(spacing: 6) {
                     Button("Connect") { appState.connect(profile) }
+                        .disabled(usesDirectAccess)
+                        .help(usesDirectAccess ? directAccessStatus : "Connect the tunnel")
                     Button("Disconnect") { appState.disconnect(profile) }
                     Button("Reconnect") { appState.reconnect(profile) }
+                        .disabled(usesDirectAccess)
+                        .help(usesDirectAccess ? directAccessStatus : "Reconnect the tunnel")
                 }
                 HStack(spacing: 6) {
                     if appState.hasJumpHost(profile) {
@@ -101,11 +114,12 @@ struct ProfileDetailPage: View {
                         .help(hop?.health.isRunning == true
                             ? "Disconnect the shared hop master. Terminal sessions using its internal adapter may close."
                             : "Connect the shared hop master")
+                        .disabled(usesDirectAccess && hop?.health.isRunning != true)
                     }
                     Button {
                         appState.connectInteractiveSSH(profile)
                     } label: {
-                        Label("Interactive SSH", systemImage: "terminal")
+                        Label(usesDirectAccess ? "Interactive SSH (Direct)" : "Interactive SSH", systemImage: "terminal")
                     }
                     Button {
                         appState.selectDiagnosticsProfile(profile.id)
@@ -123,6 +137,12 @@ struct ProfileDetailPage: View {
             }
             .buttonStyle(.bordered)
         }
+    }
+
+    private var directAccessStatus: String {
+        let rule = appState.directAccessRuleNames(for: profile.id).first ?? "direct network policy"
+        let resume = appState.willResumeAfterDirectAccess(profile.id) ? " It will resume after the network changes." : ""
+        return "Direct on this network — connection paused by \(rule).\(resume)"
     }
 
     private var endpointSummary: String {

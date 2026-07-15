@@ -438,19 +438,19 @@ struct ListPACRulesIntent: AppIntent {
 }
 
 struct ListNetworkRulesIntent: AppIntent {
-    static var title: LocalizedStringResource = "List SSH AutoTunnel Network Rules"
+    static var title: LocalizedStringResource = "List SSH AutoTunnel Direct Networks"
     static var description = IntentDescription("Return the configured SSH AutoTunnel direct and legacy network policies.")
 
     func perform() async throws -> some IntentResult & ReturnsValue<[ShortcutNetworkRuleEntity]> & ProvidesDialog {
         let rules = try ShortcutEntityStore.networkRules()
-        let summary = rules.isEmpty ? "No network rules configured" : rules.map(\.name).joined(separator: ", ")
+        let summary = rules.isEmpty ? "No direct or legacy network policies configured" : rules.map(\.name).joined(separator: ", ")
         return .result(value: rules, dialog: IntentDialog(stringLiteral: summary))
     }
 }
 
 struct CurrentNetworkFingerprintIntent: AppIntent {
     static var title: LocalizedStringResource = "Get SSH AutoTunnel Current Network"
-    static var description = IntentDescription("Return the current network fingerprint used by SSH AutoTunnel network rules.")
+    static var description = IntentDescription("Return the current network fingerprint used by SSH AutoTunnel direct-network policies.")
 
     func perform() async throws -> some IntentResult & ReturnsValue<String> & ProvidesDialog {
         let fingerprint = NetworkIdentityService().currentFingerprint()
