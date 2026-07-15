@@ -39,6 +39,8 @@ public enum SSHCommandBuilder {
             "-p", "\(profile.sshPort)",
             "-o", "ExitOnForwardFailure=yes",
             "-o", "ForkAfterAuthentication=no",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ConnectTimeout=20",
             "-o", "ServerAliveInterval=20",
             "-o", "ServerAliveCountMax=2"
         ]
@@ -84,7 +86,9 @@ public enum SSHCommandBuilder {
         var profile = profile
         profile.host = profile.resolvedInteractiveHost
         var arguments = [
-            "-p", "\(profile.sshPort)"
+            "-p", "\(profile.sshPort)",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ConnectTimeout=20"
         ]
         appendControlMasterSuppression(to: &arguments)
         appendForwardingSuppression(to: &arguments)

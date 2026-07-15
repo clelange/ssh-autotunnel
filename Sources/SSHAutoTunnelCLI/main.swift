@@ -175,6 +175,9 @@ struct SSHAutoTunnelCLI {
         }
         guard let status = response.status else { return }
         print("PAC: \(status.pacURL)")
+        if let networkPathState = status.sshNetworkPathState {
+            print("SSH network path: \(networkPathState.displayName)")
+        }
         if let systemPACStatus = status.systemPACStatus {
             print("System PAC: \(label(for: systemPACStatus))")
         }

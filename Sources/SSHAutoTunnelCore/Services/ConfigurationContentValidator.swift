@@ -94,8 +94,12 @@ public enum ConfigurationContentValidator {
         if hasProxyJump(profile), hasProxyCommand(profile) {
             messages.append("Profile '\(profile.name)' cannot define both ProxyJump and ProxyCommand")
         }
-        if let maxReconnectAttempts = profile.curatedSSHOptions.maxReconnectAttempts, maxReconnectAttempts < 0 {
-            messages.append("Profile '\(profile.name)' reconnect attempt limit must be zero or greater")
+        if profile.curatedSSHOptions.maxReconnectAttempts.map({
+            !(1...TunnelLifecyclePolicy.maximumReconnectAttempts).contains($0)
+        }) ?? true {
+            messages.append(
+                "Profile '\(profile.name)' reconnect attempt limit must be between 1 and \(TunnelLifecyclePolicy.maximumReconnectAttempts)"
+            )
         }
         for (index, option) in profile.extraSSHOptions.enumerated() {
             messages += invalidTextMessages([("Profile '\(profile.name)' extra SSH option \(index + 1)", option)])

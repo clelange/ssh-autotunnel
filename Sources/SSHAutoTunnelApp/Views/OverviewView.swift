@@ -153,6 +153,7 @@ struct OverviewPage: View {
 
     private var networkRows: [KeyValueRow] {
         [
+            KeyValueRow("SSH Path", appState.sshNetworkPathState.displayName),
             KeyValueRow("Service", appState.currentNetworkFingerprint.serviceName ?? "Unknown"),
             KeyValueRow("Interface", appState.currentNetworkFingerprint.interfaceName ?? "Unknown"),
             KeyValueRow("Wi-Fi", appState.currentNetworkFingerprint.wifiSSID ?? "Unknown"),

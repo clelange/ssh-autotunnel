@@ -79,8 +79,10 @@ final class TunnelLifecyclePolicyTests: XCTestCase {
     }
 
     func testReconnectDelayBacksOffAndCaps() {
-        XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 1), 1)
-        XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 3), 4)
-        XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 10), 30)
+        XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 1), 5)
+        XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 2), 30)
+        XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 3), 120)
+        XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 10), 120)
+        XCTAssertEqual(TunnelLifecyclePolicy.reconnectDelay(forAttempt: 1, jitterFraction: 0.2), 6)
     }
 }

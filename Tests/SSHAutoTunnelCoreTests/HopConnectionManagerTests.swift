@@ -227,6 +227,50 @@ final class HopConnectionManagerTests: XCTestCase {
         XCTAssertEqual(manager.status(for: first.id)?.health, .healthy)
     }
 
+    func testPooledHopRecoveryLaunchesOnlyOneProcessAndPausesAllProfilesOffline() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let first = psiGeneralProfile(authMode: .none)
+        var second = first
+        second.id = UUID()
+        second.name = "PSI General second route"
+        second.host = "hepserver.psi.ch"
+        second.localSocksPort = 1183
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in true },
+            attemptLedger: SSHConnectionAttemptLedger(limit: 100, window: 600),
+            reconnectDelay: { _ in 0.02 },
+            processExitObservationDelay: 0,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: first)
+        waitUntil("first pooled hop starts") { launcher.sessions.count == 1 }
+        manager.start(profile: second)
+        waitUntil("second profile joins pooled hop") {
+            manager.status(for: second.id)?.message.contains("Sharing hop ControlMaster") == true
+        }
+        manager.runHealthCheckForTesting()
+
+        manager.updateNetworkPathState(.unsatisfied)
+        launcher.sessions[0].exit(status: 255)
+        waitUntil("all pooled profiles wait for network") {
+            manager.status(for: first.id)?.message.contains("Waiting for network") == true
+                && manager.status(for: second.id)?.message.contains("Waiting for network") == true
+        }
+        Thread.sleep(forTimeInterval: 0.08)
+        XCTAssertEqual(launcher.sessions.count, 1)
+
+        manager.updateNetworkPathState(.satisfied)
+        manager.updateNetworkPathState(.satisfied)
+        waitUntil("pooled hop resumes once") { launcher.sessions.count == 2 }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 2)
+        XCTAssertEqual(manager.status(for: first.id)?.health, .reconnecting)
+        XCTAssertEqual(manager.status(for: second.id)?.health, .reconnecting)
+    }
+
     func testProfilesWithIncompatiblePoliciesDoNotShareEndpoint() throws {
         let launcher = FakeHopSSHProcessLauncher()
         let first = psiGeneralProfile(authMode: .none)
@@ -236,7 +280,7 @@ final class HopConnectionManagerTests: XCTestCase {
         second.hostKeyPolicy = .strict
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             startsHealthTimer: false
         )
 
@@ -292,7 +336,7 @@ final class HopConnectionManagerTests: XCTestCase {
         let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -300,7 +344,8 @@ final class HopConnectionManagerTests: XCTestCase {
         let secondStart = expectation(description: "second start")
         var starts = 0
         manager.onStatusChange = { status in
-            guard status.profileID == profile.id, status.message == "SSH hop process started" else { return }
+            guard status.profileID == profile.id,
+                  status.message == "SSH hop process started" || status.message.contains("Automatic hop reconnect attempt") else { return }
             starts += 1
             if starts == 1 {
                 firstStart.fulfill()
@@ -311,11 +356,67 @@ final class HopConnectionManagerTests: XCTestCase {
 
         manager.start(profile: profile)
         wait(for: [firstStart], timeout: 1)
+        manager.runHealthCheckForTesting()
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .healthy)
         try XCTUnwrap(launcher.sessions.first).exit(status: 255)
         wait(for: [secondStart], timeout: 1)
 
         XCTAssertEqual(launcher.sessions.count, 2)
-        XCTAssertEqual(manager.status(for: profile.id)?.health, .connecting)
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .reconnecting)
+    }
+
+    func testInitialHopAuthenticationFailureNeverReconnects() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in false },
+            reconnectDelay: { _ in 0.01 },
+            processExitObservationDelay: 0,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("initial hop starts") { launcher.sessions.count == 1 }
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.emit("Permission denied, please try again.\r\n")
+        session.exit(status: 255)
+
+        waitUntil("hop authentication failure is terminal") {
+            manager.status(for: profile.id)?.health == .failed
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertTrue(manager.status(for: profile.id)?.message.contains("not retryable") == true)
+    }
+
+    func testOfflineHopReconnectWaitsWithoutLaunchingAndResumesExactlyOnce() throws {
+        let launcher = FakeHopSSHProcessLauncher()
+        let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
+        let manager = HopConnectionManager(
+            processLauncher: launcher,
+            healthCheck: { _ in true },
+            reconnectDelay: { _ in 0.02 },
+            processExitObservationDelay: 0,
+            startsHealthTimer: false
+        )
+
+        manager.start(profile: profile)
+        waitUntil("initial hop starts") { launcher.sessions.count == 1 }
+        manager.runHealthCheckForTesting()
+        manager.updateNetworkPathState(.requiresConnection)
+        launcher.sessions[0].exit(status: 255)
+        waitUntil("offline hop reconnect is paused") {
+            manager.status(for: profile.id)?.message.contains("Waiting for network") == true
+        }
+        Thread.sleep(forTimeInterval: 0.08)
+        XCTAssertEqual(launcher.sessions.count, 1)
+
+        manager.updateNetworkPathState(.satisfied)
+        waitUntil("offline hop reconnect resumes") { launcher.sessions.count == 2 }
+        Thread.sleep(forTimeInterval: 0.05)
+        XCTAssertEqual(launcher.sessions.count, 2)
     }
 
     func testReconnectAttemptLimitStopsUnexpectedExitReconnects() throws {
@@ -324,7 +425,7 @@ final class HopConnectionManagerTests: XCTestCase {
         profile.curatedSSHOptions.maxReconnectAttempts = 0
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -337,9 +438,10 @@ final class HopConnectionManagerTests: XCTestCase {
 
         manager.start(profile: profile)
         wait(for: [started], timeout: 1)
+        manager.runHealthCheckForTesting()
         try XCTUnwrap(launcher.sessions.first).exit(status: 255)
         waitUntil("hop reconnect limit is reported") {
-            manager.status(for: profile.id)?.message.contains("Hop reconnect attempt limit reached") == true
+            manager.status(for: profile.id)?.message.contains("Automatic hop reconnect stopped") == true
         }
 
         XCTAssertEqual(launcher.sessions.count, 1)
@@ -351,7 +453,7 @@ final class HopConnectionManagerTests: XCTestCase {
         let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -657,7 +759,7 @@ final class HopConnectionManagerTests: XCTestCase {
         let profile = psiGeneralProfile(authMode: .none, autoReconnect: true)
         let manager = HopConnectionManager(
             processLauncher: launcher,
-            healthCheck: { _ in false },
+            healthCheck: { _ in true },
             reconnectDelay: { _ in 0.01 },
             startsHealthTimer: false
         )
@@ -666,7 +768,8 @@ final class HopConnectionManagerTests: XCTestCase {
         let thirdStart = expectation(description: "normal replacement start")
         var starts = 0
         manager.onStatusChange = { status in
-            guard status.profileID == profile.id, status.message == "SSH hop process started" else { return }
+            guard status.profileID == profile.id,
+                  status.message == "SSH hop process started" || status.message.contains("Automatic hop reconnect attempt") else { return }
             starts += 1
             if starts == 1 {
                 firstStart.fulfill()
@@ -680,6 +783,8 @@ final class HopConnectionManagerTests: XCTestCase {
         manager.start(profile: profile, options: SSHLaunchOptions(verbose: true))
         wait(for: [firstStart], timeout: 1)
         XCTAssertTrue(try XCTUnwrap(launcher.commands.first).arguments.contains("-vvv"))
+        manager.runHealthCheckForTesting()
+        XCTAssertEqual(manager.status(for: profile.id)?.health, .healthy)
 
         try XCTUnwrap(launcher.sessions.first).exit(status: 255)
         wait(for: [secondStart], timeout: 1)

@@ -57,6 +57,8 @@ public enum JumpHostControlMasterFactory {
             "-S", paths.controlPath,
             "-o", "ControlMaster=yes",
             "-o", "ControlPersist=no",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ConnectTimeout=20",
             "-o", "ServerAliveInterval=20",
             "-o", "ServerAliveCountMax=2",
             "-p", "\(profile.sshPort)"
@@ -129,6 +131,8 @@ public enum JumpHostControlMasterFactory {
             "-o", "ControlMaster=no",
             "-o", "ControlPersist=no",
             "-o", "BatchMode=yes",
+            "-o", "ConnectionAttempts=1",
+            "-o", "ConnectTimeout=20",
             "-o", "ClearAllForwardings=yes",
             "-S", SSHCommand.shellQuoted(controlPath),
             "-W", "%h:%p",

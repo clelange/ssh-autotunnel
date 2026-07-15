@@ -144,6 +144,7 @@ public struct HopStatusSnapshot: Codable, Equatable, Sendable {
 
 public struct AppStatusSnapshot: Codable, Equatable, Sendable {
     public var pacURL: String
+    public var sshNetworkPathState: SSHNetworkPathState?
     public var systemPACStatus: SystemPACStatus?
     public var proxyDisabledByNetworkPolicy: Bool
     public var matchedNetworkRule: String?
@@ -154,6 +155,7 @@ public struct AppStatusSnapshot: Codable, Equatable, Sendable {
 
     public init(
         pacURL: String,
+        sshNetworkPathState: SSHNetworkPathState? = nil,
         systemPACStatus: SystemPACStatus? = nil,
         proxyDisabledByNetworkPolicy: Bool,
         matchedNetworkRule: String?,
@@ -163,6 +165,7 @@ public struct AppStatusSnapshot: Codable, Equatable, Sendable {
         profiles: [ProfileStatusSnapshot]
     ) {
         self.pacURL = pacURL
+        self.sshNetworkPathState = sshNetworkPathState
         self.systemPACStatus = systemPACStatus
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
         self.matchedNetworkRule = matchedNetworkRule
@@ -200,6 +203,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
     public var appIdentifier: String
     public var pacURL: String
     public var statusURL: String
+    public var sshNetworkPathState: SSHNetworkPathState?
     public var proxyApplyMode: ProxyApplyMode
     public var systemPACStatus: SystemPACStatus?
     public var proxyDisabledByNetworkPolicy: Bool
@@ -219,6 +223,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
         appIdentifier: String,
         pacURL: String,
         statusURL: String,
+        sshNetworkPathState: SSHNetworkPathState? = nil,
         proxyApplyMode: ProxyApplyMode,
         systemPACStatus: SystemPACStatus? = nil,
         proxyDisabledByNetworkPolicy: Bool,
@@ -237,6 +242,7 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
         self.appIdentifier = appIdentifier
         self.pacURL = pacURL
         self.statusURL = statusURL
+        self.sshNetworkPathState = sshNetworkPathState
         self.proxyApplyMode = proxyApplyMode
         self.systemPACStatus = systemPACStatus
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
