@@ -103,16 +103,39 @@ public final class NetworkIdentityService {
     }
 
     public func evaluate(configuration: AppConfiguration, fingerprint: NetworkFingerprint) -> NetworkPolicyDecision {
+        var directAccessProfileIDs = Set<UUID>()
+        var matchedDirectAccessRules: [NetworkPolicyRule] = []
+        var isDirectAccessForAllProfiles = false
+
+        for rule in configuration.networkRules where rule.enabled && rule.action == .directAccess {
+            guard rule.match.matches(fingerprint) else { continue }
+            matchedDirectAccessRules.append(rule)
+            if let profileID = rule.profileID {
+                directAccessProfileIDs.insert(profileID)
+            } else {
+                isDirectAccessForAllProfiles = true
+                directAccessProfileIDs.formUnion(configuration.profiles.map(\.id))
+            }
+        }
+
         var disabledProfileIDs = Set<UUID>()
         var firstScopedMatch: NetworkPolicyRule?
 
-        for rule in configuration.networkRules where rule.enabled {
+        for rule in configuration.networkRules where rule.enabled && rule.action != .directAccess {
             if rule.match.matches(fingerprint) {
                 guard let profileID = rule.profileID else {
-                    return NetworkPolicyDecision(shouldDisableProxy: rule.action == .disableProxy, matchedRule: rule)
+                    return NetworkPolicyDecision(
+                        shouldDisableProxy: rule.action == .disableProxy,
+                        matchedRule: rule,
+                        directAccessProfileIDs: directAccessProfileIDs,
+                        matchedDirectAccessRules: matchedDirectAccessRules,
+                        isDirectAccessForAllProfiles: isDirectAccessForAllProfiles
+                    )
                 }
                 firstScopedMatch = firstScopedMatch ?? rule
                 switch rule.action {
+                case .directAccess:
+                    break
                 case .disableProxy:
                     disabledProfileIDs.insert(profileID)
                 case .allowProxy:
@@ -123,7 +146,10 @@ public final class NetworkIdentityService {
         return NetworkPolicyDecision(
             shouldDisableProxy: false,
             matchedRule: firstScopedMatch,
-            disabledProfileIDs: disabledProfileIDs
+            disabledProfileIDs: disabledProfileIDs,
+            directAccessProfileIDs: directAccessProfileIDs,
+            matchedDirectAccessRules: matchedDirectAccessRules,
+            isDirectAccessForAllProfiles: isDirectAccessForAllProfiles
         )
     }
 

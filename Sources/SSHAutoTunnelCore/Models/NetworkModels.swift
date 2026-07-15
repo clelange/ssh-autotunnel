@@ -35,6 +35,7 @@ public struct NetworkFingerprint: Codable, Equatable, Sendable {
 }
 
 public enum NetworkPolicyAction: String, Codable, CaseIterable, Identifiable, Sendable {
+    case directAccess
     case disableProxy
     case allowProxy
 
@@ -46,6 +47,7 @@ public struct NetworkMatch: Codable, Equatable, Sendable {
     public var wifiBSSID: String?
     public var serviceNameContains: String?
     public var searchDomainContains: String?
+    public var searchDomainSuffix: String?
     public var gateway: String?
     public var vpnRequired: Bool?
 
@@ -54,6 +56,7 @@ public struct NetworkMatch: Codable, Equatable, Sendable {
         wifiBSSID: String? = nil,
         serviceNameContains: String? = nil,
         searchDomainContains: String? = nil,
+        searchDomainSuffix: String? = nil,
         gateway: String? = nil,
         vpnRequired: Bool? = nil
     ) {
@@ -61,6 +64,7 @@ public struct NetworkMatch: Codable, Equatable, Sendable {
         self.wifiBSSID = wifiBSSID
         self.serviceNameContains = serviceNameContains
         self.searchDomainContains = searchDomainContains
+        self.searchDomainSuffix = searchDomainSuffix
         self.gateway = gateway
         self.vpnRequired = vpnRequired
     }
@@ -74,6 +78,9 @@ public struct NetworkMatch: Codable, Equatable, Sendable {
         if let searchDomainContains {
             guard fingerprint.searchDomains.contains(where: { $0.localizedCaseInsensitiveContains(searchDomainContains) }) else { return false }
         }
+        if let searchDomainSuffix {
+            guard fingerprint.searchDomains.contains(where: { Self.domain($0, hasSuffix: searchDomainSuffix) }) else { return false }
+        }
         if let gateway, fingerprint.gateway != gateway { return false }
         if let vpnRequired, fingerprint.hasVPNInterface != vpnRequired { return false }
         return true
@@ -84,8 +91,23 @@ public struct NetworkMatch: Codable, Equatable, Sendable {
             && wifiBSSID?.nonEmptyTrimmed == nil
             && serviceNameContains?.nonEmptyTrimmed == nil
             && searchDomainContains?.nonEmptyTrimmed == nil
+            && searchDomainSuffix?.nonEmptyTrimmed == nil
             && gateway?.nonEmptyTrimmed == nil
             && vpnRequired == nil
+    }
+
+    private static func domain(_ candidate: String, hasSuffix suffix: String) -> Bool {
+        let candidate = normalizedDomain(candidate)
+        let suffix = normalizedDomain(suffix)
+        guard !candidate.isEmpty, !suffix.isEmpty else { return false }
+        return candidate == suffix || candidate.hasSuffix(".\(suffix)")
+    }
+
+    private static func normalizedDomain(_ value: String) -> String {
+        value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .trimmingCharacters(in: CharacterSet(charactersIn: "."))
     }
 }
 
@@ -156,17 +178,64 @@ public struct NetworkPolicyRule: Identifiable, Codable, Equatable, Sendable {
 
         return nil
     }
+
+    public static func directAccessRule(
+        from fingerprint: NetworkFingerprint,
+        profileID: UUID? = nil
+    ) -> NetworkPolicyRule? {
+        if let searchDomain = fingerprint.searchDomains.compactMap(\.nonEmptyTrimmed).first {
+            return NetworkPolicyRule(
+                name: "Direct network: \(searchDomain)",
+                match: NetworkMatch(searchDomainSuffix: searchDomain),
+                action: .directAccess,
+                profileID: profileID
+            )
+        }
+
+        if let ssid = fingerprint.wifiSSID?.nonEmptyTrimmed {
+            return NetworkPolicyRule(
+                name: "Direct Wi-Fi: \(ssid)",
+                match: NetworkMatch(wifiSSID: ssid),
+                action: .directAccess,
+                profileID: profileID
+            )
+        }
+
+        if let gateway = fingerprint.gateway?.nonEmptyTrimmed {
+            return NetworkPolicyRule(
+                name: "Direct network via \(gateway)",
+                match: NetworkMatch(gateway: gateway),
+                action: .directAccess,
+                profileID: profileID
+            )
+        }
+
+        return nil
+    }
 }
 
 public struct NetworkPolicyDecision: Equatable, Sendable {
     public var shouldDisableProxy: Bool
     public var matchedRule: NetworkPolicyRule?
     public var disabledProfileIDs: Set<UUID>
+    public var directAccessProfileIDs: Set<UUID>
+    public var matchedDirectAccessRules: [NetworkPolicyRule]
+    public var isDirectAccessForAllProfiles: Bool
 
-    public init(shouldDisableProxy: Bool, matchedRule: NetworkPolicyRule?, disabledProfileIDs: Set<UUID> = []) {
+    public init(
+        shouldDisableProxy: Bool,
+        matchedRule: NetworkPolicyRule?,
+        disabledProfileIDs: Set<UUID> = [],
+        directAccessProfileIDs: Set<UUID> = [],
+        matchedDirectAccessRules: [NetworkPolicyRule] = [],
+        isDirectAccessForAllProfiles: Bool = false
+    ) {
         self.shouldDisableProxy = shouldDisableProxy
         self.matchedRule = matchedRule
         self.disabledProfileIDs = disabledProfileIDs
+        self.directAccessProfileIDs = directAccessProfileIDs
+        self.matchedDirectAccessRules = matchedDirectAccessRules
+        self.isDirectAccessForAllProfiles = isDirectAccessForAllProfiles
     }
 }
 

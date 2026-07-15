@@ -148,6 +148,8 @@ public struct AppStatusSnapshot: Codable, Equatable, Sendable {
     public var proxyDisabledByNetworkPolicy: Bool
     public var matchedNetworkRule: String?
     public var networkDisabledProfileIDs: [UUID]
+    public var directAccessProfileIDs: [UUID]
+    public var matchedDirectAccessRules: [String]
     public var profiles: [ProfileStatusSnapshot]
 
     public init(
@@ -156,6 +158,8 @@ public struct AppStatusSnapshot: Codable, Equatable, Sendable {
         proxyDisabledByNetworkPolicy: Bool,
         matchedNetworkRule: String?,
         networkDisabledProfileIDs: [UUID] = [],
+        directAccessProfileIDs: [UUID] = [],
+        matchedDirectAccessRules: [String] = [],
         profiles: [ProfileStatusSnapshot]
     ) {
         self.pacURL = pacURL
@@ -163,6 +167,8 @@ public struct AppStatusSnapshot: Codable, Equatable, Sendable {
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
         self.matchedNetworkRule = matchedNetworkRule
         self.networkDisabledProfileIDs = networkDisabledProfileIDs
+        self.directAccessProfileIDs = directAccessProfileIDs
+        self.matchedDirectAccessRules = matchedDirectAccessRules
         self.profiles = profiles
     }
 }
@@ -199,6 +205,8 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
     public var proxyDisabledByNetworkPolicy: Bool
     public var matchedNetworkRule: String?
     public var networkDisabledProfileIDs: [UUID]
+    public var directAccessProfileIDs: [UUID]
+    public var matchedDirectAccessRules: [String]
     public var configuredPorts: LocalServerPorts
     public var activePorts: LocalServerPorts?
     public var currentNetwork: NetworkFingerprint
@@ -216,6 +224,8 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
         proxyDisabledByNetworkPolicy: Bool,
         matchedNetworkRule: String?,
         networkDisabledProfileIDs: [UUID] = [],
+        directAccessProfileIDs: [UUID] = [],
+        matchedDirectAccessRules: [String] = [],
         configuredPorts: LocalServerPorts,
         activePorts: LocalServerPorts?,
         currentNetwork: NetworkFingerprint,
@@ -232,6 +242,8 @@ public struct DiagnosticsSnapshot: Codable, Equatable, Sendable {
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
         self.matchedNetworkRule = matchedNetworkRule
         self.networkDisabledProfileIDs = networkDisabledProfileIDs
+        self.directAccessProfileIDs = directAccessProfileIDs
+        self.matchedDirectAccessRules = matchedDirectAccessRules
         self.configuredPorts = configuredPorts
         self.activePorts = activePorts
         self.currentNetwork = currentNetwork

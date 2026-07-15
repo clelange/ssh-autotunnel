@@ -3,6 +3,8 @@ import Foundation
 public enum AutomationSummaries {
     public static func networkActionName(_ action: NetworkPolicyAction) -> String {
         switch action {
+        case .directAccess:
+            "Use direct access"
         case .disableProxy:
             "Disable proxy"
         case .allowProxy:
@@ -16,6 +18,7 @@ public enum AutomationSummaries {
             match.wifiBSSID.map { "Wi-Fi BSSID \($0)" },
             match.serviceNameContains.map { "service contains \($0)" },
             match.searchDomainContains.map { "search domain contains \($0)" },
+            match.searchDomainSuffix.map { "search domain is \($0) or a subdomain" },
             match.gateway.map { "gateway \($0)" },
             match.vpnRequired.map { "VPN \($0 ? "required" : "absent")" }
         ]

@@ -5,6 +5,7 @@ public struct PACGenerationContext: Sendable {
     public var statuses: [UUID: TunnelRuntimeStatus]
     public var proxyDisabledByNetworkPolicy: Bool
     public var networkDisabledProfileIDs: Set<UUID>
+    public var directAccessProfileIDs: Set<UUID>
     public var appendedPAC: String?
 
     public init(
@@ -12,12 +13,14 @@ public struct PACGenerationContext: Sendable {
         statuses: [UUID: TunnelRuntimeStatus],
         proxyDisabledByNetworkPolicy: Bool = false,
         networkDisabledProfileIDs: Set<UUID> = [],
+        directAccessProfileIDs: Set<UUID> = [],
         appendedPAC: String? = nil
     ) {
         self.configuration = configuration
         self.statuses = statuses
         self.proxyDisabledByNetworkPolicy = proxyDisabledByNetworkPolicy
         self.networkDisabledProfileIDs = networkDisabledProfileIDs
+        self.directAccessProfileIDs = directAccessProfileIDs
         self.appendedPAC = appendedPAC
     }
 }
@@ -61,7 +64,7 @@ public enum PACGenerator {
             guard let profile = profilesByID[rule.profileID] else { continue }
             let status = context.statuses[profile.id] ?? TunnelRuntimeStatus(profileID: profile.id)
             let target: String
-            if context.networkDisabledProfileIDs.contains(profile.id) {
+            if context.networkDisabledProfileIDs.contains(profile.id) || context.directAccessProfileIDs.contains(profile.id) {
                 target = fallback
             } else if status.health.isUsableForPAC {
                 target = "\"SOCKS5 127.0.0.1:\(status.effectiveLocalSocksPort ?? profile.localSocksPort)\""
