@@ -3,6 +3,14 @@ import XCTest
 @testable import SSHAutoTunnelCore
 
 final class TunnelManagerProcessTests: XCTestCase {
+    func testDirectPolicyStopDoesNotReconnectWhenOutputArrivesBeforeTermination() throws {
+        try assertDirectPolicyStyleStopDoesNotReconnect(outputBeforeTermination: true)
+    }
+
+    func testDirectPolicyStopDoesNotReconnectWhenOutputArrivesAfterTermination() throws {
+        try assertDirectPolicyStyleStopDoesNotReconnect(outputBeforeTermination: false)
+    }
+
     func testManualStopSuppressesLaterProcessTermination() throws {
         let launcher = FakeSSHProcessLauncher()
         let profile = testProfile(autoReconnect: true)
@@ -36,6 +44,46 @@ final class TunnelManagerProcessTests: XCTestCase {
 
         XCTAssertEqual(manager.status(for: profile.id).health, .stopped)
         XCTAssertEqual(launcher.sessions.count, 1)
+    }
+
+    private func assertDirectPolicyStyleStopDoesNotReconnect(outputBeforeTermination: Bool) throws {
+        let launcher = FakeSSHProcessLauncher()
+        let profile = testProfile(autoReconnect: true)
+        let manager = TunnelManager(
+            processLauncher: launcher,
+            reconnectDelay: { _ in 0.01 },
+            startsHealthTimer: false
+        )
+        let started = expectation(description: "started")
+        manager.onStatusChange = { status in
+            if status.profileID == profile.id, status.message == "SSH process started" {
+                started.fulfill()
+            }
+        }
+
+        manager.start(profile: profile)
+        wait(for: [started], timeout: 1)
+        let session = try XCTUnwrap(launcher.sessions.first)
+        session.exitsOnTerminate = false
+
+        manager.stop(profileID: profile.id)
+        waitUntil("tunnel enters stopping") {
+            manager.status(for: profile.id).health == .stopping
+        }
+        if outputBeforeTermination {
+            session.emit("Connection closed by remote host\r\n")
+        }
+        session.exit(status: SIGTERM)
+        if !outputBeforeTermination {
+            session.emit("Connection closed by remote host\r\n")
+        }
+        waitUntil("tunnel stops") {
+            manager.status(for: profile.id).health == .stopped
+        }
+        Thread.sleep(forTimeInterval: 0.05)
+
+        XCTAssertEqual(launcher.sessions.count, 1)
+        XCTAssertEqual(manager.status(for: profile.id).health, .stopped)
     }
 
     func testManualStopRemovesRegistryOnlyAfterProcessTerminates() throws {

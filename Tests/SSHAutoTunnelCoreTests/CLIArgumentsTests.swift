@@ -17,6 +17,11 @@ final class CLIArgumentsTests: XCTestCase {
         XCTAssertEqual(invocation, CLIInvocation(command: "interactive-ssh", profileName: "CERN LxPlus"))
     }
 
+    func testParsesDirectInteractiveSSHCommand() {
+        let invocation = CLIArguments.parse(["interactive-ssh-direct", "PSI", "General"])
+        XCTAssertEqual(invocation, CLIInvocation(command: "interactive-ssh-direct", profileName: "PSI General"))
+    }
+
     func testParsesHopCommands() {
         XCTAssertEqual(
             CLIArguments.parse(["connect-hop", "PSI", "General"]),
@@ -145,6 +150,13 @@ final class CLIArgumentsTests: XCTestCase {
         XCTAssertEqual(
             CLIArguments.parse(["trust-current-network", "CERN lxplus"]),
             CLIInvocation(command: "trust-current-network", profileName: "CERN lxplus")
+        )
+    }
+
+    func testParsesDirectCurrentNetworkAlias() {
+        XCTAssertEqual(
+            CLIArguments.parse(["use-direct-current-network", "PSI", "General"]),
+            CLIInvocation(command: "use-direct-current-network", profileName: "PSI General")
         )
     }
 }

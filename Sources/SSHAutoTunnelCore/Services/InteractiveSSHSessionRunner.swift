@@ -48,6 +48,16 @@ public final class InteractiveSSHSessionRunner {
         try run(profile: profile, input: .standardInput, output: .standardOutput, errorOutput: .standardError)
     }
 
+    public func runDirect(profile: TunnelProfile) throws -> Int32 {
+        try run(
+            profile: profile,
+            input: .standardInput,
+            output: .standardOutput,
+            errorOutput: .standardError,
+            route: .direct
+        )
+    }
+
     public func runJumpHostSession(profile: TunnelProfile) throws -> Int32 {
         try runJumpHostSession(profile: profile, input: .standardInput, output: .standardOutput, errorOutput: .standardError)
     }
@@ -66,7 +76,8 @@ public final class InteractiveSSHSessionRunner {
         output: FileHandle,
         errorOutput: FileHandle,
         bridgeInput: Bool = true,
-        configureTerminal: Bool = true
+        configureTerminal: Bool = true,
+        route: SSHInteractiveRoute = .configured
     ) throws -> Int32 {
         writeStatus("Preparing interactive SSH for \(profile.name)", to: output)
         try runKerberosSwitchIfNeeded(profile: profile)
@@ -87,7 +98,8 @@ public final class InteractiveSSHSessionRunner {
             output: output,
             errorOutput: errorOutput,
             bridgeInput: bridgeInput,
-            configureTerminal: configureTerminal
+            configureTerminal: configureTerminal,
+            route: route
         )
     }
 
@@ -209,9 +221,10 @@ public final class InteractiveSSHSessionRunner {
         errorOutput: FileHandle,
         bridgeInput: Bool,
         configureTerminal: Bool,
+        route: SSHInteractiveRoute = .configured,
         onOutput: ((Data) -> Void)? = nil
     ) throws -> Int32 {
-        let command = SSHCommandBuilder.interactiveCommand(for: profile)
+        let command = SSHCommandBuilder.interactiveCommand(for: profile, route: route)
         writeStatus("Starting \(command.shellCommand)", to: output)
         return try runSession(
             command: command,

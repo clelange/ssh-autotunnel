@@ -10,21 +10,21 @@ struct AppControlRequestDispatcher {
         switch request.action {
         case .connect:
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: appState.snapshot()) }
-            appState.connect(profile)
-            return ControlResponse(ok: true, message: "Connecting \(profile.name)", status: appState.snapshot())
+            let accepted = appState.connect(profile)
+            return ControlResponse(ok: accepted, message: accepted ? "Connecting \(profile.name)" : appState.lastProxyMessage, status: appState.snapshot())
         case .disconnect:
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: appState.snapshot()) }
             appState.disconnect(profile)
             return ControlResponse(ok: true, message: "Disconnecting \(profile.name)", status: appState.snapshot())
         case .reconnect:
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: appState.snapshot()) }
-            appState.reconnect(profile)
-            return ControlResponse(ok: true, message: "Reconnecting \(profile.name)", status: appState.snapshot())
+            let accepted = appState.reconnect(profile)
+            return ControlResponse(ok: accepted, message: accepted ? "Reconnecting \(profile.name)" : appState.lastProxyMessage, status: appState.snapshot())
         case .connectHop:
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: appState.snapshot()) }
             guard appState.hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: appState.snapshot()) }
-            appState.connectHop(profile)
-            return ControlResponse(ok: true, message: "Connecting hop for \(profile.name)", status: appState.snapshot())
+            let accepted = appState.connectHop(profile)
+            return ControlResponse(ok: accepted, message: accepted ? "Connecting hop for \(profile.name)" : appState.lastProxyMessage, status: appState.snapshot())
         case .disconnectHop:
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: appState.snapshot()) }
             guard appState.hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: appState.snapshot()) }
@@ -33,8 +33,12 @@ struct AppControlRequestDispatcher {
         case .reconnectHop:
             guard let profile else { return ControlResponse(ok: false, message: "Profile not found", status: appState.snapshot()) }
             guard appState.hasJumpHost(profile) else { return ControlResponse(ok: false, message: "Profile has no jump host", status: appState.snapshot()) }
-            appState.reconnectHop(profile)
-            return ControlResponse(ok: true, message: "Reconnecting hop for \(profile.name); terminal sessions sharing this master may close", status: appState.snapshot())
+            let accepted = appState.reconnectHop(profile)
+            return ControlResponse(
+                ok: accepted,
+                message: accepted ? "Reconnecting hop for \(profile.name); terminal sessions sharing this master may close" : appState.lastProxyMessage,
+                status: appState.snapshot()
+            )
         case .reloadPAC:
             appState.refreshPACAppendSource(force: true)
             appState.writePACCopy()
@@ -207,7 +211,7 @@ struct AppControlRequestDispatcher {
             }
         case .createNetworkRuleFromCurrentNetwork:
             appState.refreshNetworkDecision()
-            guard var rule = NetworkPolicyRule.disableProxyRule(from: appState.currentNetworkFingerprint) else {
+            guard var rule = NetworkPolicyRule.directAccessRule(from: appState.currentNetworkFingerprint) else {
                 return ControlResponse(ok: false, message: "Current network does not expose enough fingerprint data for a rule", status: appState.snapshot())
             }
             if request.profileID != nil || request.profileName != nil {
@@ -219,7 +223,7 @@ struct AppControlRequestDispatcher {
             do {
                 appState.configuration = try NetworkRuleConfigurationEditor.create(rule: rule, in: appState.configuration)
                 appState.saveConfiguration()
-                return ControlResponse(ok: true, message: "Created network rule \(rule.name)", status: appState.snapshot())
+                return ControlResponse(ok: true, message: "Created direct network \(rule.name)", status: appState.snapshot())
             } catch {
                 return ControlResponse(ok: false, message: "Could not create network rule: \(error.localizedDescription)", status: appState.snapshot())
             }

@@ -68,6 +68,26 @@ final class SSHCommandBuilderTests: XCTestCase {
         XCTAssertEqual(command.arguments.last, "alice@login.example.org")
     }
 
+    func testDirectInteractiveCommandExplicitlySuppressesConfiguredProxying() {
+        let profile = TunnelProfile(
+            name: "Direct",
+            host: "login.psi.ch",
+            user: "alice",
+            localSocksPort: 1091,
+            jumpHost: "alice@hopx.psi.ch",
+            curatedSSHOptions: CuratedSSHOptions(proxyCommand: "ssh hopx.psi.ch -W %h:%p"),
+            extraSSHOptions: ["-o", "ProxyJump=another-hop.example.org"]
+        )
+
+        let command = SSHCommandBuilder.interactiveCommand(for: profile, route: .direct)
+
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ProxyJump=none"]))
+        XCTAssertTrue(command.arguments.containsSubsequence(["-o", "ProxyCommand=none"]))
+        XCTAssertFalse(command.arguments.contains("alice@hopx.psi.ch"))
+        XCTAssertFalse(command.arguments.contains("ssh hopx.psi.ch -W %h:%p"))
+        XCTAssertEqual(command.arguments.last, "alice@login.psi.ch")
+    }
+
     func testShellCommandQuotesUnsafeArguments() {
         let command = SSHCommand(arguments: [
             "-J",

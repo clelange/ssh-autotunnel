@@ -710,8 +710,8 @@ struct DeletePACRuleIntent: AppIntent {
 }
 
 struct TrustCurrentNetworkIntent: AppIntent {
-    static var title: LocalizedStringResource = "Trust Current SSH AutoTunnel Network"
-    static var description = IntentDescription("Create a network policy rule from the current network fingerprint.")
+    static var title: LocalizedStringResource = "Use Direct Access on Current Network"
+    static var description = IntentDescription("Create a direct-network policy from the current network fingerprint.")
 
     @Parameter(title: "Profile Name")
     var profileName: String
@@ -733,8 +733,8 @@ struct TrustCurrentNetworkIntent: AppIntent {
 }
 
 struct CreateNetworkRuleIntent: AppIntent {
-    static var title: LocalizedStringResource = "Create SSH AutoTunnel Network Rule"
-    static var description = IntentDescription("Create a trusted-network rule from Shortcuts or Automations.")
+    static var title: LocalizedStringResource = "Create SSH AutoTunnel Direct Network"
+    static var description = IntentDescription("Create a direct-network policy from Shortcuts or Automations.")
 
     @Parameter(title: "Name")
     var name: String
@@ -744,6 +744,9 @@ struct CreateNetworkRuleIntent: AppIntent {
 
     @Parameter(title: "Search Domain Contains")
     var searchDomainContains: String
+
+    @Parameter(title: "Search Domain or Subdomain")
+    var searchDomainSuffix: String
 
     @Parameter(title: "Service Name Contains")
     var serviceNameContains: String
@@ -758,13 +761,14 @@ struct CreateNetworkRuleIntent: AppIntent {
     var action: String
 
     init() {
-        name = "Trusted network"
+        name = "Direct network"
         wifiSSID = ""
-        searchDomainContains = "example.org"
+        searchDomainContains = ""
+        searchDomainSuffix = "example.org"
         serviceNameContains = ""
         gateway = ""
         profileName = ""
-        action = NetworkPolicyAction.disableProxy.rawValue
+        action = NetworkPolicyAction.directAccess.rawValue
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -774,6 +778,7 @@ struct CreateNetworkRuleIntent: AppIntent {
             match: try networkMatch(
                 wifiSSID: wifiSSID,
                 searchDomainContains: searchDomainContains,
+                searchDomainSuffix: searchDomainSuffix,
                 serviceNameContains: serviceNameContains,
                 gateway: gateway
             ),
@@ -787,7 +792,7 @@ struct CreateNetworkRuleIntent: AppIntent {
 
 struct UpdateNetworkRuleIntent: AppIntent {
     static var title: LocalizedStringResource = "Update SSH AutoTunnel Network Rule"
-    static var description = IntentDescription("Update a trusted-network rule from Shortcuts or Automations.")
+    static var description = IntentDescription("Update a direct or legacy network policy from Shortcuts or Automations.")
 
     @Parameter(title: "Rule Name")
     var ruleName: String
@@ -797,6 +802,9 @@ struct UpdateNetworkRuleIntent: AppIntent {
 
     @Parameter(title: "Search Domain Contains")
     var searchDomainContains: String
+
+    @Parameter(title: "Search Domain or Subdomain")
+    var searchDomainSuffix: String
 
     @Parameter(title: "Service Name Contains")
     var serviceNameContains: String
@@ -814,13 +822,14 @@ struct UpdateNetworkRuleIntent: AppIntent {
     var enabled: Bool
 
     init() {
-        ruleName = "Trusted network"
+        ruleName = "Direct network"
         wifiSSID = ""
-        searchDomainContains = "example.org"
+        searchDomainContains = ""
+        searchDomainSuffix = "example.org"
         serviceNameContains = ""
         gateway = ""
         profileName = ""
-        action = NetworkPolicyAction.disableProxy.rawValue
+        action = NetworkPolicyAction.directAccess.rawValue
         enabled = true
     }
 
@@ -832,6 +841,7 @@ struct UpdateNetworkRuleIntent: AppIntent {
             match: try networkMatch(
                 wifiSSID: wifiSSID,
                 searchDomainContains: searchDomainContains,
+                searchDomainSuffix: searchDomainSuffix,
                 serviceNameContains: serviceNameContains,
                 gateway: gateway
             ),
@@ -847,7 +857,7 @@ struct UpdateNetworkRuleIntent: AppIntent {
 
 struct DeleteNetworkRuleIntent: AppIntent {
     static var title: LocalizedStringResource = "Delete SSH AutoTunnel Network Rule"
-    static var description = IntentDescription("Delete a trusted-network rule by name.")
+    static var description = IntentDescription("Delete a direct or legacy network policy by name.")
 
     @Parameter(title: "Rule Name")
     var ruleName: String
@@ -1309,12 +1319,14 @@ private func pacFailureMode(from value: String) throws -> PACFailureMode {
 private func networkPolicyAction(from value: String) throws -> NetworkPolicyAction {
     let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
     if normalized.isEmpty {
-        return .disableProxy
+        return .directAccess
     }
     if let action = NetworkPolicyAction(rawValue: normalized) {
         return action
     }
     switch normalized.lowercased() {
+    case "direct access", "direct-access", "use direct access":
+        return .directAccess
     case "disable proxy", "disable-proxy":
         return .disableProxy
     case "allow proxy", "allow-proxy":
@@ -1327,6 +1339,7 @@ private func networkPolicyAction(from value: String) throws -> NetworkPolicyActi
 private func networkMatch(
     wifiSSID: String,
     searchDomainContains: String,
+    searchDomainSuffix: String,
     serviceNameContains: String,
     gateway: String
 ) throws -> NetworkMatch {
@@ -1334,9 +1347,10 @@ private func networkMatch(
         wifiSSID: optionalString(wifiSSID),
         serviceNameContains: optionalString(serviceNameContains),
         searchDomainContains: optionalString(searchDomainContains),
+        searchDomainSuffix: optionalString(searchDomainSuffix),
         gateway: optionalString(gateway)
     )
-    guard match.wifiSSID != nil || match.serviceNameContains != nil || match.searchDomainContains != nil || match.gateway != nil else {
+    guard !match.isEmpty else {
         throw intentError("At least one network match field is required.")
     }
     return match

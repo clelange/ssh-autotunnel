@@ -111,8 +111,8 @@ struct NetworkRulesView: View {
 
             Section("Current Network") {
                 NetworkFingerprintView(fingerprint: appState.currentNetworkFingerprint)
-                Button("Create Disable Rule From Current Network") {
-                    appState.addDisableRuleForCurrentNetwork()
+                Button("Use Direct Access on This Network") {
+                    appState.addDirectAccessRuleForCurrentNetwork()
                 }
             }
 

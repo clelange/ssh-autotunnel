@@ -267,8 +267,8 @@ struct DeleteSelectedPACRuleIntent: AppIntent {
 }
 
 struct CreateNetworkRuleForSelectedProfileIntent: AppIntent {
-    static var title: LocalizedStringResource = "Create Network Rule for Selected Profile"
-    static var description = IntentDescription("Create a scoped trusted-network rule for a selected SSH AutoTunnel profile.")
+    static var title: LocalizedStringResource = "Create Direct Network for Selected Profile"
+    static var description = IntentDescription("Create a direct-network policy for a selected SSH AutoTunnel profile.")
 
     @Parameter(title: "Name")
     var name: String
@@ -278,6 +278,9 @@ struct CreateNetworkRuleForSelectedProfileIntent: AppIntent {
 
     @Parameter(title: "Search Domain Contains")
     var searchDomainContains: String
+
+    @Parameter(title: "Search Domain or Subdomain")
+    var searchDomainSuffix: String
 
     @Parameter(title: "Service Name Contains")
     var serviceNameContains: String
@@ -292,13 +295,14 @@ struct CreateNetworkRuleForSelectedProfileIntent: AppIntent {
     var action: ShortcutNetworkPolicyAction
 
     init() {
-        name = "Trusted network"
+        name = "Direct network"
         wifiSSID = ""
-        searchDomainContains = "example.org"
+        searchDomainContains = ""
+        searchDomainSuffix = "example.org"
         serviceNameContains = ""
         gateway = ""
         profile = .placeholder
-        action = .disableProxy
+        action = .directAccess
     }
 
     func perform() async throws -> some IntentResult & ProvidesDialog {
@@ -307,6 +311,7 @@ struct CreateNetworkRuleForSelectedProfileIntent: AppIntent {
             match: try shortcutNetworkMatch(
                 wifiSSID: wifiSSID,
                 searchDomainContains: searchDomainContains,
+                searchDomainSuffix: searchDomainSuffix,
                 serviceNameContains: serviceNameContains,
                 gateway: gateway
             ),
@@ -320,7 +325,7 @@ struct CreateNetworkRuleForSelectedProfileIntent: AppIntent {
 
 struct UpdateSelectedNetworkRuleIntent: AppIntent {
     static var title: LocalizedStringResource = "Update Selected Network Rule"
-    static var description = IntentDescription("Update a trusted-network rule selected from the current configuration.")
+    static var description = IntentDescription("Update a direct or legacy network policy selected from the current configuration.")
 
     @Parameter(title: "Network Rule")
     var rule: ShortcutNetworkRuleEntity
@@ -330,6 +335,9 @@ struct UpdateSelectedNetworkRuleIntent: AppIntent {
 
     @Parameter(title: "Search Domain Contains")
     var searchDomainContains: String
+
+    @Parameter(title: "Search Domain or Subdomain")
+    var searchDomainSuffix: String
 
     @Parameter(title: "Service Name Contains")
     var serviceNameContains: String
@@ -349,11 +357,12 @@ struct UpdateSelectedNetworkRuleIntent: AppIntent {
     init() {
         rule = .placeholder
         wifiSSID = ""
-        searchDomainContains = "example.org"
+        searchDomainContains = ""
+        searchDomainSuffix = "example.org"
         serviceNameContains = ""
         gateway = ""
         profile = .placeholder
-        action = .disableProxy
+        action = .directAccess
         enabled = true
     }
 
@@ -364,6 +373,7 @@ struct UpdateSelectedNetworkRuleIntent: AppIntent {
             match: try shortcutNetworkMatch(
                 wifiSSID: wifiSSID,
                 searchDomainContains: searchDomainContains,
+                searchDomainSuffix: searchDomainSuffix,
                 serviceNameContains: serviceNameContains,
                 gateway: gateway
             ),
@@ -384,7 +394,7 @@ struct UpdateSelectedNetworkRuleIntent: AppIntent {
 
 struct DeleteSelectedNetworkRuleIntent: AppIntent {
     static var title: LocalizedStringResource = "Delete Selected Network Rule"
-    static var description = IntentDescription("Delete a trusted-network rule selected from the current configuration.")
+    static var description = IntentDescription("Delete a direct or legacy network policy selected from the current configuration.")
 
     @Parameter(title: "Network Rule")
     var rule: ShortcutNetworkRuleEntity
@@ -429,7 +439,7 @@ struct ListPACRulesIntent: AppIntent {
 
 struct ListNetworkRulesIntent: AppIntent {
     static var title: LocalizedStringResource = "List SSH AutoTunnel Network Rules"
-    static var description = IntentDescription("Return the configured SSH AutoTunnel trusted-network rules.")
+    static var description = IntentDescription("Return the configured SSH AutoTunnel direct and legacy network policies.")
 
     func perform() async throws -> some IntentResult & ReturnsValue<[ShortcutNetworkRuleEntity]> & ProvidesDialog {
         let rules = try ShortcutEntityStore.networkRules()
@@ -464,6 +474,7 @@ private func shortcutUUID(_ value: String) throws -> UUID {
 private func shortcutNetworkMatch(
     wifiSSID: String,
     searchDomainContains: String,
+    searchDomainSuffix: String,
     serviceNameContains: String,
     gateway: String
 ) throws -> NetworkMatch {
@@ -471,9 +482,10 @@ private func shortcutNetworkMatch(
         wifiSSID: shortcutOptionalString(wifiSSID),
         serviceNameContains: shortcutOptionalString(serviceNameContains),
         searchDomainContains: shortcutOptionalString(searchDomainContains),
+        searchDomainSuffix: shortcutOptionalString(searchDomainSuffix),
         gateway: shortcutOptionalString(gateway)
     )
-    guard match.wifiSSID != nil || match.serviceNameContains != nil || match.searchDomainContains != nil || match.gateway != nil else {
+    guard !match.isEmpty else {
         throw shortcutIntentError("At least one network match field is required.")
     }
     return match

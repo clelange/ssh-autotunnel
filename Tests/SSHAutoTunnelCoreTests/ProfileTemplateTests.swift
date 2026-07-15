@@ -49,12 +49,12 @@ final class ProfileTemplateTests: XCTestCase {
         XCTAssertEqual(decoded, rule)
     }
 
-    func testNetworkRuleTemplateContainsTrustedNetworkFields() throws {
+    func testNetworkRuleTemplateContainsDirectNetworkFields() throws {
         let rule = NetworkRuleTemplate.example(profileID: ProfileTemplate.exampleProfileID)
 
-        XCTAssertEqual(rule.name, "Example trusted network")
-        XCTAssertEqual(rule.match.searchDomainContains, "example.org")
-        XCTAssertEqual(rule.action, .disableProxy)
+        XCTAssertEqual(rule.name, "Example direct network")
+        XCTAssertEqual(rule.match.searchDomainSuffix, "example.org")
+        XCTAssertEqual(rule.action, .directAccess)
         XCTAssertEqual(rule.profileID, ProfileTemplate.exampleProfileID)
         XCTAssertTrue(rule.enabled)
 
