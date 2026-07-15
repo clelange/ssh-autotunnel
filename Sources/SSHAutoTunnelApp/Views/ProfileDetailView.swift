@@ -286,6 +286,10 @@ struct ProfileEditorView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            Toggle("Include in Connect All", isOn: binding(\.includeInConnectAll, fallback: profile.includeInConnectAll))
+            Text("When off, Connect All skips this profile. You can still connect it manually.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
             Toggle("Connect on launch", isOn: binding(\.connectOnLaunch, fallback: profile.connectOnLaunch))
             Picker("Notifications", selection: binding(\.notificationPolicy, fallback: profile.notificationPolicy)) {
                 ForEach(ProfileNotificationPolicy.allCases) { policy in

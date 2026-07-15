@@ -19,6 +19,7 @@ final class ProfileTemplateTests: XCTestCase {
         XCTAssertEqual(profile.keychain.totpService, "example-totp-seed")
         XCTAssertEqual(profile.healthProbe, HealthProbe(host: "ssh.example.org", port: 22))
         XCTAssertEqual(profile.tags, ["example"])
+        XCTAssertTrue(profile.includeInConnectAll)
         XCTAssertFalse(profile.connectOnLaunch)
         XCTAssertEqual(profile.notificationPolicy, .failuresAndRecoveries)
         XCTAssertEqual(profile.sshLogLevel, .info)

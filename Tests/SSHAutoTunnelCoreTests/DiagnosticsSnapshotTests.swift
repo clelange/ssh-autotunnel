@@ -121,6 +121,7 @@ final class DiagnosticsSnapshotTests: XCTestCase {
             interactiveHost: "login.example.org",
             jumpHost: "jump.example.org",
             tags: ["infrastructure"],
+            includeInConnectAll: false,
             connectOnLaunch: true,
             notificationPolicy: .allStatusChanges,
             sshLogLevel: .debug2,
@@ -137,6 +138,7 @@ final class DiagnosticsSnapshotTests: XCTestCase {
         XCTAssertEqual(snapshot.interactiveHost, "login.example.org")
         XCTAssertEqual(snapshot.jumpHost, "jump.example.org")
         XCTAssertEqual(snapshot.tags, ["infrastructure"])
+        XCTAssertFalse(snapshot.includeInConnectAll)
         XCTAssertTrue(snapshot.connectOnLaunch)
         XCTAssertEqual(snapshot.notificationPolicy, .allStatusChanges)
         XCTAssertEqual(snapshot.sshLogLevel, .debug2)

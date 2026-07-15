@@ -90,6 +90,7 @@ public struct ProfileStatusSnapshot: Codable, Equatable, Sendable {
     public var localPortForwardings: [LocalPortForward]
     public var tunnelRequestsRemoteSession: Bool
     public var curatedSSHOptions: CuratedSSHOptions
+    public var includeInConnectAll: Bool
     public var connectOnLaunch: Bool
     public var autoReconnect: Bool
     public var notificationPolicy: ProfileNotificationPolicy
@@ -113,6 +114,7 @@ public struct ProfileStatusSnapshot: Codable, Equatable, Sendable {
         localPortForwardings = profile.localPortForwardings
         tunnelRequestsRemoteSession = profile.tunnelRequestsRemoteSession
         curatedSSHOptions = profile.curatedSSHOptions
+        includeInConnectAll = profile.includeInConnectAll
         connectOnLaunch = profile.connectOnLaunch
         autoReconnect = profile.autoReconnect
         notificationPolicy = profile.notificationPolicy

@@ -251,6 +251,9 @@ struct CreateProfileIntent: AppIntent {
     @Parameter(title: "Connect on Launch")
     var connectOnLaunch: Bool
 
+    @Parameter(title: "Include in Connect All")
+    var includeInConnectAll: Bool
+
     @Parameter(title: "Notification Policy")
     var notificationPolicy: ShortcutProfileNotificationPolicy
 
@@ -297,6 +300,7 @@ struct CreateProfileIntent: AppIntent {
         jumpHost = ""
         tags = ""
         connectOnLaunch = false
+        includeInConnectAll = true
         notificationPolicy = .failuresAndRecoveries
         sshLogLevel = .info
         tunnelRequestsRemoteSession = false
@@ -321,6 +325,7 @@ struct CreateProfileIntent: AppIntent {
         jumpHost: String = "",
         tags: String = "",
         connectOnLaunch: Bool = false,
+        includeInConnectAll: Bool = true,
         notificationPolicy: ShortcutProfileNotificationPolicy = .failuresAndRecoveries,
         sshLogLevel: ShortcutSSHLogLevel = .info,
         tunnelRequestsRemoteSession: Bool = false,
@@ -343,6 +348,7 @@ struct CreateProfileIntent: AppIntent {
         self.jumpHost = jumpHost
         self.tags = tags
         self.connectOnLaunch = connectOnLaunch
+        self.includeInConnectAll = includeInConnectAll
         self.notificationPolicy = notificationPolicy
         self.sshLogLevel = sshLogLevel
         self.tunnelRequestsRemoteSession = tunnelRequestsRemoteSession
@@ -367,6 +373,7 @@ struct CreateProfileIntent: AppIntent {
             interactiveHost: optionalString(interactiveHost),
             jumpHost: optionalString(jumpHost),
             tags: separatedList(tags),
+            includeInConnectAll: includeInConnectAll,
             connectOnLaunch: connectOnLaunch,
             notificationPolicy: notificationPolicy.coreValue,
             sshLogLevel: sshLogLevel.coreValue,
@@ -419,6 +426,9 @@ struct UpdateProfileIntent: AppIntent {
     @Parameter(title: "Connect on Launch")
     var connectOnLaunch: Bool
 
+    @Parameter(title: "Include in Connect All")
+    var includeInConnectAll: Bool
+
     @Parameter(title: "Notification Policy")
     var notificationPolicy: ShortcutProfileNotificationPolicy
 
@@ -465,6 +475,7 @@ struct UpdateProfileIntent: AppIntent {
         jumpHost = ""
         tags = ""
         connectOnLaunch = false
+        includeInConnectAll = true
         notificationPolicy = .failuresAndRecoveries
         sshLogLevel = .info
         tunnelRequestsRemoteSession = false
@@ -489,6 +500,7 @@ struct UpdateProfileIntent: AppIntent {
         jumpHost: String = "",
         tags: String = "",
         connectOnLaunch: Bool = false,
+        includeInConnectAll: Bool = true,
         notificationPolicy: ShortcutProfileNotificationPolicy = .failuresAndRecoveries,
         sshLogLevel: ShortcutSSHLogLevel = .info,
         tunnelRequestsRemoteSession: Bool = false,
@@ -511,6 +523,7 @@ struct UpdateProfileIntent: AppIntent {
         self.jumpHost = jumpHost
         self.tags = tags
         self.connectOnLaunch = connectOnLaunch
+        self.includeInConnectAll = includeInConnectAll
         self.notificationPolicy = notificationPolicy
         self.sshLogLevel = sshLogLevel
         self.tunnelRequestsRemoteSession = tunnelRequestsRemoteSession
@@ -535,6 +548,7 @@ struct UpdateProfileIntent: AppIntent {
             interactiveHost: optionalString(interactiveHost),
             jumpHost: optionalString(jumpHost),
             tags: separatedList(tags),
+            includeInConnectAll: includeInConnectAll,
             connectOnLaunch: connectOnLaunch,
             notificationPolicy: notificationPolicy.coreValue,
             sshLogLevel: sshLogLevel.coreValue,

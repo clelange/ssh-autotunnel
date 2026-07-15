@@ -288,6 +288,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
     public var autoReconnect: Bool
     public var healthProbe: HealthProbe?
     public var tags: [String]
+    public var includeInConnectAll: Bool
     public var connectOnLaunch: Bool
     public var notificationPolicy: ProfileNotificationPolicy
     public var sshLogLevel: SSHLogLevel
@@ -311,6 +312,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         case autoReconnect
         case healthProbe
         case tags
+        case includeInConnectAll
         case connectOnLaunch
         case notificationPolicy
         case sshLogLevel
@@ -335,6 +337,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         autoReconnect: Bool = true,
         healthProbe: HealthProbe? = nil,
         tags: [String] = [],
+        includeInConnectAll: Bool = true,
         connectOnLaunch: Bool = false,
         notificationPolicy: ProfileNotificationPolicy = .failuresAndRecoveries,
         sshLogLevel: SSHLogLevel = .info,
@@ -357,6 +360,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         self.autoReconnect = autoReconnect
         self.healthProbe = healthProbe
         self.tags = tags
+        self.includeInConnectAll = includeInConnectAll
         self.connectOnLaunch = connectOnLaunch
         self.notificationPolicy = notificationPolicy
         self.sshLogLevel = sshLogLevel
@@ -382,6 +386,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         autoReconnect = try container.decodeIfPresent(Bool.self, forKey: .autoReconnect) ?? true
         healthProbe = try container.decodeIfPresent(HealthProbe.self, forKey: .healthProbe)
         tags = try container.decodeIfPresent([String].self, forKey: .tags) ?? []
+        includeInConnectAll = try container.decodeIfPresent(Bool.self, forKey: .includeInConnectAll) ?? true
         connectOnLaunch = try container.decodeIfPresent(Bool.self, forKey: .connectOnLaunch) ?? false
         notificationPolicy = try container.decodeIfPresent(ProfileNotificationPolicy.self, forKey: .notificationPolicy) ?? .failuresAndRecoveries
         sshLogLevel = try container.decodeIfPresent(SSHLogLevel.self, forKey: .sshLogLevel) ?? .info
@@ -407,6 +412,7 @@ public struct TunnelProfile: Identifiable, Codable, Equatable, Sendable {
         try container.encode(autoReconnect, forKey: .autoReconnect)
         try container.encodeIfPresent(healthProbe, forKey: .healthProbe)
         try container.encode(tags, forKey: .tags)
+        try container.encode(includeInConnectAll, forKey: .includeInConnectAll)
         try container.encode(connectOnLaunch, forKey: .connectOnLaunch)
         try container.encode(notificationPolicy, forKey: .notificationPolicy)
         try container.encode(sshLogLevel, forKey: .sshLogLevel)

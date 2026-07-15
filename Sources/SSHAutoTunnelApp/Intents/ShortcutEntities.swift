@@ -188,6 +188,9 @@ struct ShortcutTunnelProfileEntity: AppEntity {
     @Property(title: "Connect on Launch")
     var connectOnLaunch: Bool
 
+    @Property(title: "Include in Connect All")
+    var includeInConnectAll: Bool
+
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(
             title: "\(name)",
@@ -206,7 +209,8 @@ struct ShortcutTunnelProfileEntity: AppEntity {
         jumpHost: String,
         tags: String,
         sshLogLevel: String,
-        connectOnLaunch: Bool
+        connectOnLaunch: Bool,
+        includeInConnectAll: Bool
     ) {
         self.id = id
         self.name = name
@@ -219,6 +223,7 @@ struct ShortcutTunnelProfileEntity: AppEntity {
         self.tags = tags
         self.sshLogLevel = sshLogLevel
         self.connectOnLaunch = connectOnLaunch
+        self.includeInConnectAll = includeInConnectAll
     }
 
     init(profile: TunnelProfile) {
@@ -233,7 +238,8 @@ struct ShortcutTunnelProfileEntity: AppEntity {
             jumpHost: profile.jumpHost ?? "",
             tags: profile.tags.joined(separator: ", "),
             sshLogLevel: profile.sshLogLevel.displayName,
-            connectOnLaunch: profile.connectOnLaunch
+            connectOnLaunch: profile.connectOnLaunch,
+            includeInConnectAll: profile.includeInConnectAll
         )
     }
 
@@ -249,7 +255,8 @@ struct ShortcutTunnelProfileEntity: AppEntity {
             jumpHost: "",
             tags: "",
             sshLogLevel: SSHLogLevel.info.displayName,
-            connectOnLaunch: false
+            connectOnLaunch: false,
+            includeInConnectAll: true
         )
     }
 }
