@@ -495,62 +495,120 @@ private struct PACRuleEditorRow: View {
 
     var body: some View {
         if let index {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Toggle("", isOn: $appState.configuration.pacRules[index].enabled)
-                    .labelsHidden()
-                    .frame(width: 22)
+            HStack(alignment: .top, spacing: 8) {
+                ruleControls(index: index)
+                    .padding(.top, 18)
 
-                if let shadowWarning {
-                    Image(systemName: "exclamationmark.triangle.fill")
-                        .foregroundStyle(.yellow)
-                        .help("This rule is shadowed by \(shadowWarning.shadowingRuleName), which appears earlier and matches first.")
-                } else {
-                    Color.clear
-                        .frame(width: 16, height: 16)
-                }
-
-                if showsMoveControls {
-                    iconButton(systemImage: "chevron.up", help: "Move rule up", disabled: index == appState.configuration.pacRules.startIndex) {
-                        onMoveUp()
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 8) {
+                        nameField(index: index)
+                        domainPatternField(index: index)
+                        if showsProfilePicker {
+                            profileField(index: index)
+                        }
+                        failureField(index: index)
                     }
-                    iconButton(
-                        systemImage: "chevron.down",
-                        help: "Move rule down",
-                        disabled: index == appState.configuration.pacRules.index(before: appState.configuration.pacRules.endIndex)
-                    ) {
-                        onMoveDown()
-                    }
-                }
 
-                Button(role: .destructive) {
-                    onDelete()
-                } label: {
-                    Label("Delete rule", systemImage: "trash")
-                }
-                .labelStyle(.iconOnly)
-                .buttonStyle(.borderless)
-                .help("Delete rule")
-
-                TextField("Name", text: $appState.configuration.pacRules[index].name)
-                    .frame(minWidth: 120)
-                TextField("Domain pattern", text: $appState.configuration.pacRules[index].domainPattern)
-                    .frame(minWidth: 150)
-                if showsProfilePicker {
-                    Picker("Profile", selection: $appState.configuration.pacRules[index].profileID) {
-                        ForEach(appState.configuration.profiles) { profile in
-                            Text(profile.name).tag(profile.id)
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .top, spacing: 8) {
+                            nameField(index: index)
+                            domainPatternField(index: index)
+                        }
+                        HStack(alignment: .top, spacing: 8) {
+                            if showsProfilePicker {
+                                profileField(index: index)
+                            }
+                            failureField(index: index)
                         }
                     }
-                    .frame(minWidth: 140)
                 }
-                Picker("Failure", selection: $appState.configuration.pacRules[index].failureMode) {
-                    ForEach(PACFailureMode.allCases) { mode in
-                        Text(mode.displayName).tag(mode)
-                    }
-                }
-                .frame(width: 130)
             }
         }
+    }
+
+    @ViewBuilder
+    private func ruleControls(index: Int) -> some View {
+        HStack(spacing: 8) {
+            Toggle("", isOn: $appState.configuration.pacRules[index].enabled)
+                .labelsHidden()
+                .frame(width: 22)
+
+            if let shadowWarning {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.yellow)
+                    .help("This rule is shadowed by \(shadowWarning.shadowingRuleName), which appears earlier and matches first.")
+            } else {
+                Color.clear
+                    .frame(width: 16, height: 16)
+            }
+
+            if showsMoveControls {
+                iconButton(systemImage: "chevron.up", help: "Move rule up", disabled: index == appState.configuration.pacRules.startIndex) {
+                    onMoveUp()
+                }
+                iconButton(
+                    systemImage: "chevron.down",
+                    help: "Move rule down",
+                    disabled: index == appState.configuration.pacRules.index(before: appState.configuration.pacRules.endIndex)
+                ) {
+                    onMoveDown()
+                }
+            }
+
+            Button(role: .destructive) {
+                onDelete()
+            } label: {
+                Label("Delete rule", systemImage: "trash")
+            }
+            .labelStyle(.iconOnly)
+            .buttonStyle(.borderless)
+            .help("Delete rule")
+        }
+    }
+
+    private func nameField(index: Int) -> some View {
+        CompactConfigurationField(title: "Name") {
+            TextField("Name", text: $appState.configuration.pacRules[index].name)
+                .labelsHidden()
+                .accessibilityLabel("Name")
+        }
+        .frame(minWidth: 120, idealWidth: 150)
+    }
+
+    private func domainPatternField(index: Int) -> some View {
+        CompactConfigurationField(title: "Domain pattern") {
+            TextField("Domain pattern", text: $appState.configuration.pacRules[index].domainPattern)
+                .labelsHidden()
+                .accessibilityLabel("Domain pattern")
+        }
+        .frame(minWidth: 150, idealWidth: 220)
+        .layoutPriority(1)
+    }
+
+    private func profileField(index: Int) -> some View {
+        CompactConfigurationField(title: "Profile") {
+            Picker("Profile", selection: $appState.configuration.pacRules[index].profileID) {
+                ForEach(appState.configuration.profiles) { profile in
+                    Text(profile.name).tag(profile.id)
+                }
+            }
+            .labelsHidden()
+            .accessibilityLabel("Profile")
+        }
+        .frame(minWidth: 140, idealWidth: 160)
+    }
+
+    private func failureField(index: Int) -> some View {
+        CompactConfigurationField(title: "Failure") {
+            Picker("Failure", selection: $appState.configuration.pacRules[index].failureMode) {
+                ForEach(PACFailureMode.allCases) { mode in
+                    Text(mode.displayName).tag(mode)
+                }
+            }
+            .labelsHidden()
+            .accessibilityLabel("Failure")
+        }
+        .frame(width: 130)
     }
 
     private func iconButton(

@@ -11,6 +11,7 @@ struct SSHAutoTunnelApp: App {
     var body: some Scene {
         Window("SSH AutoTunnel", id: "main") {
             DashboardView()
+                .textFieldStyle(.roundedBorder)
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState
@@ -33,6 +34,7 @@ struct SSHAutoTunnelApp: App {
 
         Window("New Connection", id: "connection-template-setup") {
             ConnectionTemplateSetupView()
+                .textFieldStyle(.roundedBorder)
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState
@@ -41,6 +43,7 @@ struct SSHAutoTunnelApp: App {
 
         Window("SSH AutoTunnel Settings", id: "settings") {
             SettingsView()
+                .textFieldStyle(.roundedBorder)
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState

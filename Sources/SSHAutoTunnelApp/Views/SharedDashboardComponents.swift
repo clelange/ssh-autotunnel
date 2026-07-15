@@ -1,6 +1,20 @@
 import SSHAutoTunnelCore
 import SwiftUI
 
+struct CompactConfigurationField<Content: View>: View {
+    var title: String
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(title)
+                .font(.caption2.weight(.medium))
+                .foregroundStyle(.secondary)
+            content
+        }
+    }
+}
+
 struct SectionPanel<Content: View>: View {
     var title: String
     var systemImage: String

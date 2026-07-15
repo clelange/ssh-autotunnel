@@ -169,7 +169,11 @@ struct SettingsView: View {
                 resetAllPortsButton
                 configurationValidationNotice
                 HStack {
+                    Text("API token")
+                        .frame(width: 150, alignment: .leading)
                     SecureField("API token", text: $appState.configuration.apiToken)
+                        .labelsHidden()
+                        .accessibilityLabel("API token")
                         .help("Token required by local API clients. The server only listens on loopback.")
                     Button {
                         copyAPIToken()
@@ -464,13 +468,17 @@ struct SettingsView: View {
                 .disabled(!appState.configuration.pacAppendSource.enabled)
                 .help("HTTP(S) PAC URL to append after SSH AutoTunnel's generated rules.")
         } else {
-            HStack {
-                TextField("Existing PAC file", text: $appState.configuration.pacAppendSource.location)
-                    .help("Local PAC file to append after SSH AutoTunnel's generated rules.")
-                Button("Choose...") {
-                    choosePACFile()
+            LabeledContent("Existing PAC file") {
+                HStack {
+                    TextField("Existing PAC file", text: $appState.configuration.pacAppendSource.location)
+                        .labelsHidden()
+                        .accessibilityLabel("Existing PAC file")
+                        .help("Local PAC file to append after SSH AutoTunnel's generated rules.")
+                    Button("Choose...") {
+                        choosePACFile()
+                    }
+                    .help("Choose a PAC file path")
                 }
-                .help("Choose a PAC file path")
             }
             .disabled(!appState.configuration.pacAppendSource.enabled)
         }
@@ -775,23 +783,27 @@ private struct PortField: View {
     var help: String
 
     var body: some View {
-        HStack(spacing: 8) {
-            TextField(title, value: $value, format: .number)
-                .frame(width: 190)
-                .help(help)
-            Stepper("Adjust \(title)", value: $value, in: PortConfigurationValidator.validRange)
-                .labelsHidden()
-                .help(help)
-            Button {
-                value = defaultValue
-            } label: {
-                Label("Reset \(title)", systemImage: "arrow.counterclockwise")
+        LabeledContent(title) {
+            HStack(spacing: 8) {
+                TextField(title, value: $value, format: .number)
+                    .labelsHidden()
+                    .accessibilityLabel(title)
+                    .frame(width: 90)
+                    .help(help)
+                Stepper("Adjust \(title)", value: $value, in: PortConfigurationValidator.validRange)
+                    .labelsHidden()
+                    .help(help)
+                Button {
+                    value = defaultValue
+                } label: {
+                    Label("Reset \(title)", systemImage: "arrow.counterclockwise")
+                }
+                .labelStyle(.iconOnly)
+                .buttonStyle(.borderless)
+                .disabled(value == defaultValue)
+                .opacity(value == defaultValue ? 0 : 1)
+                .help("Reset \(title) to \(defaultValue)")
             }
-            .labelStyle(.iconOnly)
-            .buttonStyle(.borderless)
-            .disabled(value == defaultValue)
-            .opacity(value == defaultValue ? 0 : 1)
-            .help("Reset \(title) to \(defaultValue)")
         }
     }
 }
