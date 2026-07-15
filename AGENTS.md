@@ -119,6 +119,7 @@
 - Added a tester QA checklist covering first-run setup, templates, credentials, tunnels, PAC/network behavior, CLI, Shortcuts, cleanup, and issue reporting for ad-hoc builds.
 - Added a Developer ID release packaging path that signs the app, embedded CLI, top-level CLI, and DMG with hardened runtime/timestamps, supports notarytool submission/stapling, and documents GitHub Release publishing.
 - Replaced the primary trusted-network workflow with Direct Networks that prefer DNS search-domain matching across Wi-Fi/Ethernet/VPN, pause matching tunnels and shared-hop usage, resume prior intent, route PAC traffic normally, and launch direct interactive SSH while preserving legacy routing-only policies.
+- Added a backward-compatible per-profile Connect All eligibility preference with Overview/menu-bar guidance, status/CLI/export/Shortcuts exposure, and tested inactive-profile selection.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -206,7 +207,7 @@ swift test
 NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --notarize
 ```
 
-All passed for `v0.6.1`. `swift test` executed 421 XCTest cases, and GitHub Actions run `29415935784` passed build, test, local package verification, and artifact upload on release commit `a38a03e`. `package_release.sh --notarize` produced `dist/release/SSH-AutoTunnel-0.6.1.dmg`, and Apple accepted submission `35a2c25a-5c81-45ec-8cc4-d3936cf10c94`. The stapled DMG and a copy downloaded back from the draft GitHub Release both passed checksum verification, Gatekeeper assessment as `Notarized Developer ID`, read-only mounting, app and CLI signature validation, byte-for-byte comparison, and version/build inspection for `0.6.1` build `7`. GitHub Release `v0.6.1` was published as the latest release. The published DMG SHA-256 is `76001b0d2b49eade3fbdc3a8abd25c00512d58decda0ae86a401133db896c900`.
+All passed for `v0.6.2`. `swift test` executed 425 XCTest cases, and GitHub Actions run `29450526504` passed build, test, local package verification, and artifact upload on release commit `d6ece3a`. `package_release.sh --notarize` produced `dist/release/SSH-AutoTunnel-0.6.2.dmg`, and Apple accepted submission `855b2872-6367-44ed-8405-ba2e4c2c8853`. The stapled DMG and a copy downloaded back from the draft GitHub Release both passed checksum verification, Gatekeeper assessment as `Notarized Developer ID`, read-only mounting, app and CLI signature validation, byte-for-byte comparison, and version/build inspection for `0.6.2` build `8`. GitHub Release `v0.6.2` was published as the latest release. The published DMG SHA-256 is `7e6ac1c452a0c8f4043ed9a265cb39e99fc52f51fa4e95a82ee528d60b28bfa2`.
 
 ## Known Gaps
 
