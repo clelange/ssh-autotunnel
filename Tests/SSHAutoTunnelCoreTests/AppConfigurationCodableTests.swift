@@ -140,6 +140,7 @@ final class AppConfigurationCodableTests: XCTestCase {
         XCTAssertEqual(profile.hostKeyPolicy, .acceptNew)
         XCTAssertNil(profile.interactiveHost)
         XCTAssertEqual(profile.tags, [])
+        XCTAssertTrue(profile.includeInConnectAll)
         XCTAssertFalse(profile.connectOnLaunch)
         XCTAssertEqual(profile.notificationPolicy, .failuresAndRecoveries)
         XCTAssertEqual(profile.sshLogLevel, .info)
@@ -161,6 +162,22 @@ final class AppConfigurationCodableTests: XCTestCase {
 
         XCTAssertEqual(object["hostKeyPolicy"] as? String, "strict")
         XCTAssertEqual(object["interactiveHost"] as? String, "login.example.org")
+    }
+
+    func testProfileConnectAllPreferenceRoundTripsWhenDisabled() throws {
+        let profile = TunnelProfile(
+            name: "Manual",
+            host: "ssh.example.org",
+            localSocksPort: 1080,
+            includeInConnectAll: false
+        )
+
+        let data = try JSONEncoder().encode(profile)
+        let decoded = try JSONDecoder().decode(TunnelProfile.self, from: data)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+
+        XCTAssertFalse(decoded.includeInConnectAll)
+        XCTAssertEqual(object["includeInConnectAll"] as? Bool, false)
     }
 
     func testProfileRedesignFieldsRoundTrip() throws {

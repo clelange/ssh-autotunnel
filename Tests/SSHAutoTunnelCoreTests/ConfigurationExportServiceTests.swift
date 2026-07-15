@@ -51,6 +51,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
     func testImportPreservesLocalAPIToken() throws {
         let current = AppConfiguration(apiToken: "local-token")
         var source = sampleConfiguration(apiToken: "source-token")
+        source.profiles[0].includeInConnectAll = false
         source.pacAppendSource = PACAppendSource(
             enabled: true,
             kind: .url,
@@ -63,6 +64,7 @@ final class ConfigurationExportServiceTests: XCTestCase {
         XCTAssertEqual(imported.apiToken, "local-token")
         XCTAssertEqual(imported.templateAccounts, source.templateAccounts)
         XCTAssertEqual(imported.profiles, source.profiles)
+        XCTAssertFalse(imported.profiles[0].includeInConnectAll)
         XCTAssertEqual(imported.pacRules, source.pacRules)
         XCTAssertEqual(imported.networkRules, source.networkRules)
         XCTAssertEqual(imported.pacHTTPPort, source.pacHTTPPort)

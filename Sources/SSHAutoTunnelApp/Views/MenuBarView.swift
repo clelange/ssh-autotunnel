@@ -23,6 +23,8 @@ struct MenuBarView: View {
             } label: {
                 Label("Connect All", systemImage: "play.fill")
             }
+            .disabled(!appState.canConnectAll)
+            .help(appState.connectAllHelp)
 
             Button {
                 appState.disconnectAll()

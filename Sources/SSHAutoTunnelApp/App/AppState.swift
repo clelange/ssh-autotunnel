@@ -157,6 +157,58 @@ final class AppState: ObservableObject {
         statuses[profile.id] ?? TunnelRuntimeStatus(profileID: profile.id)
     }
 
+    var canConnectAll: Bool {
+        !connectAllCandidates.isEmpty
+    }
+
+    var connectAllHelp: String {
+        let profiles = configuration.profiles
+        guard !profiles.isEmpty else {
+            return "Add a profile to use Connect All."
+        }
+
+        let includedCount = profiles.count(where: \.includeInConnectAll)
+        let excludedCount = profiles.count - includedCount
+        guard includedCount > 0 else {
+            return "No profiles are included in Connect All. Enable “Include in Connect All” in Profile → General → Behavior."
+        }
+
+        let candidateCount = connectAllCandidates.count
+        let activeCount = includedCount - candidateCount
+        var parts: [String] = []
+        if candidateCount == 0 {
+            parts.append(includedCount == 1
+                ? "The included profile is already active."
+                : "All \(includedCount) included profiles are already active.")
+        } else {
+            parts.append(candidateCount == 1
+                ? "Connect 1 included profile."
+                : "Connect \(candidateCount) included profiles.")
+            if activeCount > 0 {
+                parts.append(activeCount == 1 ? "1 is already active." : "\(activeCount) are already active.")
+            }
+        }
+        if excludedCount > 0 {
+            parts.append(excludedCount == 1
+                ? "1 profile is excluded in Profile → General → Behavior."
+                : "\(excludedCount) profiles are excluded in Profile → General → Behavior.")
+        }
+        return parts.joined(separator: " ")
+    }
+
+    private var connectAllCandidates: [TunnelProfile] {
+        let healthByProfileID = Dictionary(
+            configuration.profiles.map { profile in
+                (profile.id, status(for: profile).health)
+            },
+            uniquingKeysWith: { current, _ in current }
+        )
+        return ConnectAllProfileSelectionPolicy.profilesToConnect(
+            from: configuration.profiles,
+            healthByProfileID: healthByProfileID
+        )
+    }
+
     func hopStatus(for profile: TunnelProfile) -> HopRuntimeStatus? {
         guard let jumpHost = normalizedJumpHost(for: profile) else { return nil }
         if let status = hopStatuses[profile.id], status.jumpHost == jumpHost {
@@ -254,7 +306,7 @@ final class AppState: ObservableObject {
     }
 
     func connectAll() {
-        for profile in configuration.profiles where !isActive(status(for: profile).health) {
+        for profile in connectAllCandidates {
             connect(profile)
         }
     }

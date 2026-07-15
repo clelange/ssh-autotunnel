@@ -23,6 +23,7 @@ public enum ProfileTemplate {
             autoReconnect: true,
             healthProbe: HealthProbe(host: "ssh.example.org", port: 22),
             tags: ["example"],
+            includeInConnectAll: true,
             connectOnLaunch: false,
             notificationPolicy: .failuresAndRecoveries,
             sshLogLevel: .info,
