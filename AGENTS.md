@@ -201,11 +201,13 @@ Latest release packaging validation:
 ```sh
 swift build
 swift test
+./script/build_and_run.sh --verify
+./script/package_local.sh --verify
 CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --verify
 NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --notarize
 ```
 
-All passed for `v0.4.0`. `swift test` executed 400 XCTest cases, and GitHub Actions run `29396328503` passed build, test, local package verification, and artifact upload on merge commit `fefdec9`. `package_release.sh --notarize` produced `dist/release/SSH-AutoTunnel-0.4.0.dmg`, and Apple accepted submission `36814b3b-caa6-4db5-b694-7dfb6832e6eb`. The stapled DMG and a copy downloaded back from the draft GitHub Release both passed checksum verification, Gatekeeper assessment as `Notarized Developer ID`, read-only mounting, app and CLI signature validation, and version/build inspection for `0.4.0` build `4`. The published DMG SHA-256 is `0ff99ce860d20c91f596a1c50e7e40e8716d63b3997c12ea39040b9e079ee660`.
+All passed for `v0.5.0`. `swift test` executed 421 XCTest cases, and GitHub Actions run `29400449063` passed build, test, local package verification, and artifact upload on release commit `7f3e5aa`. `package_release.sh --notarize` produced `dist/release/SSH-AutoTunnel-0.5.0.dmg`, and Apple accepted submission `55ac89b2-ecc1-46d4-ae27-9556961ee0bc`. The stapled DMG and a copy downloaded back from the draft GitHub Release both passed checksum verification, Gatekeeper assessment as `Notarized Developer ID`, read-only mounting, app and CLI signature validation, and version/build inspection for `0.5.0` build `5`. GitHub Release `v0.5.0` was published as the latest release. The published DMG SHA-256 is `887515155c2f3e4b4ed99efa2b873522499f290007c87b94c698092f638babcd`.
 
 ## Known Gaps
 
