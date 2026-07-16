@@ -204,12 +204,11 @@ Latest release packaging validation:
 ```sh
 swift build
 swift test
-./script/build_and_run.sh --verify
 ./script/package_local.sh --verify
 NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --notarize
 ```
 
-All passed for `v0.6.2`. `swift test` executed 425 XCTest cases, and GitHub Actions run `29450526504` passed build, test, local package verification, and artifact upload on release commit `d6ece3a`. `package_release.sh --notarize` produced `dist/release/SSH-AutoTunnel-0.6.2.dmg`, and Apple accepted submission `855b2872-6367-44ed-8405-ba2e4c2c8853`. The stapled DMG and a copy downloaded back from the draft GitHub Release both passed checksum verification, Gatekeeper assessment as `Notarized Developer ID`, read-only mounting, app and CLI signature validation, byte-for-byte comparison, and version/build inspection for `0.6.2` build `8`. GitHub Release `v0.6.2` was published as the latest release. The published DMG SHA-256 is `7e6ac1c452a0c8f4043ed9a265cb39e99fc52f51fa4e95a82ee528d60b28bfa2`.
+All passed for `v0.6.3`. `swift test` executed 434 XCTest cases, and GitHub Actions run `29521387798` passed build, test, local package verification, and artifact upload on release commit `53245ab`. `package_release.sh --notarize` produced `dist/release/SSH-AutoTunnel-0.6.3.dmg`, and Apple accepted submission `c882a28b-a73e-4d13-9bd4-07e7aeb0186b`. The stapled DMG and a copy downloaded back from the draft GitHub Release both passed checksum verification, Gatekeeper assessment as `Notarized Developer ID`, read-only mounting, exact app-plus-Applications-link layout checks with no loose CLI, app and embedded-helper signature validation, byte-for-byte comparison, and version/build inspection for `0.6.3` build `9`. GitHub Release `v0.6.3` was published as the latest release. The published DMG SHA-256 is `df6f31017ed26ed45e1f6e0297a1d8383a363adeb8e04501ba3f6b59ae4944d5`. `build_and_run.sh --verify` was skipped to avoid interrupting the installed app and its active tunnels.
 
 ## Known Gaps
 
