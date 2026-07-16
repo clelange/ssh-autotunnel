@@ -71,6 +71,8 @@ NOTARY_PROFILE="ssh-autotunnel-notary" CODESIGN_IDENTITY="<Developer ID Applicat
 
 The release DMG is written to `dist/release/SSH-AutoTunnel-<version>.dmg` with a matching `.sha256` checksum. See [Docs/ReleaseDistribution.md](Docs/ReleaseDistribution.md) for notary credential setup and GitHub Releases commands.
 
+Open the DMG and drag `SSHAutoTunnel.app` onto its `Applications` link. The app bundle is the complete installation and includes the CLI helper it uses internally. Terminal access is optional: after installing and launching the app from `/Applications`, open **Settings → Local API → Command Line Tool** to install `/usr/local/bin/ssh-autotunnelctl`.
+
 Use [Docs/TesterQAChecklist.md](Docs/TesterQAChecklist.md) for manual tester-build validation.
 
 ## Local Endpoints
@@ -88,7 +90,7 @@ The app may append a `v=` query parameter to the PAC URL to make macOS and brows
 
 ## CLI
 
-The CLI helper talks to the local API:
+The CLI helper talks to the local API. The app always invokes its embedded helper directly and does not require `ssh-autotunnelctl` on the shell `PATH`. The examples below use the SwiftPM development command; release users who install the optional command-line tool from Settings can run the same commands without the `swift run` prefix.
 
 ```sh
 swift run ssh-autotunnelctl status
