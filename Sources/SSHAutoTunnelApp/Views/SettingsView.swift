@@ -13,6 +13,8 @@ struct SettingsView: View {
     @State private var selectedSSHConfigFindingIDs: Set<String> = []
     @State private var sshConfigFixPreviews: [SSHConfigFileFixPreview] = []
     @State private var showsSSHConfigFixReview = false
+    @State private var confirmsCommandLineToolInstall = false
+    @State private var confirmsCommandLineToolUninstall = false
 
     var body: some View {
         TabView {
@@ -38,6 +40,9 @@ struct SettingsView: View {
         .onChange(of: appState.configuration) {
             appState.scheduleConfigurationSave()
         }
+        .onAppear {
+            appState.refreshCommandLineToolInstallationStatus()
+        }
         .confirmationDialog(
             "Install SSH AutoTunnel managed OpenSSH config?",
             isPresented: $confirmsManagedSSHConfigInstall,
@@ -49,6 +54,30 @@ struct SettingsView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text("This writes ~/.ssh/config.d/ssh-autotunnel.conf and adds or reuses SSH AutoTunnel's marked Include block in ~/.ssh/config. Existing unmarked OpenSSH config blocks and system settings are not rewritten. Files changed during installation are backed up, including an older managed include before migration.")
+        }
+        .confirmationDialog(
+            "Install ssh-autotunnelctl?",
+            isPresented: $confirmsCommandLineToolInstall,
+            titleVisibility: .visible
+        ) {
+            Button("Install Command Line Tool") {
+                appState.installCommandLineTool()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This creates /usr/local/bin/ssh-autotunnelctl as a symbolic link to the helper embedded in /Applications/SSHAutoTunnel.app. macOS may request administrator approval.")
+        }
+        .confirmationDialog(
+            "Uninstall ssh-autotunnelctl?",
+            isPresented: $confirmsCommandLineToolUninstall,
+            titleVisibility: .visible
+        ) {
+            Button("Uninstall Command Line Tool", role: .destructive) {
+                appState.uninstallCommandLineTool()
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This removes only the managed symbolic link at /usr/local/bin/ssh-autotunnelctl. The embedded helper remains in the app and SSH AutoTunnel will continue to work normally.")
         }
         .sheet(isPresented: $showsSSHConfigFixReview) {
             SSHConfigFixReviewSheet(
@@ -194,8 +223,87 @@ struct SettingsView: View {
                         .textSelection(.enabled)
                 }
             }
+
+            Section("Command Line Tool") {
+                LabeledContent("Status") {
+                    Label(
+                        appState.commandLineToolInstallationStatus.displayName,
+                        systemImage: commandLineToolStatusSystemImage
+                    )
+                    .foregroundStyle(commandLineToolStatusColor)
+                }
+                Text(commandLineToolStatusDetail)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .textSelection(.enabled)
+                HStack {
+                    Button("Install Command Line Tool…") {
+                        confirmsCommandLineToolInstall = true
+                    }
+                    .disabled(!canInstallCommandLineTool)
+                    Button("Uninstall Command Line Tool…", role: .destructive) {
+                        confirmsCommandLineToolUninstall = true
+                    }
+                    .disabled(!canUninstallCommandLineTool)
+                }
+                if !appState.commandLineToolInstallationMessage.isEmpty {
+                    Text(appState.commandLineToolInstallationMessage)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .textSelection(.enabled)
+                }
+            }
         }
         .formStyle(.grouped)
+    }
+
+    private var canInstallCommandLineTool: Bool {
+        if case .notInstalled = appState.commandLineToolInstallationStatus {
+            return true
+        }
+        return false
+    }
+
+    private var canUninstallCommandLineTool: Bool {
+        if case .installed = appState.commandLineToolInstallationStatus {
+            return true
+        }
+        return false
+    }
+
+    private var commandLineToolStatusSystemImage: String {
+        switch appState.commandLineToolInstallationStatus {
+        case .installed:
+            "checkmark.circle.fill"
+        case .notInstalled:
+            "circle"
+        case .unavailable:
+            "exclamationmark.circle"
+        case .conflict:
+            "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var commandLineToolStatusColor: Color {
+        switch appState.commandLineToolInstallationStatus {
+        case .installed:
+            .green
+        case .notInstalled:
+            .secondary
+        case .unavailable, .conflict:
+            .orange
+        }
+    }
+
+    private var commandLineToolStatusDetail: String {
+        switch appState.commandLineToolInstallationStatus {
+        case .installed:
+            "Terminal can find ssh-autotunnelctl at /usr/local/bin/ssh-autotunnelctl. The app continues to use its embedded helper directly."
+        case .notInstalled:
+            "Optional: install the embedded helper on your shell PATH. SSH AutoTunnel itself does not require this command to be installed."
+        case .unavailable(let reason), .conflict(let reason):
+            reason
+        }
     }
 
     private var openSSHConfigTab: some View {

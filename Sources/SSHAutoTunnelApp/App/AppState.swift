@@ -33,6 +33,10 @@ final class AppState: ObservableObject {
     @Published var pacAppendSourceMessage = "Existing PAC appending disabled"
     @Published var diagnosticsSelectedProfileID: UUID?
     @Published var interactiveTerminalInstallations: [InteractiveTerminalInstallation] = []
+    @Published private(set) var commandLineToolInstallationStatus: CommandLineToolInstallationStatus = .unavailable(
+        reason: "Checking command-line tool availability…"
+    )
+    @Published private(set) var commandLineToolInstallationMessage = ""
     @Published private(set) var sshNetworkPathState: SSHNetworkPathState = .unknown
 
     private let configurationStore: ConfigurationStore
@@ -54,6 +58,10 @@ final class AppState: ObservableObject {
     private let interactiveSessionRegistry = InteractiveSSHSessionRegistry()
     private let terminalLauncher = InteractiveTerminalLauncher()
     private let terminalDiscovery = InteractiveTerminalDiscovery()
+    private let commandLineToolPrivilegeRunner = CommandLineToolPrivilegeRunner()
+    private lazy var commandLineToolInstallationService = CommandLineToolInstallationService(
+        layout: CommandLineToolInstallationLayout(appBundleURL: Bundle.main.bundleURL)
+    )
     private var pathMonitor: NWPathMonitor?
     private var pendingNetworkRefreshTask: Task<Void, Never>?
     private var pendingNetworkStabilizationTask: Task<Void, Never>?
@@ -101,6 +109,7 @@ final class AppState: ObservableObject {
         refreshPACAppendSource(force: true)
         writePACCopy()
         refreshSystemPACStatus()
+        refreshCommandLineToolInstallationStatus()
         connectLaunchProfiles()
     }
 
@@ -858,6 +867,73 @@ final class AppState: ObservableObject {
         configuration.apiToken = UUID().uuidString.replacingOccurrences(of: "-", with: "")
         saveConfiguration()
         lastProxyMessage = "Local API token rotated"
+    }
+
+    func refreshCommandLineToolInstallationStatus() {
+        commandLineToolInstallationStatus = commandLineToolInstallationService.status()
+    }
+
+    func installCommandLineTool() {
+        performCommandLineToolOperation(.install)
+    }
+
+    func uninstallCommandLineTool() {
+        performCommandLineToolOperation(.uninstall)
+    }
+
+    private func performCommandLineToolOperation(_ operation: CommandLineToolPrivilegedOperation) {
+        do {
+            let changed: Bool
+            switch operation {
+            case .install:
+                changed = try commandLineToolInstallationService.install()
+            case .uninstall:
+                changed = try commandLineToolInstallationService.uninstall()
+            }
+            commandLineToolInstallationMessage = commandLineToolSuccessMessage(
+                operation: operation,
+                changed: changed
+            )
+        } catch where CommandLineToolInstallationService.requiresAdministratorPrivileges(for: error) {
+            do {
+                let result = try restoringWindowFocus {
+                    try commandLineToolPrivilegeRunner.perform(
+                        operation,
+                        layout: commandLineToolInstallationService.layout
+                    )
+                }
+                switch result {
+                case .completed:
+                    commandLineToolInstallationMessage = commandLineToolSuccessMessage(
+                        operation: operation,
+                        changed: true
+                    )
+                case .cancelled:
+                    commandLineToolInstallationMessage = "Command-line tool \(operation.rawValue) canceled."
+                }
+            } catch {
+                commandLineToolInstallationMessage = "Could not \(operation.rawValue) command-line tool: \(error.localizedDescription)"
+            }
+        } catch {
+            commandLineToolInstallationMessage = "Could not \(operation.rawValue) command-line tool: \(error.localizedDescription)"
+        }
+        refreshCommandLineToolInstallationStatus()
+    }
+
+    private func commandLineToolSuccessMessage(
+        operation: CommandLineToolPrivilegedOperation,
+        changed: Bool
+    ) -> String {
+        switch operation {
+        case .install:
+            changed
+                ? "Installed ssh-autotunnelctl at /usr/local/bin/ssh-autotunnelctl."
+                : "ssh-autotunnelctl is already installed."
+        case .uninstall:
+            changed
+                ? "Uninstalled /usr/local/bin/ssh-autotunnelctl."
+                : "ssh-autotunnelctl is already not installed."
+        }
     }
 
     func refreshPACAppendSource(force: Bool = false) {
