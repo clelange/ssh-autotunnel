@@ -117,7 +117,9 @@
 - Renamed stored setup account state to template accounts in app configuration and redacted exports.
 - Polished first-run template setup UI with fitting empty-state actions, human-readable System PAC summaries, clearer credential readiness labels, and disabled save with review warnings when required setup input is missing.
 - Added a tester QA checklist covering first-run setup, templates, credentials, tunnels, PAC/network behavior, CLI, Shortcuts, cleanup, and issue reporting for ad-hoc builds.
-- Added a Developer ID release packaging path that signs the app, embedded CLI, top-level CLI, and DMG with hardened runtime/timestamps, supports notarytool submission/stapling, and documents GitHub Release publishing.
+- Added a Developer ID release packaging path that signs the app, embedded CLI, and DMG with hardened runtime/timestamps, supports notarytool submission/stapling, and documents GitHub Release publishing.
+- Added Settings-managed optional installation and guarded removal of `/usr/local/bin/ssh-autotunnelctl` as a symlink to the embedded CLI; the app continues to use its bundled helper directly.
+- Simplified the public release DMG to the app plus an Applications link, while retaining the standalone CLI only in the local developer/tester ZIP.
 - Replaced the primary trusted-network workflow with Direct Networks that prefer DNS search-domain matching across Wi-Fi/Ethernet/VPN, pause matching tunnels and shared-hop usage, resume prior intent, route PAC traffic normally, and launch direct interactive SSH while preserving legacy routing-only policies.
 - Added a backward-compatible per-profile Connect All eligibility preference with Overview/menu-bar guidance, status/CLI/export/Shortcuts exposure, and tested inactive-profile selection.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.

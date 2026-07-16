@@ -19,6 +19,7 @@ APP_HELPERS="$APP_CONTENTS/Helpers"
 APP_RESOURCES="$APP_CONTENTS/Resources"
 APP_BINARY="$APP_MACOS/$APP_NAME"
 CLI_HELPER="$APP_HELPERS/$CLI_NAME"
+APPLICATIONS_LINK="$PAYLOAD_DIR/Applications"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 DMG_PATH="$DIST_DIR/SSH-AutoTunnel-$APP_VERSION.dmg"
 CHECKSUM_PATH="$DMG_PATH.sha256"
@@ -29,6 +30,7 @@ CODESIGN_IDENTITY="${CODESIGN_IDENTITY:-}"
 CODESIGN_ENTITLEMENTS="${CODESIGN_ENTITLEMENTS:-}"
 NOTARY_PROFILE="${NOTARY_PROFILE:-}"
 NOTARIZE="${NOTARIZE:-0}"
+VERIFY_MOUNT_DIR=""
 
 case "$MODE" in
   package|--package)
@@ -50,6 +52,16 @@ require_tool() {
     exit 1
   fi
 }
+
+cleanup_verify_mount() {
+  if [[ -n "$VERIFY_MOUNT_DIR" ]]; then
+    /usr/bin/hdiutil detach "$VERIFY_MOUNT_DIR" >/dev/null 2>&1 || true
+    /bin/rm -rf "$VERIFY_MOUNT_DIR"
+    VERIFY_MOUNT_DIR=""
+  fi
+}
+
+trap cleanup_verify_mount EXIT
 
 select_codesign_identity() {
   if [[ -n "$CODESIGN_IDENTITY" ]]; then
@@ -143,11 +155,11 @@ rm -rf "$STAGE_DIR" "$DMG_PATH" "$CHECKSUM_PATH" "$NOTARY_LOG_PATH"
 mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES"
 
 cp "$BIN_DIR/$APP_NAME" "$APP_BINARY"
-cp "$BIN_DIR/$CLI_NAME" "$PAYLOAD_DIR/$CLI_NAME"
 cp "$BIN_DIR/$CLI_NAME" "$CLI_HELPER"
 cp "$ROOT_DIR/Resources/AppIcon.icns" "$APP_RESOURCES/AppIcon.icns"
 cp "$ROOT_DIR/Resources/AppIconDark.icns" "$APP_RESOURCES/AppIconDark.icns"
-chmod +x "$APP_BINARY" "$PAYLOAD_DIR/$CLI_NAME" "$CLI_HELPER"
+chmod +x "$APP_BINARY" "$CLI_HELPER"
+/bin/ln -s /Applications "$APPLICATIONS_LINK"
 
 cat >"$INFO_PLIST" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -180,8 +192,6 @@ PLIST
 
 /usr/bin/plutil -lint "$INFO_PLIST" >/dev/null
 
-sign_code "$PAYLOAD_DIR/$CLI_NAME"
-/usr/bin/codesign --verify --strict "$PAYLOAD_DIR/$CLI_NAME"
 sign_code "$CLI_HELPER"
 /usr/bin/codesign --verify --strict "$CLI_HELPER"
 sign_code "$APP_BUNDLE"
@@ -209,7 +219,10 @@ case "$MODE" in
     test -d "$APP_BUNDLE"
     test -x "$APP_BINARY"
     test -x "$CLI_HELPER"
-    test -x "$PAYLOAD_DIR/$CLI_NAME"
+    test -L "$APPLICATIONS_LINK"
+    test "$(/usr/bin/readlink "$APPLICATIONS_LINK")" = "/Applications"
+    test ! -e "$PAYLOAD_DIR/$CLI_NAME"
+    test ! -L "$PAYLOAD_DIR/$CLI_NAME"
     test -f "$DMG_PATH"
     test -f "$CHECKSUM_PATH"
     (cd "$DIST_DIR" && /usr/bin/shasum -a 256 -c "$(basename "$CHECKSUM_PATH")")
@@ -219,6 +232,19 @@ case "$MODE" in
       echo "error: hardened runtime flag missing from app signature" >&2
       exit 1
     fi
+    VERIFY_MOUNT_DIR="$(/usr/bin/mktemp -d "$DIST_DIR/verify-mount.XXXXXX")"
+    /usr/bin/hdiutil attach "$DMG_PATH" -readonly -nobrowse -mountpoint "$VERIFY_MOUNT_DIR" >/dev/null
+    test -d "$VERIFY_MOUNT_DIR/$APP_NAME.app"
+    test -L "$VERIFY_MOUNT_DIR/Applications"
+    test "$(/usr/bin/readlink "$VERIFY_MOUNT_DIR/Applications")" = "/Applications"
+    test ! -e "$VERIFY_MOUNT_DIR/$CLI_NAME"
+    test ! -L "$VERIFY_MOUNT_DIR/$CLI_NAME"
+    test -x "$VERIFY_MOUNT_DIR/$APP_NAME.app/Contents/Helpers/$CLI_NAME"
+    top_level_entry_count="$(/usr/bin/find "$VERIFY_MOUNT_DIR" -mindepth 1 -maxdepth 1 -print | /usr/bin/wc -l | /usr/bin/tr -d ' ')"
+    test "$top_level_entry_count" = "2"
+    /usr/bin/codesign --verify --strict "$VERIFY_MOUNT_DIR/$APP_NAME.app/Contents/Helpers/$CLI_NAME"
+    /usr/bin/codesign --verify --deep --strict "$VERIFY_MOUNT_DIR/$APP_NAME.app"
+    cleanup_verify_mount
     echo "$DMG_PATH"
     ;;
 esac

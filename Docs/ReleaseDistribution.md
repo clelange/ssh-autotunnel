@@ -18,7 +18,9 @@ If more than one `Developer ID Application` identity has the same display name, 
 CODESIGN_IDENTITY="<Developer ID Application SHA-1>" ./script/package_release.sh --verify
 ```
 
-`package_release.sh` signs the app bundle, embedded CLI helper, and top-level CLI with hardened runtime and a secure timestamp, then creates `dist/release/SSH-AutoTunnel-<version>.dmg`.
+`package_release.sh` signs the app bundle and embedded CLI helper with hardened runtime and a secure timestamp, then creates `dist/release/SSH-AutoTunnel-<version>.dmg`. The mounted DMG contains only `SSHAutoTunnel.app` and an `Applications` link. Users drag the app onto that link; no separate CLI file needs to be copied.
+
+The app uses its embedded helper regardless of shell configuration. Users who want Terminal access can launch the installed app and choose **Settings → Local API → Command Line Tool → Install Command Line Tool…** to create `/usr/local/bin/ssh-autotunnelctl`.
 
 ## Notarization
 
@@ -54,4 +56,4 @@ gh release create "v0.6.2" \
   --notes "Developer ID-signed and notarized macOS build."
 ```
 
-Before publishing, download the draft asset on a separate macOS account or machine and confirm Gatekeeper opens the DMG and launches the app normally.
+Before publishing, download the draft asset on a separate macOS account or machine and confirm Gatekeeper opens the DMG, the app can be dragged onto the Applications link and launched normally, and optional command-line tool installation works from Settings.
