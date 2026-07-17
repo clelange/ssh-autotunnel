@@ -15,7 +15,7 @@ The app is designed for SSH servers that require interactive 2FA, including CERN
 - `ssh-auto2fa` Keychain service checks before importing legacy preset profiles.
 - `~/.ssh/config` import for literal `Host` entries, including common user, port, jump-host, and identity options.
 - SSH SOCKS5 tunnels using `/usr/bin/ssh -N -D`.
-- Pooled app-owned SSH ControlMaster hop connections with stable fail-closed adapter aliases, verified ownership, and structured conflict reporting.
+- Pooled app-owned SSH ControlMaster hop connections with readable fail-closed adapter aliases, verified ownership, and structured conflict reporting.
 - Read-only recursive OpenSSH config audit with reviewed, backup-protected fixes for existing equivalent single-hop `ProxyJump` targets.
 - Local PAC server with fail-closed routing when a tunnel is unhealthy.
 - Optional fallback to an existing PAC from an HTTP(S) URL or local file.
@@ -169,9 +169,9 @@ Existing `ssh-auto2fa` Keychain service names can still be checked and imported 
 
 Settings, Shortcuts, and the CLI can also import literal `Host` entries from `~/.ssh/config`. Wildcard and negated host patterns are skipped because they do not map to one concrete tunnel profile.
 
-Settings can generate a managed OpenSSH include for jump-host profiles and install it as `~/.ssh/config.d/ssh-autotunnel.conf`. It exposes one stable internal adapter alias per hop endpoint and keeps configured destination routes fail-closed while the app is stopped. Disconnecting, reconnecting, or quitting the app may close terminal sessions that share an app-owned master.
+Settings can generate a managed OpenSSH include for jump-host profiles and install it as `~/.ssh/config.d/ssh-autotunnel.conf`. It publishes readable names such as `ssh-autotunnel-hop-psi-cms-tier-3` while retaining endpoint hashes as compatibility aliases. A readable alias attaches to the app-owned ControlMaster socket; it does not translate to a direct fallback server. If that master is unavailable because the hop is disconnected, the app is stopped, or the app was uninstalled, OpenSSH deliberately falls through to a reserved `.invalid` hostname and fails closed. Restore the original `ProxyJump` before removing the integration if direct hop access is required.
 
-**Check SSH Config** recursively follows `Include` files and reports safe replacements, manual recommendations, and information without executing `Match exec` or inferring routes from domain suffixes. Existing equivalent single-hop `ProxyJump` targets can be selected for reviewed application after a complete per-file diff; the app rechecks file hashes and metadata, creates private backups, and writes atomically. The API action `checkSSHConfig` and `ssh-autotunnelctl check-ssh-config` expose the report read-only; fixes remain Settings-only.
+**Check SSH Config** recursively follows `Include` files and reports safe replacements, manual recommendations, managed-integration status, and information without executing `Match exec` or inferring routes from domain suffixes. Existing equivalent single-hop `ProxyJump` targets can be selected only after the managed include is installed and current. Reviewed application shows a complete per-file diff, rechecks the configuration fingerprint and file metadata, creates private backups, and writes atomically. The API action `checkSSHConfig` and `ssh-autotunnelctl check-ssh-config` expose the report read-only; fixes remain Settings-only.
 
 Shortcuts/App Intents expose tunnel connect/disconnect/reconnect, status, diagnostics, imports, export validation, exports, support bundles, system PAC apply/restore, and profile/PAC/network rule management. Shortcuts can also list configured profiles, PAC rules, and network rules as typed results, use picker-based profile/rule parameters for selected-item actions, and return the current PAC URL, diagnostics summary, network fingerprint, redacted configuration JSON, validation summaries, and redacted support-bundle JSON as automation values.
 

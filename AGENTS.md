@@ -123,6 +123,7 @@
 - Replaced the primary trusted-network workflow with Direct Networks that prefer DNS search-domain matching across Wi-Fi/Ethernet/VPN, pause matching tunnels and shared-hop usage, resume prior intent, route PAC traffic normally, and launch direct interactive SSH while preserving legacy routing-only policies.
 - Added a backward-compatible per-profile Connect All eligibility preference with Overview/menu-bar guidance, status/CLI/export/Shortcuts exposure, and tested inactive-profile selection.
 - Propagated initial and dynamic terminal dimensions through the interactive SSH helper PTY so OpenSSH and remote tmux sessions can follow terminal resizes, with synthetic-PTY coverage for resize delivery and cleanup.
+- Added readable profile-derived fail-closed hop adapter aliases with hashed compatibility aliases, v3 managed-config migration and rename history, collision protection, managed-integration audit status, and install/apply preconditions.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -158,6 +159,16 @@ swift test
 ```
 
 All passed on `feat/interactive-ssh-resize`. `swift test` executed 439 XCTest cases, including synthetic outer/inner PTYs that verified initial dimensions, larger and coalesced smaller resize delivery, `SIGWINCH` propagation, monitor cleanup, non-terminal fallback, and interactive-runner descriptor wiring.
+
+Latest readable hop adapter validation:
+
+```sh
+swift test --filter 'HopAdapterNameResolverTests|SSHConfigSetupServiceTests|SSHConfigAuditServiceTests|SSHConfigSafeFixServiceTests'
+swift build
+swift test
+```
+
+All passed on `feat/readable-hop-adapters`. The focused suites executed 36 XCTest cases covering readable slug generation, pooled and colliding profiles, v3 migration, historical and hashed aliases, fail-closed resolution, managed-integration states, and apply-time revalidation. The full suite executed 452 XCTest cases.
 
 Latest safe reconnect validation:
 

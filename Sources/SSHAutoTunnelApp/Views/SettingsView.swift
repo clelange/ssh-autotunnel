@@ -324,25 +324,30 @@ struct SettingsView: View {
                         }
                         .help("Write SSH AutoTunnel's managed OpenSSH include file and add a marked Include block to ~/.ssh/config when needed.")
                     }
-                    Text("The managed include publishes fail-closed internal hop adapters and routes only the destinations already configured in SSH AutoTunnel. Your aliases, Host patterns, and routing policy remain in your SSH files.")
+                    Text("The managed include publishes readable adapters that attach to app-owned hop connections. It does not provide a direct fallback to the real hop server.")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    let adapterNames = appState.managedHopAdapterNames()
-                    if adapterNames.isEmpty {
+                    let adapters = appState.managedHopAdapters()
+                    if adapters.isEmpty {
                         Text("No internal hop adapter is available because no jump-host profile is configured.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     } else {
-                        ForEach(adapterNames, id: \.self) { adapterName in
-                            CopyableValueRow(
-                                title: "Internal adapter",
-                                value: adapterName,
-                                help: "Copy this stable alias for use as an existing ProxyJump target"
-                            )
+                        ForEach(adapters, id: \.profileID) { adapter in
+                            VStack(alignment: .leading, spacing: 2) {
+                                CopyableValueRow(
+                                    title: adapter.profileName,
+                                    value: adapter.adapterHost,
+                                    help: "Copy this readable alias for use as an existing ProxyJump target"
+                                )
+                                Text("Via \(adapter.endpoint.destination):\(adapter.endpoint.port)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
                     Label(
-                        "Disconnecting, reconnecting, or quitting the app can terminate terminal sessions that share an app-owned hop master.",
+                        "If the app-owned hop is disconnected, the app is quit, or the app is uninstalled, these aliases intentionally fail closed. Restore the original ProxyJump to connect directly through a hop server.",
                         systemImage: "exclamationmark.triangle"
                     )
                     .font(.caption)
@@ -377,6 +382,19 @@ struct SettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
+                    }
+                    if let report = sshConfigAuditReport {
+                        Label(
+                            "Managed adapters: \(managedIntegrationLabel(report.managedIntegration.status))",
+                            systemImage: report.managedIntegration.status == .current
+                                ? "checkmark.circle.fill"
+                                : "exclamationmark.triangle.fill"
+                        )
+                        .font(.caption)
+                        .foregroundStyle(report.managedIntegration.status == .current ? .green : .orange)
+                        Text(report.managedIntegration.detail)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
                     }
                     Text("The audit follows Include files and recommends only evidence-based changes. It never adds routing based on a domain suffix or executes Match exec.")
                         .font(.caption)
@@ -459,7 +477,9 @@ struct SettingsView: View {
                     } else {
                         sshConfigFindingDetails(finding)
                         if selectable {
-                            Text("Recommendation only: this source file is not eligible for automatic editing.")
+                            Text(sshConfigAuditReport?.managedIntegration.status == .current
+                                ? "Recommendation only: this source file is not eligible for automatic editing."
+                                : "Install or update the managed OpenSSH include before applying this replacement.")
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         }
@@ -654,8 +674,20 @@ struct SettingsView: View {
             let backupStatus = result.backupURL.map { " Backup: \($0.path)" } ?? ""
             let migrationBackupStatus = result.managedConfigBackupURL.map { " Managed-config migration backup: \($0.path)" } ?? ""
             sshConfigMessage = "Installed \(result.managedConfigURL.path), \(includeStatus).\(backupStatus)\(migrationBackupStatus)"
+            sshConfigAuditReport = appState.checkSSHConfig()
+            selectedSSHConfigFindingIDs.removeAll()
+            sshConfigFixPreviews.removeAll()
         } catch {
             sshConfigMessage = "Could not install managed OpenSSH config: \(error.localizedDescription)"
+        }
+    }
+
+    private func managedIntegrationLabel(_ status: SSHConfigManagedIntegrationStatus) -> String {
+        switch status {
+        case .current: "Current"
+        case .notInstalled: "Not installed"
+        case .updateRequired: "Update required"
+        case .conflict: "Conflict"
         }
     }
 

@@ -1106,14 +1106,18 @@ final class AppState: ObservableObject {
     }
 
     func managedSSHConfigSnippet() throws -> String {
-        try SSHConfigSetupService.managedSnippet(for: configuration)
+        let managedURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".ssh", isDirectory: true)
+            .appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
+        let existing = try? String(contentsOf: managedURL, encoding: .utf8)
+        return try SSHConfigSetupService.managedSnippet(
+            for: configuration,
+            preservingAliasesFrom: existing
+        )
     }
 
-    func managedHopAdapterNames() -> [String] {
-        Array(Set(configuration.profiles.compactMap { profile in
-            guard hasJumpHost(profile) else { return nil }
-            return try? HopEndpointKey(profile: profile).adapterHost
-        })).sorted()
+    func managedHopAdapters() -> [HopAdapterProfileAlias] {
+        HopAdapterNameResolver.resolve(profiles: configuration.profiles).profiles
     }
 
     func checkSSHConfig() -> SSHConfigAuditReport {
@@ -1124,7 +1128,8 @@ final class AppState: ObservableObject {
         report: SSHConfigAuditReport,
         findingIDs: Set<String>
     ) throws -> [SSHConfigFileFixPreview] {
-        try SSHConfigSafeFixService().preview(report: report, findingIDs: findingIDs)
+        let freshReport = try revalidatedSSHConfigAudit(report: report, findingIDs: findingIDs)
+        return try SSHConfigSafeFixService().preview(report: freshReport, findingIDs: findingIDs)
     }
 
     @discardableResult
@@ -1132,10 +1137,30 @@ final class AppState: ObservableObject {
         report: SSHConfigAuditReport,
         findingIDs: Set<String>
     ) throws -> SSHConfigSafeFixResult {
-        let result = try SSHConfigSafeFixService().apply(report: report, findingIDs: findingIDs)
+        let freshReport = try revalidatedSSHConfigAudit(report: report, findingIDs: findingIDs)
+        let result = try SSHConfigSafeFixService().apply(report: freshReport, findingIDs: findingIDs)
         let backups = result.backupPaths.isEmpty ? "" : " Backups: \(result.backupPaths.joined(separator: ", "))"
         lastProxyMessage = "Applied \(result.appliedFindingIDs.count) reviewed SSH config replacement(s) in \(result.changedFiles.count) file(s).\(backups)"
         return result
+    }
+
+    private func revalidatedSSHConfigAudit(
+        report: SSHConfigAuditReport,
+        findingIDs: Set<String>
+    ) throws -> SSHConfigAuditReport {
+        let freshReport = checkSSHConfig()
+        let originalByID = Dictionary(uniqueKeysWithValues: report.findings.map { ($0.id, $0) })
+        let freshByID = Dictionary(uniqueKeysWithValues: freshReport.findings.map { ($0.id, $0) })
+        for id in findingIDs {
+            guard let original = originalByID[id],
+                  let fresh = freshByID[id],
+                  fresh.canApply,
+                  fresh.beforeText == original.beforeText,
+                  fresh.afterText == original.afterText else {
+                throw SSHConfigSafeFixError.findingNotSafe(id)
+            }
+        }
+        return freshReport
     }
 
     @discardableResult
