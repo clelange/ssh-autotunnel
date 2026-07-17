@@ -92,6 +92,53 @@ final class InteractiveSSHSessionRunnerTests: XCTestCase {
 
         wait(for: [finished], timeout: 2)
         XCTAssertEqual(launcher.command?.arguments.last, "alice@lxplus.cern.ch")
+        XCTAssertNil(launcher.terminalFileDescriptor(at: 0))
+    }
+
+    func testRunnerSuppliesInteractiveTerminalFileDescriptor() throws {
+        var masterDescriptor: Int32 = -1
+        var slaveDescriptor: Int32 = -1
+        guard openpty(&masterDescriptor, &slaveDescriptor, nil, nil, nil) == 0 else {
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+        }
+        defer {
+            close(masterDescriptor)
+            close(slaveDescriptor)
+        }
+
+        let launcher = FakeInteractiveSSHProcessLauncher()
+        let outputPipe = Pipe()
+        let input = FileHandle(fileDescriptor: slaveDescriptor, closeOnDealloc: false)
+        let runner = InteractiveSSHSessionRunner(
+            keychain: FakeInteractiveKeychain(values: [:]),
+            processLauncher: launcher
+        )
+        let profile = TunnelProfile(
+            name: "Interactive",
+            host: "login.example.org",
+            user: "alice",
+            localSocksPort: 1081
+        )
+
+        let runQueue = DispatchQueue(label: "interactive-terminal-descriptor-test")
+        let finished = expectation(description: "runner finished")
+        runQueue.async {
+            _ = try? runner.run(
+                profile: profile,
+                input: input,
+                output: outputPipe.fileHandleForWriting,
+                errorOutput: outputPipe.fileHandleForWriting,
+                bridgeInput: false,
+                configureTerminal: true
+            )
+            finished.fulfill()
+        }
+
+        let session = try waitForSession(launcher)
+        XCTAssertEqual(launcher.terminalFileDescriptor(at: 0), slaveDescriptor)
+        session.finish(status: 0)
+
+        wait(for: [finished], timeout: 2)
     }
 
     func testRunnerDeclinesSingleCommandForPersistentJumpHostProfile() throws {
@@ -432,11 +479,13 @@ private final class FakeInteractiveSSHProcessLauncher: SSHProcessLaunching {
     private let lock = NSLock()
     private(set) var command: SSHCommand?
     private(set) var commands: [SSHCommand] = []
+    private var terminalFileDescriptors: [Int32?] = []
     private var onOutputs: [(Data) -> Void] = []
     private var sessions: [FakeInteractiveSSHProcessSession] = []
 
     func launch(
         command: SSHCommand,
+        terminalFileDescriptor: Int32?,
         onOutput: @escaping (Data) -> Void,
         onTermination: @escaping (SSHProcessSession) -> Void
     ) throws -> SSHProcessSession {
@@ -444,6 +493,7 @@ private final class FakeInteractiveSSHProcessLauncher: SSHProcessLaunching {
         defer { lock.unlock() }
         self.command = command
         self.commands.append(command)
+        self.terminalFileDescriptors.append(terminalFileDescriptor)
         self.onOutputs.append(onOutput)
         let session = FakeInteractiveSSHProcessSession(onTermination: onTermination)
         self.sessions.append(session)
@@ -455,6 +505,13 @@ private final class FakeInteractiveSSHProcessLauncher: SSHProcessLaunching {
         defer { lock.unlock() }
         guard sessions.indices.contains(index) else { return nil }
         return sessions[index]
+    }
+
+    func terminalFileDescriptor(at index: Int) -> Int32? {
+        lock.lock()
+        defer { lock.unlock() }
+        guard terminalFileDescriptors.indices.contains(index) else { return nil }
+        return terminalFileDescriptors[index]
     }
 
     func output(_ text: String, sessionIndex: Int = 0) {
