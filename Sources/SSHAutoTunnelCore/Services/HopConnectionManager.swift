@@ -462,6 +462,7 @@ public final class HopConnectionManager {
         let managed = ManagedHopConnection(profile: profile, controlMaster: controlMaster, credentials: credentials, launchOptions: options, startedAt: now())
         managed.session = try processLauncher.launch(
             command: controlMaster.command,
+            terminalFileDescriptor: nil,
             onOutput: { [weak self, weak managed] data in
                 guard let managed else { return }
                 self?.queue.async {

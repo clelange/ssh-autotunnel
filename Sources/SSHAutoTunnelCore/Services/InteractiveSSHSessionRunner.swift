@@ -269,6 +269,7 @@ public final class InteractiveSSHSessionRunner {
 
         let session = try processLauncher.launch(
             command: command,
+            terminalFileDescriptor: terminalMode == nil ? nil : input.fileDescriptor,
             onOutput: { [promptState, sessionBox] data in
                 promptState.handle(data, sessionBox: sessionBox)
                 onOutput?(data)

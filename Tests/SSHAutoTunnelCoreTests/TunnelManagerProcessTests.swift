@@ -1186,6 +1186,7 @@ private final class FakeSSHProcessLauncher: SSHProcessLaunching {
 
     func launch(
         command: SSHCommand,
+        terminalFileDescriptor: Int32?,
         onOutput: @escaping (Data) -> Void,
         onTermination: @escaping (SSHProcessSession) -> Void
     ) throws -> SSHProcessSession {

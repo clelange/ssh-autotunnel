@@ -495,6 +495,7 @@ public final class TunnelManager {
         )
         managed.session = try processLauncher.launch(
             command: command,
+            terminalFileDescriptor: nil,
             onOutput: { [weak self, weak managed] data in
                 guard let managed else { return }
                 self?.queue.async {

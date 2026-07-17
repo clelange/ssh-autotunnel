@@ -122,6 +122,7 @@
 - Simplified the public release DMG to the app plus an Applications link, while retaining the standalone CLI only in the local developer/tester ZIP.
 - Replaced the primary trusted-network workflow with Direct Networks that prefer DNS search-domain matching across Wi-Fi/Ethernet/VPN, pause matching tunnels and shared-hop usage, resume prior intent, route PAC traffic normally, and launch direct interactive SSH while preserving legacy routing-only policies.
 - Added a backward-compatible per-profile Connect All eligibility preference with Overview/menu-bar guidance, status/CLI/export/Shortcuts exposure, and tested inactive-profile selection.
+- Propagated initial and dynamic terminal dimensions through the interactive SSH helper PTY so OpenSSH and remote tmux sessions can follow terminal resizes, with synthetic-PTY coverage for resize delivery and cleanup.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -145,6 +146,18 @@ swift test
 ```
 
 Both passed on `feat/shared-hop-ssh-audit` after shared hop ownership/pooling, fail-closed adapters, recursive SSH config audit and safe-fix services, and Settings/API/CLI reporting. The core test suite has 378 XCTest cases.
+
+Latest interactive terminal resize validation:
+
+```sh
+swift test --filter SSHProcessLauncherTests
+swift test --filter InteractiveSSHSessionRunnerTests
+swift build
+swift test
+./script/build_and_run.sh --verify
+```
+
+All passed on `feat/interactive-ssh-resize`. `swift test` executed 439 XCTest cases, including synthetic outer/inner PTYs that verified initial dimensions, larger and coalesced smaller resize delivery, `SIGWINCH` propagation, monitor cleanup, non-terminal fallback, and interactive-runner descriptor wiring.
 
 Latest safe reconnect validation:
 
@@ -213,7 +226,7 @@ All passed for `v0.6.3`. `swift test` executed 434 XCTest cases, and GitHub Acti
 ## Known Gaps
 
 - The real PSI General and PSI CMS Tier-3 shared-hop/tunnel flows are live-validated. CERN SSH authentication still needs live validation with the user’s Keychain secrets and reachable network.
-- The pseudo-terminal process boundary and prompt matcher are now unit-tested with fakes and mixed prompt transcripts, but still need live tuning after real CERN/PSI server tests.
+- The pseudo-terminal process boundary, prompt matcher, and terminal resize propagation are unit-tested with fakes, mixed prompt transcripts, and synthetic PTYs, but still need live tuning and app-launched tmux resize validation against real CERN/PSI sessions.
 - System PAC restoration command planning, durable snapshot storage, and manager orchestration are unit-tested, but the live `networksetup` apply/restore flow still needs manual testing across Wi-Fi, Ethernet, and VPN transitions.
 - App Intents now cover the local control API actions, but Shortcuts discovery and invocation still need end-to-end validation from the Shortcuts app.
 - Configuration export/import and support-bundle generation are unit-tested and exposed through CLI/API/Shortcuts, but live Shortcuts import/export invocation still needs end-to-end validation.
