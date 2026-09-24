@@ -235,6 +235,17 @@ Latest release packaging validation:
 swift build
 swift test
 ./script/package_local.sh --verify
+NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 NOTARIZE=1 ./script/package_release.sh --verify
+```
+
+All passed for `v0.7.0` (build `10`) on macOS 26.6.2 with Swift 6.4. The full suite executed 459 XCTest cases, and GitHub Actions run `35977752096` passed build, test, local package verification, and artifact upload on release commit `b9bea10`. Apple accepted notarization submission `2ca2c02d-bdba-45bd-8953-7846f42e947c`. The stapled DMG and the copy downloaded from the draft release passed checksum verification, Gatekeeper assessment as `Notarized Developer ID`, exact app-plus-Applications-link layout checks, app and embedded-helper signature validation, version/build inspection, and byte-for-byte comparison. The downloaded app also passed startup and local status endpoint checks with an empty temporary `CFFIXED_USER_HOME`, separate loopback ports, and manual PAC mode; the existing installed app and its connections were left running. The release is an arm64 build for Apple silicon Macs running macOS 26 or later. GitHub Release `v0.7.0` was published as the latest release. The published DMG SHA-256 is `2d9ce62ec2e0b68b8a6e17b747b30d9cd70d66971f4ee165ead042680447eb2f`.
+
+Previous release packaging validation (`v0.6.3`):
+
+```sh
+swift build
+swift test
+./script/package_local.sh --verify
 NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --notarize
 ```
 
