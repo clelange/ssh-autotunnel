@@ -241,6 +241,20 @@ Latest release packaging validation:
 swift build
 swift test
 ./script/package_local.sh --verify
+python3 script/test_appcast.py
+NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 NOTARIZE=1 ./script/package_release.sh --verify
+```
+
+All passed for `v0.8.0` (build `11`) on macOS 26.6.2 with Swift 6.4: 459 XCTest cases and seven appcast integration tests. GitHub Actions run `35983051113` passed on release commit `3e291c6`. Apple accepted notarization submission `b10e7bee-8405-42a2-9916-adcd64681669`. The final DMG and draft-release download passed checksum, nested framework/app/helper signature, Gatekeeper, app-plus-Applications-link layout, version/build, and byte-for-byte checks. The actual release app also passed isolated startup and local status checks. GitHub Release `v0.8.0` was published as latest with its signed `appcast.xml`, DMG, and checksum. Unauthenticated downloads through the stable latest-feed URL and versioned asset URLs returned HTTP 200, matched the local artifacts byte-for-byte, and passed feed/archive signature and metadata verification. DMG SHA-256: `78155d99aded3fa5d51ba5956659234b14554a47acdea801db5f15133d9b5fbc`. This is an arm64 release for macOS 26 or later.
+
+The full Sparkle installation rehearsal passed using copies of the release app with a distinct test bundle ID, temporary `CFFIXED_USER_HOME`, separate loopback ports, disposable signing key, and a notarized test update. A test launcher preserved the isolated home across automatic relaunch. The older build discovered and downloaded the signed update; cancelling its active-connection quit warning preserved build 10, the original app process, and the test SSH child. Accepting quit then stopped the old app and child, installed build 11, and automatically relaunched with the isolated profile and manual PAC configuration preserved. The installed test app passed signature and Gatekeeper checks. Test processes were stopped and the disposable private key removed. The user's installed app and existing connections remained running throughout; `build_and_run.sh --verify` was skipped to preserve them.
+
+Previous release packaging validation (`v0.7.0`):
+
+```sh
+swift build
+swift test
+./script/package_local.sh --verify
 NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 NOTARIZE=1 ./script/package_release.sh --verify
 ```
 
@@ -273,11 +287,11 @@ Computer Use verified an isolated copy with a distinct bundle ID, temporary `CFF
 
 Latest updater review/dependency-maintenance validation (2026-09-24):
 
-`actionlint .github/workflows/ci.yml`, Dependabot YAML parsing, `swift build --force-resolved-versions`, `swift build`, and `swift test` passed; the Swift suite still has 459 passing cases. GitHub's Swift updater source covers changing `exact:` requirements alongside `Package.resolved`, so the 2.10.0 pin remains exact. Repository API reads confirmed Dependabot security updates are enabled and unpaused. The existing updater's seven signature/metadata integration tests and local package verification are included in every PR run, using only a disposable key. The review found no additional actionable defect in the updater code; the previously documented full installation/relaunch and active-connection cancellation rehearsal remains required before publishing.
+`actionlint .github/workflows/ci.yml`, Dependabot YAML parsing, `swift build --force-resolved-versions`, `swift build`, and `swift test` passed; the Swift suite still has 459 passing cases. GitHub's Swift updater source covers changing `exact:` requirements alongside `Package.resolved`, so the 2.10.0 pin remains exact. Repository API reads confirmed Dependabot security updates are enabled and unpaused. The existing updater's seven signature/metadata integration tests and local package verification are included in every PR run, using only a disposable key. The review found no additional actionable defect in the updater code. The full installation/relaunch and active-connection cancellation rehearsal subsequently passed before publishing `v0.8.0`, as recorded above.
 
 ## Known Gaps
 
-- Before publishing the first updater-enabled release, upload the signed `appcast.xml` alongside its DMG/checksum. Versions through 0.7.0 need a manual upgrade. Complete a real install/relaunch and active-connection cancellation rehearsal in an isolated account; signature generation/validation and update discovery/error UI are already verified. Preserve the update-signing Keychain key when moving release machines; signed-feed failure fallback is deliberately disabled.
+- Versions through 0.7.0 need one manual upgrade to 0.8.0 or later before in-app updates are available. Publish a signed `appcast.xml` alongside every release DMG/checksum. Preserve the update-signing Keychain key when moving release machines; signed-feed failure fallback is deliberately disabled. Automatic checking is opt-in, and users approve installation.
 
 - The real PSI General and PSI CMS Tier-3 shared-hop/tunnel flows are live-validated. CERN SSH authentication still needs live validation with the user’s Keychain secrets and reachable network.
 - The pseudo-terminal process boundary, prompt matcher, and terminal resize propagation are unit-tested with fakes, mixed prompt transcripts, and synthetic PTYs, but still need live tuning and app-launched tmux resize validation against real CERN/PSI sessions.
