@@ -7,6 +7,7 @@ import SwiftUI
 struct SSHAutoTunnelApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @StateObject private var appState = AppState()
+    @StateObject private var updater = AppUpdater()
 
     var body: some Scene {
         Window("SSH AutoTunnel", id: "main") {
@@ -15,6 +16,7 @@ struct SSHAutoTunnelApp: App {
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState
+                    updater.start()
                 }
                 .frame(minWidth: 1_200, minHeight: 620)
         }
@@ -27,6 +29,10 @@ struct SSHAutoTunnelApp: App {
                     AboutPanelPresenter.show()
                 }
             }
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…", action: updater.checkForUpdates)
+                    .disabled(!updater.canCheckForUpdates)
+            }
         }
 
         MenuBarExtra {
@@ -34,6 +40,7 @@ struct SSHAutoTunnelApp: App {
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState
+                    updater.start()
                 }
         } label: {
             MenuBarExtraStatusLabel()
@@ -47,6 +54,7 @@ struct SSHAutoTunnelApp: App {
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState
+                    updater.start()
                 }
         }
 
@@ -54,8 +62,10 @@ struct SSHAutoTunnelApp: App {
             SettingsView()
                 .textFieldStyle(.roundedBorder)
                 .environmentObject(appState)
+                .environmentObject(updater)
                 .onAppear {
                     appDelegate.appState = appState
+                    updater.start()
                 }
                 .frame(minWidth: 820, minHeight: 560)
         }
@@ -67,6 +77,7 @@ struct SSHAutoTunnelApp: App {
                 .environmentObject(appState)
                 .onAppear {
                     appDelegate.appState = appState
+                    updater.start()
                 }
                 .frame(minWidth: 760, minHeight: 520)
         }

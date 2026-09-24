@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>SUFeedURL</key>
+  <string>https://github.com/clelange/ssh-autotunnel/releases/latest/download/appcast.xml</string>
+  <key>SUPublicEDKey</key>
+  <string>RrlK84ndIk7tWLxpwwfQQj7ujF9u5uef6TTknPWTriI=</string>
+  <key>SUEnableAutomaticChecks</key>
+  <false/>
+  <key>SUAllowsAutomaticUpdates</key>
+  <false/>
+  <key>SUAutomaticallyUpdate</key>
+  <false/>
+  <key>SUEnableSystemProfiling</key>
+  <false/>
+  <key>SUVerifyUpdateBeforeExtraction</key>
+  <true/>
+  <key>SURequireSignedFeed</key>
+  <true/>
+  <key>SUSignedFeedFailureExpirationInterval</key>
+  <integer>0</integer>
+</dict>
+</plist>

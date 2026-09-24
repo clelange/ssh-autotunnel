@@ -128,6 +128,12 @@
 - Made managed-include detection require an unconditional include before Host, Match, or earlier Include directives. Audits disable replacements until scoped integration is reinstalled; installation prepends an unconditional include with a private backup. Added scope, comment/argument parsing, safe-fix rejection, repair, and OpenSSH resolution coverage.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
+- Added Sparkle 2.10 in-app updates with a GitHub Releases-hosted signed feed, application-menu check action, opt-in daily checks in Settings, and user-confirmed installation through the existing quit path.
+- Added shared framework embedding/signing for all app packagers, release-only updater enablement, a Keychain-backed Ed25519 public-key configuration, and post-notarization feed generation/verification. Private signing material stays outside the repository.
+
+- Reviewed updater startup gating, signature/feed validation, packaging/signing, and Sparkle's normal quit-event path. Fixed the maintenance gap where CI was manual-only: PRs targeting `main` and pushes to `main` now run with read-only permissions, no persisted checkout credentials, and strict committed-version resolution.
+- Added Dependabot Swift checks on weekdays and GitHub Actions checks weekly, retaining the exact Sparkle pin and normal PR review. Enabled repository Dependabot alerts and security-update PRs through GitHub; scheduled version updates activate when `.github/dependabot.yml` reaches `main`.
+
 ## Validation Status
 
 Last full package verification:
@@ -251,7 +257,27 @@ NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A5
 
 All passed for `v0.6.3`. `swift test` executed 434 XCTest cases, and GitHub Actions run `29521387798` passed build, test, local package verification, and artifact upload on release commit `53245ab`. `package_release.sh --notarize` produced `dist/release/SSH-AutoTunnel-0.6.3.dmg`, and Apple accepted submission `c882a28b-a73e-4d13-9bd4-07e7aeb0186b`. The stapled DMG and a copy downloaded back from the draft GitHub Release both passed checksum verification, Gatekeeper assessment as `Notarized Developer ID`, read-only mounting, exact app-plus-Applications-link layout checks with no loose CLI, app and embedded-helper signature validation, byte-for-byte comparison, and version/build inspection for `0.6.3` build `9`. GitHub Release `v0.6.3` was published as the latest release. The published DMG SHA-256 is `df6f31017ed26ed45e1f6e0297a1d8383a363adeb8e04501ba3f6b59ae4944d5`. `build_and_run.sh --verify` was skipped to avoid interrupting the installed app and its active tunnels.
 
+Latest updater validation:
+
+```sh
+swift build
+swift test
+./script/package_local.sh --verify
+python3 script/test_appcast.py
+APP_VERSION=0.8.0 APP_BUILD=11 RELEASE_DIST_DIR="$PWD/dist/updater-verification" NOTARY_PROFILE=ssh-autotunnel-notary CODESIGN_IDENTITY=6775658B7B33A035FF1A113A53C67E9D8B2D29C0 ./script/package_release.sh --notarize
+```
+
+All passed on `feat/github-app-updates`: 459 XCTest cases and seven integration tests using real Sparkle tools, a disposable key, and a DMG fixture. Integration tests cover feed/download signature verification and tampering, signed wrong-URL/build rejection, wrong-key publishing failure, and disabled-development-build rejection. The unpublished 0.8.0/build 11 packaging rehearsal passed nested framework/app/helper signing, notarization (submission `c6d2ca66-91d7-4fd1-aa7e-02f5b77a6acf`), stapling, Gatekeeper, and signed appcast generation against the final DMG. This is a test artifact, not a published release or version bump.
+
+Computer Use verified an isolated copy with a distinct bundle ID, temporary `CFFIXED_USER_HOME`, empty profiles, separate ports, and a loopback-hosted signed feed: automatic checking started off, the toggle worked, the menu/settings actions found version 0.8.0, dismissal left the app running, last-check time updated, and a tampered feed showed the signature-validation error. The isolated app quit cleanly; the installed app and its connections remained running. No production update was installed. `build_and_run.sh --verify` was skipped because it would quit the installed app.
+
+Latest updater review/dependency-maintenance validation (2026-09-24):
+
+`actionlint .github/workflows/ci.yml`, Dependabot YAML parsing, `swift build --force-resolved-versions`, `swift build`, and `swift test` passed; the Swift suite still has 459 passing cases. GitHub's Swift updater source covers changing `exact:` requirements alongside `Package.resolved`, so the 2.10.0 pin remains exact. Repository API reads confirmed Dependabot security updates are enabled and unpaused. The existing updater's seven signature/metadata integration tests and local package verification are included in every PR run, using only a disposable key. The review found no additional actionable defect in the updater code; the previously documented full installation/relaunch and active-connection cancellation rehearsal remains required before publishing.
+
 ## Known Gaps
+
+- Before publishing the first updater-enabled release, upload the signed `appcast.xml` alongside its DMG/checksum. Versions through 0.7.0 need a manual upgrade. Complete a real install/relaunch and active-connection cancellation rehearsal in an isolated account; signature generation/validation and update discovery/error UI are already verified. Preserve the update-signing Keychain key when moving release machines; signed-feed failure fallback is deliberately disabled.
 
 - The real PSI General and PSI CMS Tier-3 shared-hop/tunnel flows are live-validated. CERN SSH authentication still needs live validation with the user’s Keychain secrets and reachable network.
 - The pseudo-terminal process boundary, prompt matcher, and terminal resize propagation are unit-tested with fakes, mixed prompt transcripts, and synthetic PTYs, but still need live tuning and app-launched tmux resize validation against real CERN/PSI sessions.

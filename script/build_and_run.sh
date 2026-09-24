@@ -10,6 +10,7 @@ APP_BUILD="10"
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/script/lib/sparkle.sh"
 DIST_DIR="$ROOT_DIR/dist"
 APP_BUNDLE="$DIST_DIR/$APP_NAME.app"
 APP_CONTENTS="$APP_BUNDLE/Contents"
@@ -100,7 +101,10 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
+embed_sparkle "$APP_BUNDLE" false
+
 if [[ "${SKIP_CODESIGN:-0}" != "1" ]]; then
+  sign_sparkle "$APP_BUNDLE" "$CODESIGN_IDENTITY" local
   /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" "$CLI_HELPER"
   /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
   /usr/bin/codesign --verify --deep --strict "$APP_BUNDLE"

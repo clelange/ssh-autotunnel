@@ -30,6 +30,10 @@ struct SettingsView: View {
                 .tabItem {
                     Label("OpenSSH", systemImage: "chevron.left.forwardslash.chevron.right")
                 }
+            UpdateSettingsView()
+                .tabItem {
+                    Label("Updates", systemImage: "arrow.down.circle")
+                }
             migrationTab
                 .tabItem {
                     Label("Migration", systemImage: "arrow.triangle.2.circlepath")

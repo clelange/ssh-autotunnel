@@ -9,7 +9,8 @@ APP_VERSION="${APP_VERSION:-0.7.0}"
 APP_BUILD="${APP_BUILD:-10}"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-DIST_DIR="$ROOT_DIR/dist/release"
+source "$ROOT_DIR/script/lib/sparkle.sh"
+DIST_DIR="${RELEASE_DIST_DIR:-$ROOT_DIR/dist/release}"
 STAGE_DIR="$DIST_DIR/stage"
 PAYLOAD_DIR="$STAGE_DIR/SSH AutoTunnel"
 APP_BUNDLE="$PAYLOAD_DIR/$APP_NAME.app"
@@ -23,6 +24,7 @@ APPLICATIONS_LINK="$PAYLOAD_DIR/Applications"
 INFO_PLIST="$APP_CONTENTS/Info.plist"
 DMG_PATH="$DIST_DIR/SSH-AutoTunnel-$APP_VERSION.dmg"
 CHECKSUM_PATH="$DMG_PATH.sha256"
+APPCAST_PATH="$DIST_DIR/appcast.xml"
 NOTARY_LOG_PATH="$DIST_DIR/notarytool-submit.json"
 
 MODE="${1:-package}"
@@ -151,7 +153,7 @@ swift build -c release --product "$CLI_NAME"
 
 BIN_DIR="$(swift build -c release --show-bin-path)"
 
-rm -rf "$STAGE_DIR" "$DMG_PATH" "$CHECKSUM_PATH" "$NOTARY_LOG_PATH"
+rm -rf "$STAGE_DIR" "$DMG_PATH" "$CHECKSUM_PATH" "$NOTARY_LOG_PATH" "$APPCAST_PATH"
 mkdir -p "$APP_MACOS" "$APP_HELPERS" "$APP_RESOURCES"
 
 cp "$BIN_DIR/$APP_NAME" "$APP_BINARY"
@@ -190,8 +192,11 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
+embed_sparkle "$APP_BUNDLE" true
+
 /usr/bin/plutil -lint "$INFO_PLIST" >/dev/null
 
+sign_sparkle "$APP_BUNDLE" "$CODESIGN_IDENTITY" release
 sign_code "$CLI_HELPER"
 /usr/bin/codesign --verify --strict "$CLI_HELPER"
 sign_code "$APP_BUNDLE"
@@ -210,6 +215,10 @@ fi
   cd "$DIST_DIR"
   /usr/bin/shasum -a 256 "$(basename "$DMG_PATH")" >"$(basename "$CHECKSUM_PATH")"
 )
+
+if [[ "$NOTARIZE" == "1" ]]; then
+  /usr/bin/python3 "$ROOT_DIR/script/generate_appcast.py" "$DMG_PATH" "$APP_BUNDLE" "$APPCAST_PATH"
+fi
 
 case "$MODE" in
   package|--package|notarize|--notarize)

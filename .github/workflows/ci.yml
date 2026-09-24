@@ -1,7 +1,18 @@
 name: CI
 
 on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build-test-package:
@@ -12,6 +23,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          persist-credentials: false
 
       - name: Toolchain
         run: |
@@ -20,13 +33,16 @@ jobs:
           swift --version
 
       - name: Build
-        run: swift build
+        run: swift build --force-resolved-versions
 
       - name: Test
         run: swift test
 
       - name: Verify Local Package
         run: ./script/package_local.sh --verify
+
+      - name: Verify Signed Update Feed
+        run: python3 script/test_appcast.py
 
       - name: Upload Local Package
         uses: actions/upload-artifact@v4

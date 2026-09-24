@@ -1,0 +1,19 @@
+version: 2
+updates:
+  # Keep the exact Sparkle pin and Package.resolved current in reviewed PRs.
+  - package-ecosystem: swift
+    directory: "/"
+    schedule:
+      interval: daily
+      time: "06:00"
+      timezone: Europe/Zurich
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Europe/Zurich
+    open-pull-requests-limit: 5
