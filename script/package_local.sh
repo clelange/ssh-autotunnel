@@ -9,6 +9,7 @@ APP_VERSION="0.7.0"
 APP_BUILD="10"
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+source "$ROOT_DIR/script/lib/sparkle.sh"
 DIST_DIR="$ROOT_DIR/dist/package"
 ARCHIVE_ROOT="$DIST_DIR/SSH AutoTunnel"
 APP_BUNDLE="$ARCHIVE_ROOT/$APP_NAME.app"
@@ -71,9 +72,12 @@ cat >"$INFO_PLIST" <<PLIST
 </plist>
 PLIST
 
+embed_sparkle "$APP_BUNDLE" false
+
 /usr/bin/plutil -lint "$INFO_PLIST" >/dev/null
 
 if [[ "${SKIP_CODESIGN:-0}" != "1" ]]; then
+  sign_sparkle "$APP_BUNDLE" "$CODESIGN_IDENTITY" local
   /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" "$ARCHIVE_ROOT/$CLI_NAME"
   /usr/bin/codesign --verify --strict "$ARCHIVE_ROOT/$CLI_NAME"
   /usr/bin/codesign --force --sign "$CODESIGN_IDENTITY" "$CLI_HELPER"

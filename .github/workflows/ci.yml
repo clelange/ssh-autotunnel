@@ -28,6 +28,9 @@ jobs:
       - name: Verify Local Package
         run: ./script/package_local.sh --verify
 
+      - name: Verify Signed Update Feed
+        run: python3 script/test_appcast.py
+
       - name: Upload Local Package
         uses: actions/upload-artifact@v4
         with:

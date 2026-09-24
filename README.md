@@ -60,6 +60,12 @@ Create an unsigned/ad-hoc-signed local zip with the app bundle and CLI helper:
 
 The archive is written to `dist/package/SSH-AutoTunnel-local.zip` with a matching `.sha256` checksum. CI verifies this package and uploads both files as short-lived GitHub Actions artifacts.
 
+## App Updates
+
+Official builds include **SSH AutoTunnel → Check for Updates…** and **Settings → Updates**. Automatic daily checks are opt-in; you choose when to download and install. Installing restarts the app and asks before stopping active connections. Updates and the signed feed are hosted on GitHub Releases.
+
+Versions through 0.7.0 need one manual upgrade to a release that includes the updater. Development and local tester builds do not check for updates.
+
 ## Developer ID Release
 
 Create a Developer ID-signed DMG for distribution outside the Mac App Store:
