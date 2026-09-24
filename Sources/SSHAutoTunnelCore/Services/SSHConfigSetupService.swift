@@ -51,6 +51,16 @@ public enum SSHConfigSetupService {
     public static let managedIncludeEnd = "# End SSH AutoTunnel managed include"
     public static let managedConfigRelativePath = "config.d/ssh-autotunnel.conf"
 
+    public static func adapterAliases(
+        for configuration: AppConfiguration,
+        preservingAliasesFrom existingManagedContent: String? = nil
+    ) -> HopAdapterAliasCatalog {
+        HopAdapterNameResolver.resolve(
+            profiles: configuration.profiles,
+            historicalAliases: historicalAliases(from: existingManagedContent, profiles: configuration.profiles)
+        )
+    }
+
     public static func managedSnippet(
         for configuration: AppConfiguration,
         layout: HopControlPathLayout? = nil,
@@ -67,14 +77,7 @@ public enum SSHConfigSetupService {
             ].joined(separator: "\n") + "\n"
         }
 
-        let historicalAliases = historicalAliases(
-            from: existingManagedContent,
-            profiles: profiles
-        )
-        let catalog = HopAdapterNameResolver.resolve(
-            profiles: profiles,
-            historicalAliases: historicalAliases
-        )
+        let catalog = adapterAliases(for: configuration, preservingAliasesFrom: existingManagedContent)
         let resolvedLayout = try layout ?? HopControlPathLayout.default()
         var adapters: [HopEndpointKey: ManagedHopAdapterConfig] = [:]
         var finalHosts: [String: FinalHostConfig] = [:]
@@ -167,10 +170,7 @@ public enum SSHConfigSetupService {
         try FileProtection.protectDirectory(configDirectory)
 
         let oldManagedContent = try? String(contentsOf: managedConfigURL, encoding: .utf8)
-        let catalog = HopAdapterNameResolver.resolve(
-            profiles: configuration.profiles,
-            historicalAliases: historicalAliases(from: oldManagedContent, profiles: configuration.profiles)
-        )
+        let catalog = adapterAliases(for: configuration, preservingAliasesFrom: oldManagedContent)
         let literalAliases = SSHConfigAuditService.literalHostAliasLocations(
             sshDirectory: sshDirectory,
             excluding: managedConfigURL

@@ -257,6 +257,34 @@ final class SSHConfigSetupServiceTests: XCTestCase {
         XCTAssertTrue(updated.contains("  ProxyJump ssh-autotunnel-hop-psi-new-name"))
     }
 
+    func testRenamingAndReusingNamePreservesOpenSSHControlPathAcrossUpdates() throws {
+        let directory = try temporaryDirectory()
+        let original = TunnelProfile(
+            name: "General", host: "one.example.org", user: "alice", localSocksPort: 1081,
+            jumpHost: "alice@original.example.org"
+        )
+        let oldSnippet = try SSHConfigSetupService.managedSnippet(for: AppConfiguration(profiles: [original]))
+        var renamed = original
+        renamed.name = "Renamed"
+        let newcomer = TunnelProfile(
+            name: "General", host: "two.example.org", user: "alice", localSocksPort: 1082,
+            jumpHost: "alice@different.example.org"
+        )
+        let configuration = AppConfiguration(profiles: [renamed, newcomer])
+        let updated = try SSHConfigSetupService.managedSnippet(for: configuration, preservingAliasesFrom: oldSnippet)
+        XCTAssertEqual(updated, try SSHConfigSetupService.managedSnippet(for: configuration, preservingAliasesFrom: updated))
+        let configURL = directory.appendingPathComponent("generated-config")
+        try updated.write(to: configURL, atomically: true, encoding: .utf8)
+
+        let originalRoute = try ShellRunner.run("/usr/bin/ssh", ["-F", configURL.path, "-G", "ssh-autotunnel-hop-general"])
+        XCTAssertEqual(originalRoute.exitCode, 0)
+        let layout = try HopControlPathLayout.default()
+        XCTAssertTrue(originalRoute.stdout.contains("controlpath \(try layout.paths(for: HopEndpointKey(profile: original)).controlPath)"))
+        let newRoute = try ShellRunner.run("/usr/bin/ssh", ["-F", configURL.path, "-G", "ssh-autotunnel-hop-general-different-example-org"])
+        XCTAssertEqual(newRoute.exitCode, 0)
+        XCTAssertTrue(newRoute.stdout.contains("controlpath \(try layout.paths(for: HopEndpointKey(profile: newcomer)).controlPath)"))
+    }
+
     func testInstallRejectsReadableAliasDeclaredInUserConfig() throws {
         let sshDirectory = try temporaryDirectory()
         let configURL = sshDirectory.appendingPathComponent("config")

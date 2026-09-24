@@ -57,7 +57,7 @@ final class HopAdapterNameResolverTests: XCTestCase {
         )
     }
 
-    func testRetainsSafeHistoricalAliasesWithoutOverridingCurrentOwners() throws {
+    func testRetainsSafeHistoricalAliases() throws {
         let current = profile(name: "Current", host: "one.example.org", jumpHost: "alice@bastion.example.org")
         let endpoint = try HopEndpointKey(profile: current)
 
@@ -70,6 +70,49 @@ final class HopAdapterNameResolverTests: XCTestCase {
             catalog.endpoints[0].adapterHosts,
             ["ssh-autotunnel-hop-current", "ssh-autotunnel-hop-old-name", endpoint.adapterHost]
         )
+    }
+
+    func testReusedProfileNameCannotTakeAnotherEndpointsHistoricalAlias() throws {
+        let original = profile(name: "Renamed", host: "one.example.org", jumpHost: "alice@original.example.org")
+        let newcomer = profile(name: "General", host: "two.example.org", jumpHost: "alice@different.example.org")
+        let endpoint = try HopEndpointKey(profile: original)
+        let oldAlias = "ssh-autotunnel-hop-general"
+
+        let catalog = HopAdapterNameResolver.resolve(
+            profiles: [original, newcomer],
+            historicalAliases: [endpoint: [oldAlias]]
+        )
+
+        XCTAssertTrue(try XCTUnwrap(catalog.aliases(for: endpoint)).adapterHosts.contains(oldAlias))
+        XCTAssertEqual(catalog.adapterHost(for: newcomer.id), "ssh-autotunnel-hop-general-different-example-org")
+        XCTAssertFalse(try XCTUnwrap(catalog.aliases(for: HopEndpointKey(profile: newcomer))).adapterHosts.contains(oldAlias))
+    }
+
+    func testExistingOwnerKeepsAliasWhenAnotherProfileUsesSameName() throws {
+        let original = profile(name: "General", host: "one.example.org", jumpHost: "alice@original.example.org")
+        let newcomer = profile(name: "General", host: "two.example.org", jumpHost: "alice@different.example.org")
+        let history: [HopEndpointKey: Set<String>] = [try HopEndpointKey(profile: original): ["ssh-autotunnel-hop-general"]]
+
+        let catalog = HopAdapterNameResolver.resolve(profiles: [original, newcomer], historicalAliases: history)
+
+        XCTAssertEqual(catalog.adapterHost(for: original.id), "ssh-autotunnel-hop-general")
+        XCTAssertEqual(catalog.adapterHost(for: newcomer.id), "ssh-autotunnel-hop-general-different-example-org")
+        XCTAssertEqual(catalog, HopAdapterNameResolver.resolve(profiles: [newcomer, original], historicalAliases: history))
+    }
+
+    func testDisambiguationAlsoReservesHistoricalSuffixedAliases() throws {
+        let original = profile(name: "Renamed", host: "one.example.org", jumpHost: "alice@original.example.org")
+        let newcomer = profile(name: "General", host: "two.example.org", jumpHost: "alice@different.example.org")
+        let historical: Set<String> = ["ssh-autotunnel-hop-general", "ssh-autotunnel-hop-general-different-example-org"]
+        let endpoint = try HopEndpointKey(profile: original)
+
+        let catalog = HopAdapterNameResolver.resolve(
+            profiles: [original, newcomer],
+            historicalAliases: [endpoint: historical]
+        )
+
+        XCTAssertTrue(historical.isSubset(of: Set(try XCTUnwrap(catalog.aliases(for: endpoint)).adapterHosts)))
+        XCTAssertEqual(catalog.adapterHost(for: newcomer.id), "ssh-autotunnel-hop-general-different-example-org-alice-22")
     }
 
     func testReadableNameNeverShadowsAnotherEndpointsLegacyHash() throws {

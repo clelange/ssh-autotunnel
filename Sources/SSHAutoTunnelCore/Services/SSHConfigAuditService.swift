@@ -317,13 +317,9 @@ public struct SSHConfigAuditService: Sendable {
     public func check(configuration: AppConfiguration) -> SSHConfigAuditReport {
         let managedConfigURL = sshDirectory.appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
         let existingManagedContent = try? String(contentsOf: managedConfigURL, encoding: .utf8)
-        let historicalAliases = SSHConfigSetupService.historicalAliases(
-            from: existingManagedContent,
-            profiles: configuration.profiles
-        )
-        let catalog = HopAdapterNameResolver.resolve(
-            profiles: configuration.profiles,
-            historicalAliases: historicalAliases
+        let catalog = SSHConfigSetupService.adapterAliases(
+            for: configuration,
+            preservingAliasesFrom: existingManagedContent
         )
         let endpoints = Dictionary(
             uniqueKeysWithValues: catalog.endpoints.map { ($0.endpoint, $0) }

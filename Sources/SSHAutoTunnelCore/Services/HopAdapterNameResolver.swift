@@ -76,18 +76,18 @@ public enum HopAdapterNameResolver {
         }
 
         var candidates = records.map { adapterHostBase(profileName: $0.profile.name) }
-        let reservedLegacyOwners = Dictionary(
-            records.map { ($0.endpoint.adapterHost, $0.endpoint) },
-            uniquingKeysWith: { first, _ in first }
+        let reservations = AdapterAliasReservations(
+            legacyHosts: Set(records.map { $0.endpoint.adapterHost }),
+            historicalAliases: historicalAliases
         )
-        disambiguate(&candidates, records: records, reservedOwners: reservedLegacyOwners) { record in
+        disambiguate(&candidates, records: records, reservations: reservations) { record in
             slug(record.endpoint.host, fallback: "host")
         }
-        disambiguate(&candidates, records: records, reservedOwners: reservedLegacyOwners) { record in
+        disambiguate(&candidates, records: records, reservations: reservations) { record in
             let user = slug(record.endpoint.user, fallback: "user")
             return "\(user)-\(record.endpoint.port)"
         }
-        disambiguateWithOrdinals(&candidates, records: records, reservedOwners: reservedLegacyOwners)
+        disambiguateWithOrdinals(&candidates, records: records, reservations: reservations)
 
         let profileAliases = zip(records, candidates).map { record, alias in
             HopAdapterProfileAlias(
@@ -97,16 +97,12 @@ public enum HopAdapterNameResolver {
                 adapterHost: alias
             )
         }
-        let currentOwners = Dictionary(
-            profileAliases.map { ($0.adapterHost, $0.endpoint) },
-            uniquingKeysWith: { first, _ in first }
-        )
         let grouped = Dictionary(grouping: profileAliases, by: \.endpoint)
         let endpointAliases = grouped.map { endpoint, aliases -> HopAdapterEndpointAliases in
             let current = Array(Set(aliases.map(\.adapterHost))).sorted()
             let retained = Set(historicalAliases[endpoint, default: []]
                 .filter(isSafeAdapterHost)
-                .filter { currentOwners[$0] == nil || currentOwners[$0] == endpoint })
+                .filter { !reservations.conflicts(alias: $0, endpoint: endpoint) })
                 .subtracting(current)
                 .sorted()
             let all = current + retained + [endpoint.adapterHost]
@@ -157,10 +153,10 @@ public enum HopAdapterNameResolver {
     private static func disambiguate(
         _ candidates: inout [String],
         records: [AdapterRecord],
-        reservedOwners: [String: HopEndpointKey],
+        reservations: AdapterAliasReservations,
         suffix: (AdapterRecord) -> String
     ) {
-        for indices in collisionGroups(candidates, records: records, reservedOwners: reservedOwners) {
+        for indices in collisionGroups(candidates, records: records, reservations: reservations) {
             for index in indices {
                 candidates[index] += "-" + suffix(records[index])
             }
@@ -170,10 +166,10 @@ public enum HopAdapterNameResolver {
     private static func disambiguateWithOrdinals(
         _ candidates: inout [String],
         records: [AdapterRecord],
-        reservedOwners: [String: HopEndpointKey]
+        reservations: AdapterAliasReservations
     ) {
         while true {
-            let groups = collisionGroups(candidates, records: records, reservedOwners: reservedOwners)
+            let groups = collisionGroups(candidates, records: records, reservations: reservations)
             guard !groups.isEmpty else { return }
             for indices in groups {
                 let endpoints = Array(Set(indices.map { records[$0].endpoint })).sorted(by: endpointSort)
@@ -190,14 +186,16 @@ public enum HopAdapterNameResolver {
     private static func collisionGroups(
         _ candidates: [String],
         records: [AdapterRecord],
-        reservedOwners: [String: HopEndpointKey]
+        reservations: AdapterAliasReservations
     ) -> [[Int]] {
         let grouped = Dictionary(grouping: candidates.indices, by: { candidates[$0] })
-        return grouped.values.filter { indices in
-            if Set(indices.map { records[$0].endpoint }).count > 1 { return true }
-            return indices.contains { index in
-                reservedOwners[candidates[index]] != nil
+        return grouped.values.compactMap { indices in
+            let conflicting = indices.filter { index in
+                reservations.conflicts(alias: candidates[index], endpoint: records[index].endpoint)
             }
+            // An established owner keeps its alias; only the newcomers move.
+            if !conflicting.isEmpty { return conflicting }
+            return Set(indices.map { records[$0].endpoint }).count > 1 ? indices : nil
         }
     }
 
@@ -205,6 +203,26 @@ public enum HopAdapterNameResolver {
         if lhs.host != rhs.host { return lhs.host < rhs.host }
         if lhs.user != rhs.user { return lhs.user < rhs.user }
         return lhs.port < rhs.port
+    }
+}
+
+private struct AdapterAliasReservations {
+    var legacyHosts: Set<String>
+    var historicalOwners: [String: Set<HopEndpointKey>] = [:]
+
+    init(legacyHosts: Set<String>, historicalAliases: [HopEndpointKey: Set<String>]) {
+        self.legacyHosts = legacyHosts
+        for (endpoint, aliases) in historicalAliases {
+            for alias in aliases where HopAdapterNameResolver.isSafeAdapterHost(alias) {
+                historicalOwners[alias, default: []].insert(endpoint)
+            }
+        }
+    }
+
+    func conflicts(alias: String, endpoint: HopEndpointKey) -> Bool {
+        if legacyHosts.contains(alias) { return true }
+        guard let owners = historicalOwners[alias] else { return false }
+        return owners != [endpoint]
     }
 }
 

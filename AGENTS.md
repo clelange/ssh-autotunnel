@@ -124,6 +124,7 @@
 - Added a backward-compatible per-profile Connect All eligibility preference with Overview/menu-bar guidance, status/CLI/export/Shortcuts exposure, and tested inactive-profile selection.
 - Propagated initial and dynamic terminal dimensions through the interactive SSH helper PTY so OpenSSH and remote tmux sessions can follow terminal resizes, with synthetic-PTY coverage for resize delivery and cleanup.
 - Added readable profile-derived fail-closed hop adapter aliases with hashed compatibility aliases, v3 managed-config migration and rename history, collision protection, managed-integration audit status, and install/apply preconditions.
+- Reserved historical readable aliases for their existing hop endpoints, disambiguated reused profile names, and made Settings, snippets, and audit reports share the same history-aware catalog. Regression coverage checks name reuse, existing owners, suffixed collisions, repeat generation, and actual OpenSSH ControlPath resolution.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status

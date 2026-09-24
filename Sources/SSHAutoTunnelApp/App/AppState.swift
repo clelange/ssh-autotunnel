@@ -1106,18 +1106,24 @@ final class AppState: ObservableObject {
     }
 
     func managedSSHConfigSnippet() throws -> String {
-        let managedURL = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".ssh", isDirectory: true)
-            .appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
-        let existing = try? String(contentsOf: managedURL, encoding: .utf8)
-        return try SSHConfigSetupService.managedSnippet(
+        try SSHConfigSetupService.managedSnippet(
             for: configuration,
-            preservingAliasesFrom: existing
+            preservingAliasesFrom: existingManagedSSHConfig()
         )
     }
 
+    private func existingManagedSSHConfig() -> String? {
+        let managedURL = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".ssh", isDirectory: true)
+            .appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
+        return try? String(contentsOf: managedURL, encoding: .utf8)
+    }
+
     func managedHopAdapters() -> [HopAdapterProfileAlias] {
-        HopAdapterNameResolver.resolve(profiles: configuration.profiles).profiles
+        SSHConfigSetupService.adapterAliases(
+            for: configuration,
+            preservingAliasesFrom: existingManagedSSHConfig()
+        ).profiles
     }
 
     func checkSSHConfig() -> SSHConfigAuditReport {
