@@ -297,7 +297,7 @@ final class SSHConfigAuditServiceTests: XCTestCase {
         try FileProtection.protectDirectory(configDirectory)
         let rootURL = sshDirectory.appendingPathComponent("config")
         try write(
-            "Host internal\n  ProxyJump ssh-autotunnel-hop-old-name\nInclude config.d/ssh-autotunnel.conf\n",
+            "Include config.d/ssh-autotunnel.conf\nHost internal\n  ProxyJump ssh-autotunnel-hop-old-name\n",
             to: rootURL
         )
         var oldProfile = appProfile()
@@ -393,9 +393,7 @@ final class SSHConfigAuditServiceTests: XCTestCase {
         let managedURL = sshDirectory.appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
         try write(try SSHConfigSetupService.managedSnippet(for: configuration), to: managedURL)
         let rootURL = sshDirectory.appendingPathComponent("config")
-        var root = (try? String(contentsOf: rootURL, encoding: .utf8)) ?? ""
-        if !root.hasSuffix("\n") && !root.isEmpty { root.append("\n") }
-        root.append("Include config.d/ssh-autotunnel.conf\n")
-        try write(root, to: rootURL)
+        let root = (try? String(contentsOf: rootURL, encoding: .utf8)) ?? ""
+        try write("Include config.d/ssh-autotunnel.conf\n" + root, to: rootURL)
     }
 }

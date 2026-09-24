@@ -125,6 +125,7 @@
 - Propagated initial and dynamic terminal dimensions through the interactive SSH helper PTY so OpenSSH and remote tmux sessions can follow terminal resizes, with synthetic-PTY coverage for resize delivery and cleanup.
 - Added readable profile-derived fail-closed hop adapter aliases with hashed compatibility aliases, v3 managed-config migration and rename history, collision protection, managed-integration audit status, and install/apply preconditions.
 - Reserved historical readable aliases for their existing hop endpoints, disambiguated reused profile names, and made Settings, snippets, and audit reports share the same history-aware catalog. Regression coverage checks name reuse, existing owners, suffixed collisions, repeat generation, and actual OpenSSH ControlPath resolution.
+- Made managed-include detection require an unconditional include before Host, Match, or earlier Include directives. Audits disable replacements until scoped integration is reinstalled; installation prepends an unconditional include with a private backup. Added scope, comment/argument parsing, safe-fix rejection, repair, and OpenSSH resolution coverage.
 - Initial implementation was pushed to `origin/main` at commit `676e33f`.
 
 ## Validation Status
@@ -161,7 +162,11 @@ swift test
 
 All passed on `feat/interactive-ssh-resize`. `swift test` executed 439 XCTest cases, including synthetic outer/inner PTYs that verified initial dimensions, larger and coalesced smaller resize delivery, `SIGWINCH` propagation, monitor cleanup, non-terminal fallback, and interactive-runner descriptor wiring.
 
-Latest readable hop adapter validation:
+Latest adapter review-fix validation (2026-09-24):
+
+`swift build` and `swift test` passed on macOS 26.6.2 with Swift 6.4; the full suite executed 459 XCTest cases. Focused resolver/setup/audit and setup/audit/safe-fix runs also passed. Regression coverage verifies historical alias ownership with OpenSSH `-G`, reused-name and suffix collisions, unconditional include requirements, rejection before file writes, backup-protected include repair, and idempotent updates. No personal SSH configuration or live connections were changed during validation.
+
+Original readable hop adapter validation:
 
 ```sh
 swift test --filter 'HopAdapterNameResolverTests|SSHConfigSetupServiceTests|SSHConfigAuditServiceTests|SSHConfigSafeFixServiceTests'

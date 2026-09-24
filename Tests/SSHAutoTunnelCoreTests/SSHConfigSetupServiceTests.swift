@@ -101,6 +101,48 @@ final class SSHConfigSetupServiceTests: XCTestCase {
         XCTAssertNil(second.managedConfigBackupURL)
     }
 
+    func testManagedIncludeRequiresUnconditionalScope() {
+        let include = "Include config.d/ssh-autotunnel.conf\n"
+        for prefix in ["Host unrelated\n", "Host *\n", "Match host unrelated\n", "Match all\n", "Include other.conf\n"] {
+            XCTAssertFalse(SSHConfigSetupService.containsManagedInclude(in: prefix + include), prefix)
+        }
+        XCTAssertFalse(SSHConfigSetupService.containsManagedInclude(in: "Include other.conf # config.d/ssh-autotunnel.conf\n"))
+        XCTAssertFalse(SSHConfigSetupService.containsManagedInclude(in: "Include other.conf config.d/ssh-autotunnel.conf\n"))
+        XCTAssertTrue(SSHConfigSetupService.containsManagedInclude(in: "# personal config\n\n" + include + "Host example\n"))
+        XCTAssertTrue(SSHConfigSetupService.containsManagedInclude(in: "Include=\"~/.ssh/config.d/ssh-autotunnel.conf\" # managed\n"))
+    }
+
+    func testInstallRepairsScopedIncludeWithBackupAndIsIdempotent() throws {
+        let directory = try temporaryDirectory()
+        let root = directory.appendingPathComponent("config")
+        let original = "Host unrelated\n  Include config.d/ssh-autotunnel.conf\n"
+        try original.write(to: root, atomically: true, encoding: .utf8)
+        let configuration = AppConfiguration(profiles: [TunnelProfile(
+            name: "General", host: "one.example.org", user: "alice", localSocksPort: 1081,
+            jumpHost: "alice@original.example.org"
+        )])
+
+        let result = try SSHConfigSetupService.installManagedConfig(for: configuration, sshDirectory: directory)
+
+        XCTAssertTrue(result.updatedMainConfig)
+        XCTAssertEqual(try String(contentsOf: XCTUnwrap(result.backupURL), encoding: .utf8), original)
+        let updated = try String(contentsOf: root, encoding: .utf8)
+        XCTAssertTrue(updated.hasPrefix("# SSH AutoTunnel managed include\nInclude ~/.ssh/config.d/ssh-autotunnel.conf\n"))
+        XCTAssertTrue(updated.hasSuffix(original))
+        XCTAssertFalse(try SSHConfigSetupService.installManagedConfig(for: configuration, sshDirectory: directory).updatedMainConfig)
+
+        // Point OpenSSH at the temporary fixture instead of the real user's ~/.ssh.
+        let probe = directory.appendingPathComponent("probe-config")
+        try updated.replacingOccurrences(
+            of: "~/.ssh/config.d/ssh-autotunnel.conf",
+            with: result.managedConfigURL.path
+        ).write(to: probe, atomically: true, encoding: .utf8)
+        let resolved = try ShellRunner.run("/usr/bin/ssh", ["-F", probe.path, "-G", "ssh-autotunnel-hop-general"])
+        XCTAssertEqual(resolved.exitCode, 0)
+        XCTAssertTrue(resolved.stdout.contains("hostname hop-not-connected.start-ssh-autotunnel.invalid"))
+        XCTAssertTrue(resolved.stdout.contains("controlpath "))
+    }
+
     func testInstallBacksUpExistingManagedConfigBeforeVersionMigration() throws {
         let sshDirectory = try temporaryDirectory()
         let configDirectory = sshDirectory.appendingPathComponent("config.d", isDirectory: true)

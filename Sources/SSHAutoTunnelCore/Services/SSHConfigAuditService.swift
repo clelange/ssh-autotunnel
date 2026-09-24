@@ -355,6 +355,32 @@ public struct SSHConfigAuditService: Sendable {
         )
     }
 
+    static func hasUnconditionalManagedInclude(in text: String) -> Bool {
+        let acceptedPaths: Set<String> = [
+            "~/.ssh/\(SSHConfigSetupService.managedConfigRelativePath)",
+            SSHConfigSetupService.managedConfigRelativePath
+        ]
+        for (index, text) in text.components(separatedBy: "\n").enumerated() {
+            let line = SSHConfigAuditLoadedLine(
+                location: SSHConfigSourceLocation(path: "", line: index + 1),
+                text: text
+            )
+            guard let directive = SSHConfigAuditParser.directive(from: line) else { continue }
+            switch directive.keyword {
+            case "host", "match":
+                return false
+            case "include":
+                // Earlier includes (even earlier arguments on this line) can change
+                // scope. Only a first, literal managed include is proven unconditional.
+                guard let firstPath = SSHConfigAuditParser.tokens(directive.value).first else { return false }
+                return acceptedPaths.contains(firstPath)
+            default:
+                continue
+            }
+        }
+        return false
+    }
+
     public static func literalHostAliasLocations(
         sshDirectory: URL,
         excluding excludedURL: URL? = nil
@@ -442,11 +468,20 @@ public struct SSHConfigAuditService: Sendable {
             }
         }
         guard let rootContent,
-              SSHConfigSetupService.containsManagedInclude(in: rootContent),
               let existingManagedContent else {
             return SSHConfigManagedIntegration(
                 status: .notInstalled,
                 detail: "Install the managed OpenSSH include before applying adapter replacements.",
+                managedConfigPath: managedURL.path,
+                configurationFingerprint: expectedHash,
+                mainConfigHash: rootHash,
+                managedConfigHash: observedHash
+            )
+        }
+        guard Self.hasUnconditionalManagedInclude(in: rootContent) else {
+            return SSHConfigManagedIntegration(
+                status: .updateRequired,
+                detail: "Reinstall the managed OpenSSH include at the start of ~/.ssh/config, before Host, Match, or other Include directives.",
                 managedConfigPath: managedURL.path,
                 configurationFingerprint: expectedHash,
                 mainConfigHash: rootHash,

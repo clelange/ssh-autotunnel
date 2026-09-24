@@ -31,14 +31,14 @@ final class SSHConfigSafeFixServiceTests: XCTestCase {
         let adapter = HopAdapterNameResolver.adapterHostBase(profileName: appProfile().name)
         let updated = try String(contentsOf: configURL, encoding: .utf8)
         XCTAssertTrue(updated.contains("\tProxyJump   \(adapter)   # preserve this comment"))
-        XCTAssertTrue(updated.hasPrefix("# personal routing\n"))
+        XCTAssertTrue(updated.hasPrefix("Include config.d/ssh-autotunnel.conf\n# personal routing\n"))
         XCTAssertEqual(try FileProtection.posixPermissions(of: configURL), 0o640)
         XCTAssertEqual(result.changedFiles, [configURL.path])
         let backupURL = try XCTUnwrap(result.backupPaths.first.map(URL.init(fileURLWithPath:)))
         XCTAssertEqual(backupURL.lastPathComponent, "config.ssh-autotunnel-audit-backup-19700101-000000.bak")
         XCTAssertEqual(
             try String(contentsOf: backupURL, encoding: .utf8),
-            original + "Include config.d/ssh-autotunnel.conf\n"
+            "Include config.d/ssh-autotunnel.conf\n" + original
         )
         XCTAssertEqual(try FileProtection.posixPermissions(of: backupURL), FileProtection.privateFilePermissions)
     }
@@ -176,7 +176,29 @@ final class SSHConfigSafeFixServiceTests: XCTestCase {
             }
             XCTAssertTrue(detail.contains(managedURL.path))
         }
-        XCTAssertEqual(try String(contentsOf: configURL, encoding: .utf8), baseConfig(destination: "one") + "Include config.d/ssh-autotunnel.conf\n")
+        XCTAssertEqual(try String(contentsOf: configURL, encoding: .utf8), "Include config.d/ssh-autotunnel.conf\n" + baseConfig(destination: "one"))
+    }
+
+    func testRejectsScopedManagedIncludeBeforeCreatingBackups() throws {
+        for scope in ["Host unrelated", "Match host unrelated", "Include other.conf"] {
+            let directory = try temporarySSHDirectory()
+            let root = directory.appendingPathComponent("config")
+            try write(baseConfig(destination: "one"), to: root)
+            _ = try audit(directory)
+            try write("Host unrelated\n", to: directory.appendingPathComponent("other.conf"))
+            let scoped = scope + "\n  Include config.d/ssh-autotunnel.conf\n" + baseConfig(destination: "one")
+            try write(scoped, to: root)
+            let report = SSHConfigAuditService(sshDirectory: directory).check(
+                configuration: AppConfiguration(profiles: [appProfile()])
+            )
+
+            XCTAssertEqual(report.managedIntegration.status, .updateRequired, scope)
+            let finding = try XCTUnwrap(report.safeReplacements.first)
+            XCTAssertFalse(finding.canApply, scope)
+            XCTAssertThrowsError(try SSHConfigSafeFixService(sshDirectory: directory).apply(report: report, findingIDs: [finding.id]))
+            XCTAssertEqual(try String(contentsOf: root, encoding: .utf8), scoped)
+            XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: directory.path).allSatisfy { !$0.contains("audit-backup") })
+        }
     }
 
     private func audit(_ sshDirectory: URL) throws -> SSHConfigAuditReport {
@@ -187,10 +209,8 @@ final class SSHConfigSafeFixServiceTests: XCTestCase {
         try write(try SSHConfigSetupService.managedSnippet(for: configuration), to: managedURL)
         let rootURL = sshDirectory.appendingPathComponent("config")
         let rootPermissions = try XCTUnwrap(FileProtection.posixPermissions(of: rootURL))
-        var root = try String(contentsOf: rootURL, encoding: .utf8)
-        if !root.hasSuffix("\n") { root.append("\n") }
-        root.append("Include config.d/ssh-autotunnel.conf\n")
-        try write(root, to: rootURL, permissions: rootPermissions)
+        let root = try String(contentsOf: rootURL, encoding: .utf8)
+        try write("Include config.d/ssh-autotunnel.conf\n" + root, to: rootURL, permissions: rootPermissions)
         return SSHConfigAuditService(sshDirectory: sshDirectory).check(configuration: configuration)
     }
 

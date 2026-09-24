@@ -260,20 +260,7 @@ public enum SSHConfigSetupService {
     }
 
     public static func containsManagedInclude(in text: String) -> Bool {
-        let acceptedPaths: Set<String> = [
-            "~/.ssh/\(managedConfigRelativePath)",
-            "~/.ssh/config.d/ssh-autotunnel.conf",
-            managedConfigRelativePath
-        ]
-        return text.components(separatedBy: "\n").contains { line in
-            let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.hasPrefix("#") else { return false }
-            let tokens = trimmed.split(whereSeparator: { $0.isWhitespace }).map {
-                String($0).trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-            }
-            guard tokens.first?.lowercased() == "include" else { return false }
-            return tokens.dropFirst().contains(where: acceptedPaths.contains)
-        }
+        SSHConfigAuditService.hasUnconditionalManagedInclude(in: text)
     }
 
     private static func insertingIncludeBlock(_ includeBlock: String, into existing: String) -> String {
