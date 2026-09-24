@@ -48,11 +48,11 @@ The script fails if Apple does not return `Accepted`, if stapling fails, or if G
 Create a draft release after notarization passes:
 
 ```sh
-gh release create "v0.6.3" \
-  dist/release/SSH-AutoTunnel-0.6.3.dmg \
-  dist/release/SSH-AutoTunnel-0.6.3.dmg.sha256 \
+gh release create "v0.7.0" \
+  dist/release/SSH-AutoTunnel-0.7.0.dmg \
+  dist/release/SSH-AutoTunnel-0.7.0.dmg.sha256 \
   --draft \
-  --title "SSH AutoTunnel 0.6.3" \
+  --title "SSH AutoTunnel 0.7.0" \
   --notes "Developer ID-signed and notarized macOS build."
 ```
 
