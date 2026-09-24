@@ -24,6 +24,7 @@ final class SSHConfigAuditServiceTests: XCTestCase {
           ProxyJump psi-main-gateway # keep fallback condition
         """ + "\n", to: psiURL)
         let profile = appProfile()
+        try installManagedIntegration(in: sshDirectory, configuration: AppConfiguration(profiles: [profile]))
 
         let report = SSHConfigAuditService(sshDirectory: sshDirectory).check(
             configuration: AppConfiguration(profiles: [profile])
@@ -36,7 +37,7 @@ final class SSHConfigAuditServiceTests: XCTestCase {
         XCTAssertEqual(replacement.beforeText, "  ProxyJump psi-main-gateway # keep fallback condition")
         XCTAssertEqual(
             replacement.afterText,
-            "  ProxyJump \(try HopEndpointKey(profile: profile).adapterHost) # keep fallback condition"
+            "  ProxyJump ssh-autotunnel-hop-psi-general # keep fallback condition"
         )
         XCTAssertTrue(replacement.canApply)
         XCTAssertTrue(replacement.reasoning.contains("Match exec result remains conditional"))
@@ -85,7 +86,7 @@ final class SSHConfigAuditServiceTests: XCTestCase {
         XCTAssertTrue(report.warnings.contains { $0.code == .includeCycle })
     }
 
-    func testEquivalentProxyJumpInsideHostAndMatchBlocksAreBothSafe() throws {
+    func testEquivalentProxyJumpRequiresCurrentManagedIncludeBeforeApplication() throws {
         let sshDirectory = try temporarySSHDirectory()
         let configURL = sshDirectory.appendingPathComponent("config")
         try write("""
@@ -106,7 +107,11 @@ final class SSHConfigAuditServiceTests: XCTestCase {
 
         XCTAssertEqual(report.safeReplacements.count, 2)
         XCTAssertEqual(Set(report.safeReplacements.map(\.context)), Set(["Host internal-one", "Match originalhost internal-two"]))
-        XCTAssertTrue(report.safeReplacements.allSatisfy(\.canApply))
+        XCTAssertTrue(report.safeReplacements.allSatisfy { !$0.canApply })
+        XCTAssertEqual(report.managedIntegration.status, .notInstalled)
+        XCTAssertTrue(report.safeReplacements.allSatisfy {
+            $0.reasoning.contains("Install or update the managed OpenSSH include")
+        })
     }
 
     func testDirectMultiHopProxyCommandWildcardAndUnrelatedRoutesRemainInformation() throws {
@@ -155,7 +160,7 @@ final class SSHConfigAuditServiceTests: XCTestCase {
         let recommendation = try XCTUnwrap(
             report.manualRecommendations.first { $0.code == .similarProxyJumpEndpoint }
         )
-        let adapterHost = try HopEndpointKey(profile: appProfile()).adapterHost
+        let adapterHost = HopAdapterNameResolver.adapterHostBase(profileName: appProfile().name)
         XCTAssertTrue(recommendation.reasoning.contains("no explicit username"))
         XCTAssertTrue(recommendation.afterText?.contains(adapterHost) == true)
         XCTAssertFalse(recommendation.canApply)
@@ -234,6 +239,91 @@ final class SSHConfigAuditServiceTests: XCTestCase {
         )
 
         XCTAssertEqual(report.endpoints.count, 1)
+        XCTAssertEqual(report.endpoints[0].preferredAdapterHost, "ssh-autotunnel-hop-psi-general")
+        XCTAssertEqual(Set(report.endpoints[0].profileNames), ["PSI General", "Second"])
+    }
+
+    func testLegacyHashAdapterCanMigrateToReadableAliasWhenManagedIncludeIsCurrent() throws {
+        let sshDirectory = try temporarySSHDirectory()
+        let profile = appProfile()
+        let endpoint = try HopEndpointKey(profile: profile)
+        let configuration = AppConfiguration(profiles: [profile])
+        try write("Host internal\n  ProxyJump \(endpoint.adapterHost)\n", to: sshDirectory.appendingPathComponent("config"))
+        try installManagedIntegration(in: sshDirectory, configuration: configuration)
+
+        let report = SSHConfigAuditService(sshDirectory: sshDirectory).check(configuration: configuration)
+
+        let replacement = try XCTUnwrap(report.safeReplacements.first { $0.code == .legacyManagedAdapter })
+        XCTAssertEqual(replacement.afterText, "  ProxyJump ssh-autotunnel-hop-psi-general")
+        XCTAssertTrue(replacement.canApply)
+        XCTAssertEqual(report.managedIntegration.status, .current)
+    }
+
+    func testAuditReportsManagedIncludeUpdateAndReadableAliasConflicts() throws {
+        let updateDirectory = try temporarySSHDirectory()
+        let updateConfigDirectory = updateDirectory.appendingPathComponent("config.d", isDirectory: true)
+        try FileProtection.protectDirectory(updateConfigDirectory)
+        try write(
+            "Include config.d/ssh-autotunnel.conf\n",
+            to: updateDirectory.appendingPathComponent("config")
+        )
+        try write(
+            "# SSH AutoTunnel managed SSH config v2\n",
+            to: updateDirectory.appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
+        )
+
+        let updateReport = SSHConfigAuditService(sshDirectory: updateDirectory).check(
+            configuration: AppConfiguration(profiles: [appProfile()])
+        )
+        XCTAssertEqual(updateReport.managedIntegration.status, .updateRequired)
+
+        let conflictDirectory = try temporarySSHDirectory()
+        let conflictURL = conflictDirectory.appendingPathComponent("config")
+        try write(
+            "Host ssh-autotunnel-hop-psi-general\n  HostName other.example.org\n",
+            to: conflictURL
+        )
+
+        let conflictReport = SSHConfigAuditService(sshDirectory: conflictDirectory).check(
+            configuration: AppConfiguration(profiles: [appProfile()])
+        )
+        XCTAssertEqual(conflictReport.managedIntegration.status, .conflict)
+        XCTAssertTrue(conflictReport.managedIntegration.detail.contains("\(conflictURL.path):1"))
+    }
+
+    func testHistoricalReadableAliasMigratesAfterProfileRenameAndManagedUpdate() throws {
+        let sshDirectory = try temporarySSHDirectory()
+        let configDirectory = sshDirectory.appendingPathComponent("config.d", isDirectory: true)
+        try FileProtection.protectDirectory(configDirectory)
+        let rootURL = sshDirectory.appendingPathComponent("config")
+        try write(
+            "Include config.d/ssh-autotunnel.conf\nHost internal\n  ProxyJump ssh-autotunnel-hop-old-name\n",
+            to: rootURL
+        )
+        var oldProfile = appProfile()
+        oldProfile.name = "Old Name"
+        let managedURL = sshDirectory.appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
+        try write(
+            try SSHConfigSetupService.managedSnippet(for: AppConfiguration(profiles: [oldProfile])),
+            to: managedURL
+        )
+        var renamedProfile = oldProfile
+        renamedProfile.name = "New Name"
+        let configuration = AppConfiguration(profiles: [renamedProfile])
+
+        let staleReport = SSHConfigAuditService(sshDirectory: sshDirectory).check(configuration: configuration)
+        XCTAssertEqual(staleReport.managedIntegration.status, .updateRequired)
+        XCTAssertFalse(try XCTUnwrap(staleReport.safeReplacements.first).canApply)
+
+        _ = try SSHConfigSetupService.installManagedConfig(
+            for: configuration,
+            sshDirectory: sshDirectory,
+            now: Date(timeIntervalSince1970: 0)
+        )
+        let currentReport = SSHConfigAuditService(sshDirectory: sshDirectory).check(configuration: configuration)
+        let replacement = try XCTUnwrap(currentReport.safeReplacements.first { $0.code == .legacyManagedAdapter })
+        XCTAssertEqual(replacement.afterText, "  ProxyJump ssh-autotunnel-hop-new-name")
+        XCTAssertTrue(replacement.canApply)
     }
 
     func testTextRendererIncludesStructuredFindingAndWarningDetails() throws {
@@ -253,6 +343,16 @@ final class SSHConfigAuditServiceTests: XCTestCase {
         XCTAssertTrue(text.contains("Manual review:"))
         XCTAssertTrue(text.contains("Warnings:"))
         XCTAssertTrue(text.contains(sshDirectory.path))
+    }
+
+    func testLegacyAuditEndpointJSONDecodesWithAdditiveDefaults() throws {
+        let data = Data(#"{"endpoint":{"user":"alice","host":"hopx.psi.ch","port":22},"adapterHost":"ssh-autotunnel-hop-legacyhash"}"#.utf8)
+
+        let endpoint = try JSONDecoder().decode(SSHConfigAuditEndpoint.self, from: data)
+
+        XCTAssertEqual(endpoint.preferredAdapterHost, "ssh-autotunnel-hop-legacyhash")
+        XCTAssertEqual(endpoint.adapterHosts, ["ssh-autotunnel-hop-legacyhash"])
+        XCTAssertEqual(endpoint.profileNames, [])
     }
 
     private func appProfile() -> TunnelProfile {
@@ -282,5 +382,18 @@ final class SSHConfigAuditServiceTests: XCTestCase {
     private func write(_ text: String, to url: URL) throws {
         try text.write(to: url, atomically: true, encoding: .utf8)
         try FileProtection.protectFile(url)
+    }
+
+    private func installManagedIntegration(
+        in sshDirectory: URL,
+        configuration: AppConfiguration
+    ) throws {
+        let configDirectory = sshDirectory.appendingPathComponent("config.d", isDirectory: true)
+        try FileProtection.protectDirectory(configDirectory)
+        let managedURL = sshDirectory.appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
+        try write(try SSHConfigSetupService.managedSnippet(for: configuration), to: managedURL)
+        let rootURL = sshDirectory.appendingPathComponent("config")
+        let root = (try? String(contentsOf: rootURL, encoding: .utf8)) ?? ""
+        try write("Include config.d/ssh-autotunnel.conf\n" + root, to: rootURL)
     }
 }

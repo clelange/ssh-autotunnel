@@ -21,6 +21,7 @@ public enum SSHConfigAuditFindingCode: String, Codable, Sendable {
     case unrelatedProxyJump = "unrelated_proxy_jump"
     case similarProxyJumpEndpoint = "similar_proxy_jump_endpoint"
     case managedAdapterAlreadyUsed = "managed_adapter_already_used"
+    case legacyManagedAdapter = "legacy_managed_adapter"
     case unsupportedSyntax = "unsupported_syntax"
 }
 
@@ -152,10 +153,73 @@ public struct SSHConfigAuditWarning: Codable, Equatable, Identifiable, Sendable 
 public struct SSHConfigAuditEndpoint: Codable, Equatable, Sendable {
     public var endpoint: HopEndpointKey
     public var adapterHost: String
+    public var preferredAdapterHost: String
+    public var adapterHosts: [String]
+    public var profileNames: [String]
+
+    public init(endpointAliases: HopAdapterEndpointAliases) {
+        endpoint = endpointAliases.endpoint
+        adapterHost = endpointAliases.endpoint.adapterHost
+        preferredAdapterHost = endpointAliases.preferredAdapterHost
+        adapterHosts = endpointAliases.adapterHosts
+        profileNames = endpointAliases.profileNames
+    }
 
     public init(endpoint: HopEndpointKey) {
         self.endpoint = endpoint
         adapterHost = endpoint.adapterHost
+        preferredAdapterHost = endpoint.adapterHost
+        adapterHosts = [endpoint.adapterHost]
+        profileNames = []
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case endpoint
+        case adapterHost
+        case preferredAdapterHost
+        case adapterHosts
+        case profileNames
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        endpoint = try container.decode(HopEndpointKey.self, forKey: .endpoint)
+        adapterHost = try container.decodeIfPresent(String.self, forKey: .adapterHost) ?? endpoint.adapterHost
+        preferredAdapterHost = try container.decodeIfPresent(String.self, forKey: .preferredAdapterHost) ?? adapterHost
+        adapterHosts = try container.decodeIfPresent([String].self, forKey: .adapterHosts) ?? [adapterHost]
+        profileNames = try container.decodeIfPresent([String].self, forKey: .profileNames) ?? []
+    }
+}
+
+public enum SSHConfigManagedIntegrationStatus: String, Codable, Equatable, Sendable {
+    case current
+    case notInstalled = "not_installed"
+    case updateRequired = "update_required"
+    case conflict
+}
+
+public struct SSHConfigManagedIntegration: Codable, Equatable, Sendable {
+    public var status: SSHConfigManagedIntegrationStatus
+    public var detail: String
+    public var managedConfigPath: String
+    public var configurationFingerprint: String?
+    public var mainConfigHash: String?
+    public var managedConfigHash: String?
+
+    public init(
+        status: SSHConfigManagedIntegrationStatus,
+        detail: String,
+        managedConfigPath: String,
+        configurationFingerprint: String? = nil,
+        mainConfigHash: String? = nil,
+        managedConfigHash: String? = nil
+    ) {
+        self.status = status
+        self.detail = detail
+        self.managedConfigPath = managedConfigPath
+        self.configurationFingerprint = configurationFingerprint
+        self.mainConfigHash = mainConfigHash
+        self.managedConfigHash = managedConfigHash
     }
 }
 
@@ -163,15 +227,28 @@ public struct SSHConfigAuditReport: Codable, Equatable, Sendable {
     public var generatedAt: Date
     public var rootConfigPath: String
     public var sshDirectoryPath: String
+    public var managedIntegration: SSHConfigManagedIntegration
     public var endpoints: [SSHConfigAuditEndpoint]
     public var files: [SSHConfigFileSnapshot]
     public var findings: [SSHConfigAuditFinding]
     public var warnings: [SSHConfigAuditWarning]
 
+    private enum CodingKeys: String, CodingKey {
+        case generatedAt
+        case rootConfigPath
+        case sshDirectoryPath
+        case managedIntegration
+        case endpoints
+        case files
+        case findings
+        case warnings
+    }
+
     public init(
         generatedAt: Date,
         rootConfigPath: String,
         sshDirectoryPath: String,
+        managedIntegration: SSHConfigManagedIntegration? = nil,
         endpoints: [SSHConfigAuditEndpoint],
         files: [SSHConfigFileSnapshot],
         findings: [SSHConfigAuditFinding],
@@ -180,10 +257,36 @@ public struct SSHConfigAuditReport: Codable, Equatable, Sendable {
         self.generatedAt = generatedAt
         self.rootConfigPath = rootConfigPath
         self.sshDirectoryPath = sshDirectoryPath
+        self.managedIntegration = managedIntegration ?? SSHConfigManagedIntegration(
+            status: .notInstalled,
+            detail: "Managed OpenSSH integration status was not recorded.",
+            managedConfigPath: URL(fileURLWithPath: sshDirectoryPath)
+                .appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath).path
+        )
         self.endpoints = endpoints
         self.files = files
         self.findings = findings
         self.warnings = warnings
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        generatedAt = try container.decode(Date.self, forKey: .generatedAt)
+        rootConfigPath = try container.decode(String.self, forKey: .rootConfigPath)
+        sshDirectoryPath = try container.decode(String.self, forKey: .sshDirectoryPath)
+        managedIntegration = try container.decodeIfPresent(
+            SSHConfigManagedIntegration.self,
+            forKey: .managedIntegration
+        ) ?? SSHConfigManagedIntegration(
+            status: .notInstalled,
+            detail: "Managed OpenSSH integration status was not recorded.",
+            managedConfigPath: URL(fileURLWithPath: sshDirectoryPath)
+                .appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath).path
+        )
+        endpoints = try container.decode([SSHConfigAuditEndpoint].self, forKey: .endpoints)
+        files = try container.decode([SSHConfigFileSnapshot].self, forKey: .files)
+        findings = try container.decode([SSHConfigAuditFinding].self, forKey: .findings)
+        warnings = try container.decode([SSHConfigAuditWarning].self, forKey: .warnings)
     }
 
     public var safeReplacements: [SSHConfigAuditFinding] {
@@ -212,7 +315,20 @@ public struct SSHConfigAuditService: Sendable {
     }
 
     public func check(configuration: AppConfiguration) -> SSHConfigAuditReport {
-        let endpoints = configuredEndpoints(configuration)
+        let managedConfigURL = sshDirectory.appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
+        let existingManagedContent = try? String(contentsOf: managedConfigURL, encoding: .utf8)
+        let catalog = SSHConfigSetupService.adapterAliases(
+            for: configuration,
+            preservingAliasesFrom: existingManagedContent
+        )
+        let endpoints = Dictionary(
+            uniqueKeysWithValues: catalog.endpoints.map { ($0.endpoint, $0) }
+        )
+        let managedIntegration = managedIntegration(
+            configuration: configuration,
+            catalog: catalog,
+            existingManagedContent: existingManagedContent
+        )
         var loader = SSHConfigAuditLoader(sshDirectory: sshDirectory)
         let rootURL = sshDirectory.appendingPathComponent("config")
         let loadedLines = loader.loadRoot(rootURL)
@@ -224,39 +340,176 @@ public struct SSHConfigAuditService: Sendable {
             blocks: blocks,
             snapshotsByPath: snapshotsByPath,
             endpoints: endpoints,
-            configuredDestinations: configuredDestinations(configuration)
+            configuredDestinations: configuredDestinations(configuration, catalog: catalog),
+            managedIntegrationIsCurrent: managedIntegration.status == .current
         )
         return SSHConfigAuditReport(
             generatedAt: now(),
             rootConfigPath: rootURL.path,
             sshDirectoryPath: sshDirectory.path,
-            endpoints: endpoints.values
-                .map { SSHConfigAuditEndpoint(endpoint: $0) }
-                .sorted { $0.adapterHost < $1.adapterHost },
+            managedIntegration: managedIntegration,
+            endpoints: catalog.endpoints.map(SSHConfigAuditEndpoint.init(endpointAliases:)),
             files: loader.snapshots.sorted { $0.path < $1.path },
             findings: analyzer.findings().sorted(by: findingSort),
             warnings: loader.warnings
         )
     }
 
-    private func configuredEndpoints(_ configuration: AppConfiguration) -> [HopEndpointKey: HopEndpointKey] {
-        Dictionary(
-            configuration.profiles.compactMap { try? HopEndpointKey(profile: $0) }.map { ($0, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
+    static func hasUnconditionalManagedInclude(in text: String) -> Bool {
+        let acceptedPaths: Set<String> = [
+            "~/.ssh/\(SSHConfigSetupService.managedConfigRelativePath)",
+            SSHConfigSetupService.managedConfigRelativePath
+        ]
+        for (index, text) in text.components(separatedBy: "\n").enumerated() {
+            let line = SSHConfigAuditLoadedLine(
+                location: SSHConfigSourceLocation(path: "", line: index + 1),
+                text: text
+            )
+            guard let directive = SSHConfigAuditParser.directive(from: line) else { continue }
+            switch directive.keyword {
+            case "host", "match":
+                return false
+            case "include":
+                // Earlier includes (even earlier arguments on this line) can change
+                // scope. Only a first, literal managed include is proven unconditional.
+                guard let firstPath = SSHConfigAuditParser.tokens(directive.value).first else { return false }
+                return acceptedPaths.contains(firstPath)
+            default:
+                continue
+            }
+        }
+        return false
     }
 
-    private func configuredDestinations(_ configuration: AppConfiguration) -> [String: HopEndpointKey] {
-        var destinations: [String: HopEndpointKey] = [:]
+    public static func literalHostAliasLocations(
+        sshDirectory: URL,
+        excluding excludedURL: URL? = nil
+    ) -> [String: [SSHConfigSourceLocation]] {
+        var loader = SSHConfigAuditLoader(sshDirectory: sshDirectory.standardizedFileURL)
+        let lines = loader.loadRoot(sshDirectory.appendingPathComponent("config"))
+        let excludedPath = excludedURL?.standardizedFileURL.path
+        var result: [String: [SSHConfigSourceLocation]] = [:]
+        for block in SSHConfigAuditParser.blocks(from: lines) {
+            guard case .host(let patterns) = block.kind,
+                  let header = block.header,
+                  header.location.path != excludedPath else { continue }
+            for pattern in patterns where !pattern.hasPrefix("!")
+                && !pattern.contains("*")
+                && !pattern.contains("?")
+                && !pattern.contains("[") {
+                result[pattern.lowercased(), default: []].append(header.location)
+            }
+        }
+        return result
+    }
+
+    private func configuredDestinations(
+        _ configuration: AppConfiguration,
+        catalog: HopAdapterAliasCatalog
+    ) -> [String: ConfiguredSSHDestination] {
+        var destinations: [String: ConfiguredSSHDestination] = [:]
         for profile in configuration.profiles {
-            guard let endpoint = try? HopEndpointKey(profile: profile) else { continue }
+            guard let endpoint = try? HopEndpointKey(profile: profile),
+                  let adapterHost = catalog.adapterHost(for: profile.id) else { continue }
             for host in [profile.host, profile.interactiveHost].compactMap({ $0 }) {
                 let normalized = host.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
                 guard !normalized.isEmpty else { continue }
-                destinations[normalized] = endpoint
+                destinations[normalized] = ConfiguredSSHDestination(
+                    endpoint: endpoint,
+                    adapterHost: adapterHost
+                )
             }
         }
         return destinations
+    }
+
+    private func managedIntegration(
+        configuration: AppConfiguration,
+        catalog: HopAdapterAliasCatalog,
+        existingManagedContent: String?
+    ) -> SSHConfigManagedIntegration {
+        let rootURL = sshDirectory.appendingPathComponent("config")
+        let managedURL = sshDirectory.appendingPathComponent(SSHConfigSetupService.managedConfigRelativePath)
+        let rootContent = try? String(contentsOf: rootURL, encoding: .utf8)
+        let rootHash = rootContent.map(contentHash)
+        let observedHash = existingManagedContent.map(contentHash)
+        let expectedContent: String
+        do {
+            expectedContent = try SSHConfigSetupService.managedSnippet(
+                for: configuration,
+                preservingAliasesFrom: existingManagedContent
+            )
+        } catch {
+            return SSHConfigManagedIntegration(
+                status: .conflict,
+                detail: "Managed OpenSSH config cannot be generated: \(error.localizedDescription)",
+                managedConfigPath: managedURL.path,
+                mainConfigHash: rootHash,
+                managedConfigHash: observedHash
+            )
+        }
+        let expectedHash = contentHash(expectedContent)
+        let literalAliases = Self.literalHostAliasLocations(
+            sshDirectory: sshDirectory,
+            excluding: managedURL
+        )
+        for endpointAliases in catalog.endpoints {
+            for alias in endpointAliases.adapterHosts where alias != endpointAliases.endpoint.adapterHost {
+                if let location = literalAliases[alias.lowercased()]?.first {
+                    return SSHConfigManagedIntegration(
+                        status: .conflict,
+                        detail: "Readable adapter alias \(alias) is already declared at \(location.path):\(location.line).",
+                        managedConfigPath: managedURL.path,
+                        configurationFingerprint: expectedHash,
+                        mainConfigHash: rootHash,
+                        managedConfigHash: observedHash
+                    )
+                }
+            }
+        }
+        guard let rootContent,
+              let existingManagedContent else {
+            return SSHConfigManagedIntegration(
+                status: .notInstalled,
+                detail: "Install the managed OpenSSH include before applying adapter replacements.",
+                managedConfigPath: managedURL.path,
+                configurationFingerprint: expectedHash,
+                mainConfigHash: rootHash,
+                managedConfigHash: observedHash
+            )
+        }
+        guard Self.hasUnconditionalManagedInclude(in: rootContent) else {
+            return SSHConfigManagedIntegration(
+                status: .updateRequired,
+                detail: "Reinstall the managed OpenSSH include at the start of ~/.ssh/config, before Host, Match, or other Include directives.",
+                managedConfigPath: managedURL.path,
+                configurationFingerprint: expectedHash,
+                mainConfigHash: rootHash,
+                managedConfigHash: observedHash
+            )
+        }
+        guard existingManagedContent == expectedContent else {
+            return SSHConfigManagedIntegration(
+                status: .updateRequired,
+                detail: "Update the managed OpenSSH include to match the current profiles and readable aliases.",
+                managedConfigPath: managedURL.path,
+                configurationFingerprint: expectedHash,
+                mainConfigHash: rootHash,
+                managedConfigHash: observedHash
+            )
+        }
+        return SSHConfigManagedIntegration(
+            status: .current,
+            detail: "Readable adapters are installed and current. They fail closed unless the app-owned hop master is running.",
+            managedConfigPath: managedURL.path,
+            configurationFingerprint: expectedHash,
+            mainConfigHash: rootHash,
+            managedConfigHash: observedHash
+        )
+    }
+
+    private func contentHash(_ text: String) -> String {
+        SHA256.hash(data: Data(text.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     private func findingSort(_ lhs: SSHConfigAuditFinding, _ rhs: SSHConfigAuditFinding) -> Bool {
@@ -268,6 +521,11 @@ public struct SSHConfigAuditService: Sendable {
         if lhs.location.line != rhs.location.line { return lhs.location.line < rhs.location.line }
         return lhs.id < rhs.id
     }
+}
+
+private struct ConfiguredSSHDestination {
+    var endpoint: HopEndpointKey
+    var adapterHost: String
 }
 
 private struct SSHConfigAuditLoadedLine: Equatable {
@@ -425,7 +683,9 @@ private struct SSHConfigAuditLoader {
             .prefix(5)
             .contains { line in
                 let lower = line.lowercased()
-                return lower.contains("generated by") || lower.contains("do not edit")
+                return lower.contains("generated by")
+                    || lower.contains("do not edit")
+                    || lower.contains("ssh autotunnel managed ssh config")
             }
         let permissions = UInt16(metadata.st_mode & 0o7777)
         let safeMetadata = isRegular
@@ -726,13 +986,19 @@ private struct SSHConfigStaticEvaluator {
 private struct SSHConfigAuditAnalyzer {
     let blocks: [SSHConfigAuditBlock]
     let snapshotsByPath: [String: SSHConfigFileSnapshot]
-    let endpoints: [HopEndpointKey: HopEndpointKey]
-    let configuredDestinations: [String: HopEndpointKey]
+    let endpoints: [HopEndpointKey: HopAdapterEndpointAliases]
+    let configuredDestinations: [String: ConfiguredSSHDestination]
+    let managedIntegrationIsCurrent: Bool
 
     func findings() -> [SSHConfigAuditFinding] {
         var findings: [SSHConfigAuditFinding] = []
         let evaluator = SSHConfigStaticEvaluator(blocks: blocks)
-        let adapterEndpoints = Dictionary(uniqueKeysWithValues: endpoints.keys.map { ($0.adapterHost.lowercased(), $0) })
+        let adapterEndpoints = Dictionary(
+            endpoints.values.flatMap { endpointAliases in
+                endpointAliases.adapterHosts.map { ($0.lowercased(), endpointAliases.endpoint) }
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         for block in blocks {
             if case .host(let patterns) = block.kind,
@@ -823,20 +1089,38 @@ private struct SSHConfigAuditAnalyzer {
                 context: block.kind.description
             )]
         }
-        if let endpoint = adapterEndpoints[value.lowercased()] {
+        if let endpoint = adapterEndpoints[value.lowercased()], let aliases = endpoints[endpoint] {
+            if aliases.currentAdapterHosts.contains(where: { $0.caseInsensitiveCompare(value) == .orderedSame }) {
+                return [makeFinding(
+                    category: .information,
+                    code: .managedAdapterAlreadyUsed,
+                    line: directive.line,
+                    title: "Managed hop adapter already in use",
+                    reasoning: "This route already uses readable adapter \(value).",
+                    context: block.kind.description
+                )]
+            }
+            guard let replacementLine = SSHConfigAuditParser.replacingValue(
+                in: directive.line.text,
+                with: aliases.preferredAdapterHost
+            ) else { return [] }
             return [makeFinding(
-                category: .information,
-                code: .managedAdapterAlreadyUsed,
+                category: .safeReplacement,
+                code: .legacyManagedAdapter,
                 line: directive.line,
-                title: "Managed hop adapter already in use",
-                reasoning: "This route already uses \(endpoint.adapterHost).",
-                context: block.kind.description
+                title: "Use the readable SSH AutoTunnel adapter",
+                reasoning: "\(value) is a compatible legacy alias for \(aliases.preferredAdapterHost). The route and app-owned hop endpoint do not change.\(managedPrerequisite)",
+                context: block.kind.description,
+                afterText: replacementLine,
+                canApply: canApply(directive)
             )]
         }
-        guard let resolved = resolveProxyJump(value, evaluator: evaluator), let endpoint = endpoints[resolved] else {
+        guard let resolved = resolveProxyJump(value, evaluator: evaluator), let endpointAliases = endpoints[resolved] else {
             if let similarEndpoint = similarEndpoint(for: value, evaluator: evaluator) {
                 let resolvedUser = resolvedJumpComponents(value, evaluator: evaluator)?.user
                 let userDetail = resolvedUser.map { "username \($0)" } ?? "no explicit username"
+                let preferredAdapterHost = endpoints[similarEndpoint]?.preferredAdapterHost
+                    ?? similarEndpoint.adapterHost
                 return [makeFinding(
                     category: .manualRecommendation,
                     code: .similarProxyJumpEndpoint,
@@ -844,7 +1128,7 @@ private struct SSHConfigAuditAnalyzer {
                     title: "Review a near-matching hop route",
                     reasoning: "The jump target resolves to \(similarEndpoint.host):\(similarEndpoint.port) with \(userDetail), while SSH AutoTunnel owns that endpoint as \(similarEndpoint.destination). Replacing it could change the login identity, so it requires manual review.",
                     context: block.kind.description,
-                    afterText: SSHConfigAuditParser.replacingValue(in: directive.line.text, with: similarEndpoint.adapterHost)
+                    afterText: SSHConfigAuditParser.replacingValue(in: directive.line.text, with: preferredAdapterHost)
                 )]
             }
             return [makeFinding(
@@ -856,7 +1140,10 @@ private struct SSHConfigAuditAnalyzer {
                 context: block.kind.description
             )]
         }
-        guard let replacementLine = SSHConfigAuditParser.replacingValue(in: directive.line.text, with: endpoint.adapterHost) else {
+        guard let replacementLine = SSHConfigAuditParser.replacingValue(
+            in: directive.line.text,
+            with: endpointAliases.preferredAdapterHost
+        ) else {
             return [makeFinding(
                 category: .information,
                 code: .unsupportedSyntax,
@@ -874,11 +1161,22 @@ private struct SSHConfigAuditAnalyzer {
             code: .equivalentProxyJump,
             line: directive.line,
             title: "Reuse the SSH AutoTunnel hop master",
-            reasoning: "\(value) resolves to \(endpoint.destination):\(endpoint.port), the same endpoint as \(endpoint.adapterHost). Only the target changes; the original scope and conditions remain intact.\(conditional)",
+            reasoning: "\(value) resolves to \(resolved.destination):\(resolved.port), the same endpoint as \(endpointAliases.preferredAdapterHost). Only the target changes; the original scope and conditions remain intact.\(conditional)\(managedPrerequisite)",
             context: block.kind.description,
             afterText: replacementLine,
-            canApply: snapshotsByPath[directive.line.location.path]?.canAutoFix == true
+            canApply: canApply(directive)
         )]
+    }
+
+    private var managedPrerequisite: String {
+        managedIntegrationIsCurrent
+            ? ""
+            : " Install or update the managed OpenSSH include before applying this replacement."
+    }
+
+    private func canApply(_ directive: SSHConfigAuditDirective) -> Bool {
+        managedIntegrationIsCurrent
+            && snapshotsByPath[directive.line.location.path]?.canAutoFix == true
     }
 
     private func canonicalHostNameRecommendations(
@@ -916,25 +1214,29 @@ private struct SSHConfigAuditAnalyzer {
         guard case .host(let patterns) = block.kind, let header = block.header else { return [] }
         let literalDestinations = patterns
             .filter { !$0.hasPrefix("!") && !containsWildcard($0) }
-            .compactMap { pattern -> (String, HopEndpointKey)? in
-                guard let endpoint = configuredDestinations[pattern.lowercased()] else { return nil }
-                return (pattern, endpoint)
+            .compactMap { pattern -> (String, ConfiguredSSHDestination)? in
+                guard let destination = configuredDestinations[pattern.lowercased()] else { return nil }
+                return (pattern, destination)
             }
-        return literalDestinations.compactMap { destination, expectedEndpoint in
+        return literalDestinations.compactMap { destination, expected in
             let settings = evaluator.settings(for: destination)
             guard settings.proxyCommand == nil,
                   settings.proxyJump?.lowercased() != "none",
                   !settings.hasConditionalMatch else { return nil }
             if let proxyJump = settings.proxyJump {
-                guard resolveProxyJump(proxyJump, evaluator: evaluator) != expectedEndpoint else { return nil }
+                let managedEndpoint = endpoints.values.first {
+                    $0.adapterHosts.contains { $0.caseInsensitiveCompare(proxyJump) == .orderedSame }
+                }?.endpoint
+                guard managedEndpoint != expected.endpoint,
+                      resolveProxyJump(proxyJump, evaluator: evaluator) != expected.endpoint else { return nil }
                 return makeFinding(
                     category: .manualRecommendation,
                     code: .configuredDestinationDifferentRoute,
                     line: header,
                     title: "Review the route for \(destination)",
-                    reasoning: "This literal destination is configured in SSH AutoTunnel for \(expectedEndpoint.destination), but its current ProxyJump resolves differently. Existing policy is not changed automatically.",
+                    reasoning: "This literal destination is configured in SSH AutoTunnel for \(expected.endpoint.destination), but its current ProxyJump resolves differently. Existing policy is not changed automatically.",
                     context: block.kind.description,
-                    afterText: "ProxyJump \(expectedEndpoint.adapterHost)"
+                    afterText: "ProxyJump \(expected.adapterHost)"
                 )
             }
             return makeFinding(
@@ -942,9 +1244,9 @@ private struct SSHConfigAuditAnalyzer {
                 code: .configuredDestinationMissingRoute,
                 line: header,
                 title: "Review missing routing for \(destination)",
-                reasoning: "This literal destination is explicitly configured in SSH AutoTunnel to use \(expectedEndpoint.destination). Adding routing can change access policy, so the audit only recommends manual review.",
+                reasoning: "This literal destination is explicitly configured in SSH AutoTunnel to use \(expected.endpoint.destination). Adding routing can change access policy, so the audit only recommends manual review.",
                 context: block.kind.description,
-                afterText: "ProxyJump \(expectedEndpoint.adapterHost)"
+                afterText: "ProxyJump \(expected.adapterHost)"
             )
         }
     }
@@ -1047,6 +1349,7 @@ public enum SSHConfigAuditTextRenderer {
     public static func render(_ report: SSHConfigAuditReport) -> String {
         var lines = [
             "SSH config audit:",
+            "- Managed integration: \(report.managedIntegration.status.rawValue) — \(report.managedIntegration.detail)",
             "- Files: \(report.files.count)",
             "- Safe replacements: \(report.safeReplacements.count)",
             "- Manual recommendations: \(report.manualRecommendations.count)",

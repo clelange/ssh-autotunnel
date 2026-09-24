@@ -31,6 +31,7 @@ public struct SSHConfigInstallResult: Equatable, Sendable {
 public enum SSHConfigSetupError: LocalizedError, Equatable, Sendable {
     case noJumpHostProfiles
     case unsafeField(String)
+    case adapterAliasConflict(alias: String, path: String, line: Int)
 
     public var errorDescription: String? {
         switch self {
@@ -38,19 +39,32 @@ public enum SSHConfigSetupError: LocalizedError, Equatable, Sendable {
             "No jump-host profiles are configured"
         case .unsafeField(let label):
             "\(label) cannot be represented safely in OpenSSH config"
+        case .adapterAliasConflict(let alias, let path, let line):
+            "Readable adapter alias \(alias) is already declared at \(path):\(line). Rename the profile or the existing Host alias before installing."
         }
     }
 }
 
 public enum SSHConfigSetupService {
-    public static let managedConfigVersion = 2
+    public static let managedConfigVersion = 3
     public static let managedIncludeStart = "# SSH AutoTunnel managed include"
     public static let managedIncludeEnd = "# End SSH AutoTunnel managed include"
     public static let managedConfigRelativePath = "config.d/ssh-autotunnel.conf"
 
+    public static func adapterAliases(
+        for configuration: AppConfiguration,
+        preservingAliasesFrom existingManagedContent: String? = nil
+    ) -> HopAdapterAliasCatalog {
+        HopAdapterNameResolver.resolve(
+            profiles: configuration.profiles,
+            historicalAliases: historicalAliases(from: existingManagedContent, profiles: configuration.profiles)
+        )
+    }
+
     public static func managedSnippet(
         for configuration: AppConfiguration,
-        layout: HopControlPathLayout? = nil
+        layout: HopControlPathLayout? = nil,
+        preservingAliasesFrom existingManagedContent: String? = nil
     ) throws -> String {
         let profiles = configuration.profiles
             .filter { normalizedJumpHost($0.jumpHost) != nil }
@@ -63,6 +77,7 @@ public enum SSHConfigSetupService {
             ].joined(separator: "\n") + "\n"
         }
 
+        let catalog = adapterAliases(for: configuration, preservingAliasesFrom: existingManagedContent)
         let resolvedLayout = try layout ?? HopControlPathLayout.default()
         var adapters: [HopEndpointKey: ManagedHopAdapterConfig] = [:]
         var finalHosts: [String: FinalHostConfig] = [:]
@@ -77,16 +92,24 @@ public enum SSHConfigSetupService {
             adapters[endpoint] = ManagedHopAdapterConfig(
                 endpoint: endpoint,
                 signature: signature,
-                controlPath: paths.controlPath
+                controlPath: paths.controlPath,
+                adapterHosts: catalog.aliases(for: endpoint)?.adapterHosts ?? [endpoint.adapterHost],
+                profileNames: catalog.aliases(for: endpoint)?.profileNames ?? [profile.name]
             )
 
+            let profileAdapterHost = catalog.adapterHost(for: profile.id) ?? endpoint.adapterHost
             for host in finalSSHHosts(for: profile) {
                 let finalHost = FinalHostConfig(
                     host: host,
                     user: normalizedValue(profile.user) ?? normalizedValue(profile.keychain.account),
-                    proxyJump: endpoint.adapterHost
+                    proxyJump: profileAdapterHost
                 )
-                finalHosts["\(finalHost.host)|\(finalHost.proxyJump)"] = finalHost
+                let key = "\(finalHost.host)|\(endpoint.stableHash)"
+                if let existing = finalHosts[key] {
+                    finalHosts[key] = existing.proxyJump < finalHost.proxyJump ? existing : finalHost
+                } else {
+                    finalHosts[key] = finalHost
+                }
             }
         }
 
@@ -99,7 +122,8 @@ public enum SSHConfigSetupService {
 
         for adapter in adapters.values.sorted(by: { $0.endpoint.adapterHost < $1.endpoint.adapterHost }) {
             lines += [
-                "Host \(adapter.endpoint.adapterHost)",
+                "# Profiles: \(adapter.profileNames.joined(separator: ", ")); endpoint: \(adapter.endpoint.destination):\(adapter.endpoint.port)",
+                "Host \(adapter.adapterHosts.joined(separator: " "))",
                 "  HostName hop-not-connected.start-ssh-autotunnel.invalid",
                 "  User unused",
                 "  ProxyJump none",
@@ -132,7 +156,6 @@ public enum SSHConfigSetupService {
         now: Date = Date(),
         layout: HopControlPathLayout? = nil
     ) throws -> SSHConfigInstallResult {
-        let snippet = try managedSnippet(for: configuration, layout: layout)
         let profileCount = configuration.profiles.filter { normalizedJumpHost($0.jumpHost) != nil }.count
         guard profileCount > 0 else {
             throw SSHConfigSetupError.noJumpHostProfiles
@@ -147,6 +170,27 @@ public enum SSHConfigSetupService {
         try FileProtection.protectDirectory(configDirectory)
 
         let oldManagedContent = try? String(contentsOf: managedConfigURL, encoding: .utf8)
+        let catalog = adapterAliases(for: configuration, preservingAliasesFrom: oldManagedContent)
+        let literalAliases = SSHConfigAuditService.literalHostAliasLocations(
+            sshDirectory: sshDirectory,
+            excluding: managedConfigURL
+        )
+        for endpointAliases in catalog.endpoints {
+            for alias in endpointAliases.adapterHosts where alias != endpointAliases.endpoint.adapterHost {
+                if let location = literalAliases[alias.lowercased()]?.first {
+                    throw SSHConfigSetupError.adapterAliasConflict(
+                        alias: alias,
+                        path: location.path,
+                        line: location.line
+                    )
+                }
+            }
+        }
+        let snippet = try managedSnippet(
+            for: configuration,
+            layout: layout,
+            preservingAliasesFrom: oldManagedContent
+        )
         let wroteManagedConfig = oldManagedContent != snippet
         let managedConfigBackupURL: URL?
         if wroteManagedConfig {
@@ -215,10 +259,8 @@ public enum SSHConfigSetupService {
         ].joined(separator: "\n")
     }
 
-    private static func containsManagedInclude(in text: String) -> Bool {
-        text.contains(managedIncludeStart)
-            || text.contains("Include ~/.ssh/\(managedConfigRelativePath)")
-            || text.contains("Include ~/.ssh/config.d/ssh-autotunnel.conf")
+    public static func containsManagedInclude(in text: String) -> Bool {
+        SSHConfigAuditService.hasUnconditionalManagedInclude(in: text)
     }
 
     private static func insertingIncludeBlock(_ includeBlock: String, into existing: String) -> String {
@@ -309,12 +351,38 @@ public enum SSHConfigSetupService {
         let trimmed = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return trimmed.isEmpty ? nil : trimmed
     }
+
+    static func historicalAliases(
+        from existingManagedContent: String?,
+        profiles: [TunnelProfile]
+    ) -> [HopEndpointKey: Set<String>] {
+        guard let existingManagedContent,
+              existingManagedContent.contains("# SSH AutoTunnel managed SSH config v3") else { return [:] }
+        let endpoints = profiles.compactMap { try? HopEndpointKey(profile: $0) }
+        let endpointByLegacyAlias = Dictionary(
+            endpoints.map { ($0.adapterHost, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var result: [HopEndpointKey: Set<String>] = [:]
+        for line in existingManagedContent.components(separatedBy: "\n") {
+            let tokens = line.split(whereSeparator: { $0.isWhitespace }).map(String.init)
+            guard tokens.first?.lowercased() == "host",
+                  let endpoint = tokens.dropFirst().compactMap({ endpointByLegacyAlias[$0] }).first else { continue }
+            let aliases = tokens.dropFirst().filter {
+                $0 != endpoint.adapterHost && HopAdapterNameResolver.isSafeAdapterHost($0)
+            }
+            result[endpoint, default: []].formUnion(aliases)
+        }
+        return result
+    }
 }
 
 private struct ManagedHopAdapterConfig: Equatable {
     var endpoint: HopEndpointKey
     var signature: HopSessionSignature
     var controlPath: String
+    var adapterHosts: [String]
+    var profileNames: [String]
 }
 
 private struct FinalHostConfig: Equatable {

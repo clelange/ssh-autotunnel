@@ -5,6 +5,7 @@ import Foundation
 public enum SSHConfigSafeFixError: LocalizedError, Equatable, Sendable {
     case findingNotFound(String)
     case findingNotSafe(String)
+    case managedIntegrationChanged(String)
     case unsafeFile(String)
     case fileChanged(String)
     case invalidReplacement(String)
@@ -16,6 +17,8 @@ public enum SSHConfigSafeFixError: LocalizedError, Equatable, Sendable {
         switch self {
         case .findingNotFound(let id): "The selected SSH config finding no longer exists: \(id)"
         case .findingNotSafe(let id): "The selected finding is not an applicable safe replacement: \(id)"
+        case .managedIntegrationChanged(let detail):
+            "Managed OpenSSH integration changed after the audit. No changes were applied; rerun Check SSH Config: \(detail)"
         case .unsafeFile(let path): "SSH config is not a safe regular user-owned file under ~/.ssh: \(path)"
         case .fileChanged(let path): "SSH config changed after the audit. No changes were applied; rerun Check SSH Config: \(path)"
         case .invalidReplacement(let detail): "The proposed SSH config replacement is no longer valid: \(detail)"
@@ -167,6 +170,9 @@ public struct SSHConfigSafeFixService {
             }
             selected.append(finding)
         }
+        if !selected.isEmpty {
+            try verifyManagedIntegration(report)
+        }
 
         let grouped = Dictionary(grouping: selected, by: { $0.location.path })
         return try grouped.keys.sorted().map { path in
@@ -195,6 +201,31 @@ public struct SSHConfigSafeFixService {
         }
     }
 
+    private func verifyManagedIntegration(_ report: SSHConfigAuditReport) throws {
+        let integration = report.managedIntegration
+        guard integration.status == .current,
+              integration.configurationFingerprint == integration.managedConfigHash else {
+            throw SSHConfigSafeFixError.managedIntegrationChanged(integration.detail)
+        }
+        let snapshotsByPath = Dictionary(uniqueKeysWithValues: report.files.map { ($0.path, $0) })
+        guard let rootSnapshot = snapshotsByPath[report.rootConfigPath] else {
+            throw SSHConfigSafeFixError.managedIntegrationChanged("the root SSH config snapshot is unavailable")
+        }
+        guard let managedSnapshot = snapshotsByPath[integration.managedConfigPath] else {
+            throw SSHConfigSafeFixError.managedIntegrationChanged("the managed include snapshot is unavailable")
+        }
+        do {
+            _ = try verifiedData(snapshot: rootSnapshot)
+            _ = try verifiedData(snapshot: managedSnapshot)
+        } catch {
+            throw SSHConfigSafeFixError.managedIntegrationChanged(error.localizedDescription)
+        }
+        guard rootSnapshot.contentHash == integration.mainConfigHash,
+              managedSnapshot.contentHash == integration.managedConfigHash else {
+            throw SSHConfigSafeFixError.managedIntegrationChanged("the audited include hashes no longer match")
+        }
+    }
+
     private func verifiedData(snapshot: SSHConfigFileSnapshot) throws -> Data {
         let path = snapshot.path
         let standardizedSSHDirectory = sshDirectory.standardizedFileURL.path
@@ -202,8 +233,10 @@ public struct SSHConfigSafeFixService {
             throw SSHConfigSafeFixError.unsafeFile(path)
         }
         var metadata = stat()
-        guard lstat(path, &metadata) == 0,
-              (metadata.st_mode & S_IFMT) == S_IFREG,
+        guard lstat(path, &metadata) == 0 else {
+            throw SSHConfigSafeFixError.fileChanged(path)
+        }
+        guard (metadata.st_mode & S_IFMT) == S_IFREG,
               metadata.st_uid == getuid(),
               (metadata.st_mode & 0o022) == 0 else {
             throw SSHConfigSafeFixError.unsafeFile(path)
