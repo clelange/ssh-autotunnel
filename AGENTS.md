@@ -131,6 +131,9 @@
 - Added Sparkle 2.10 in-app updates with a GitHub Releases-hosted signed feed, application-menu check action, opt-in daily checks in Settings, and user-confirmed installation through the existing quit path.
 - Added shared framework embedding/signing for all app packagers, release-only updater enablement, a Keychain-backed Ed25519 public-key configuration, and post-notarization feed generation/verification. Private signing material stays outside the repository.
 
+- Reviewed updater startup gating, signature/feed validation, packaging/signing, and Sparkle's normal quit-event path. Fixed the maintenance gap where CI was manual-only: PRs targeting `main` and pushes to `main` now run with read-only permissions, no persisted checkout credentials, and strict committed-version resolution.
+- Added Dependabot Swift checks on weekdays and GitHub Actions checks weekly, retaining the exact Sparkle pin and normal PR review. Enabled repository Dependabot alerts and security-update PRs through GitHub; scheduled version updates activate when `.github/dependabot.yml` reaches `main`.
+
 ## Validation Status
 
 Last full package verification:
@@ -267,6 +270,10 @@ APP_VERSION=0.8.0 APP_BUILD=11 RELEASE_DIST_DIR="$PWD/dist/updater-verification"
 All passed on `feat/github-app-updates`: 459 XCTest cases and seven integration tests using real Sparkle tools, a disposable key, and a DMG fixture. Integration tests cover feed/download signature verification and tampering, signed wrong-URL/build rejection, wrong-key publishing failure, and disabled-development-build rejection. The unpublished 0.8.0/build 11 packaging rehearsal passed nested framework/app/helper signing, notarization (submission `c6d2ca66-91d7-4fd1-aa7e-02f5b77a6acf`), stapling, Gatekeeper, and signed appcast generation against the final DMG. This is a test artifact, not a published release or version bump.
 
 Computer Use verified an isolated copy with a distinct bundle ID, temporary `CFFIXED_USER_HOME`, empty profiles, separate ports, and a loopback-hosted signed feed: automatic checking started off, the toggle worked, the menu/settings actions found version 0.8.0, dismissal left the app running, last-check time updated, and a tampered feed showed the signature-validation error. The isolated app quit cleanly; the installed app and its connections remained running. No production update was installed. `build_and_run.sh --verify` was skipped because it would quit the installed app.
+
+Latest updater review/dependency-maintenance validation (2026-09-24):
+
+`actionlint .github/workflows/ci.yml`, Dependabot YAML parsing, `swift build --force-resolved-versions`, `swift build`, and `swift test` passed; the Swift suite still has 459 passing cases. GitHub's Swift updater source covers changing `exact:` requirements alongside `Package.resolved`, so the 2.10.0 pin remains exact. Repository API reads confirmed Dependabot security updates are enabled and unpaused. The existing updater's seven signature/metadata integration tests and local package verification are included in every PR run, using only a disposable key. The review found no additional actionable defect in the updater code; the previously documented full installation/relaunch and active-connection cancellation rehearsal remains required before publishing.
 
 ## Known Gaps
 
